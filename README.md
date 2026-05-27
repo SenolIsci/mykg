@@ -67,8 +67,8 @@ sessions/2026-05-27T10-00-00/
 - **Schema-guided knowledge graph generation** — the extracted graph is always grounded in a formal RDFS schema: concept types, property names, domain/range constraints, and the is-a hierarchy are explicit and inspectable before any entity is extracted
 - **Bring your own ontology** — supply a `--base-schema` TTL file to lock in classes and properties from an existing formal ontology; the LLM expands it with domain-specific concepts but cannot rename, remove, or contradict your authoritative vocabulary
 - **SKOS thesaurus support** — pass `--thesaurus` to load a SKOS vocabulary; `skos:exactMatch` terms are collapsed silently, `skos:closeMatch` terms trigger a warning — giving the schema merger richer synonym awareness than string matching alone
-- **Verifiable schema** — after Pass 1, `intermediate/schema.ttl` is validated with rdflib (syntax + semantic checks: domain/range refer to declared classes, no conflicting ranges); validation errors are sent back to the LLM for a correction round before extraction begins
-- **Human review gate** — run with `--review` to pause after schema induction and inspect/edit `schema.json` before a single entity is extracted; approve with `mykg approve-schema`
+- **Verifiable TTL ontology** — after Pass 1, the induced schema is exported as a valid RDFS Turtle file (`intermediate/schema.ttl`) that can be opened directly in ontology editors such as [Protégé](https://protege.stanford.edu/); the same TTL is validated by rdflib (syntax + semantic checks: domain/range refer to declared classes, no conflicting ranges) before any extraction begins
+- **Human-in-the-loop ontology design** — run with `--review` to pause after schema induction; inspect and edit `schema.json` (or load `schema.ttl` in Protégé, modify, and save back) before a single entity is extracted; resume with `mykg approve-schema`
 - **Incremental updates** — run with `--append` on an existing session to add new or modified Markdown files without re-running Pass 1; the schema is reused and only the new files go through Pass 2
 
 ### Input
