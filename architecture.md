@@ -1,6 +1,6 @@
 # myKG — Architecture and Design
 
-This document explains how **myKG** works at a conceptual level: the pipelines, the key stages, the data it produces, and the design choices behind it. For command-line usage and options, see [README.md](../README.md). For the authoritative record of all design decisions (D1–D38) and key invariants, see [CLAUDE.md](../CLAUDE.md).
+This document explains how **myKG** works at a conceptual level: the pipelines, the key stages, the data it produces, and the design choices behind it. For command-line usage and options, see [README.md](README.md).
 
 ---
 
