@@ -79,7 +79,8 @@ The fundamental insight is to separate **schema induction** (what kinds of thing
 ┌─────────────────────────────────────────────────────────┐
 │  EXPORT                                                  │
 │  nodes.jsonl  edges.jsonl  knowledge_graph.ttl           │
-│  knowledge_graph.html  networkx_output/                  │
+│  networkx_output/ (GML, GraphML, GEXF, JSON,            │
+│                    knowledge_graph.html, edge list …)    │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -95,6 +96,9 @@ The pipeline is defined as a flat list of `Step` objects in `src/mykg/pipeline.p
 - `fn` — the function to execute (`run_<name>(ctx) → None`)
 - `outputs` — list of intermediate files written by this step
 - `is_llm_step` — whether this step makes LLM calls (affects retry/feedback behaviour)
+- `blocking: bool` (default `True`) — if False, failures are logged but do not halt the pipeline
+- `requires_review_flag: bool` (default `False`) — if True, the step waits for `schema_approved.flag` when `--review` is active (only `human_review` sets this)
+- `output_location: Literal["intermediate", "output"]` (default `"intermediate"`) — controls which subdirectory the orchestrator checks for outputs on re-entry
 
 The orchestrator (`src/mykg/orchestrator.py`) drives a `while True` loop over the step list. For each step it checks whether it is already complete (`_is_done` inspects sentinel files and output files), runs it if not, and handles retries and the two-tier correction model. The outer `while True` loop supports automated schema-gap restarts (see [Two-Tier Correction Model](#two-tier-correction-model)).
 
@@ -109,12 +113,12 @@ State transitions are persisted to `intermediate/pipeline_state.json` after ever
 | 3 | `schema_validate` | — | `schema_validate.done` |
 | 4 | `human_review` | — | `schema_approved.flag` |
 | 5 | `schema_flatten` | — | `flattened_schema.json` |
-| 6 | `pass2` | ✓ | `raw_extractions.json`, `chunk_node_index.json` |
+| 6 | `pass2` | ✓ | `raw_extractions.json`, `chunk_node_index.json`, `raw_extractions.done` (sentinel), `failed_chunks.json` (when chunks skipped) |
 | 7 | `normalize_names` | ✓ | `name_normalization.json` |
 | 8 | `assemble` | — | `edge_metadata.json`, `nodes.json` |
 | 9 | `orphan_score` | — | `orphan_candidates.json` |
 | 10 | `orphan_connect` | ✓ | `orphan_connections.json`, `orphan_log.json` |
-| 11 | `validate_graph` | — | `nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, `knowledge_graph.html` |
+| 11 | `validate_graph` | — | `nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, `networkx_output/` (incl. `knowledge_graph.html`) |
 
 ### Merge Pipeline Steps
 
@@ -215,6 +219,7 @@ flattened_schema.json
   ↓ (pass2)
 raw_extractions_shards/<slug>.json  (one per source file)
 chunk_index_shards/<slug>.json
+failed_chunks.json                  (blank/unparseable responses; absent if none)
   ↓ (merged after pass2 completes)
 raw_extractions.json
 chunk_node_index.json
@@ -233,29 +238,51 @@ orphan_log.json
 output/nodes.jsonl
 output/edges.jsonl
 output/knowledge_graph.ttl
-output/knowledge_graph.html
-output/networkx_output/
+output/networkx_output/              (GML, GraphML, GEXF, JSON, knowledge_graph.html, …)
 ```
 
 ### Context Object
 
-`PipelineContext` (Pydantic `BaseModel`) is the shared in-memory state object passed to every step function. Key fields:
+`PipelineContext` (Pydantic `BaseModel`) is the shared in-memory state object passed to every step function. Representative fields (not exhaustive):
 
 ```python
 class PipelineContext(BaseModel):
+    # Paths
     input_dir:        Path
     output_dir:       Path
     intermediate_dir: Path
+
+    # LLM backend
     adapter:          LLMAdapter
+
+    # Runtime state (populated as steps complete)
     schema:           dict | None        # populated after pass1
     all_chunks:       list[Chunk] | None # populated after ingest
     nodes:            list[dict] | None  # populated after assemble
     edge_metadata:    dict | None        # populated after assemble
     chunk_node_index: dict | None        # populated after pass2
     file_contents:    dict | None        # populated after ingest
-    schema_hints:     SchemaHints | None # populated by orphan_connect on restart
+    raw_extractions:  dict | None        # populated after pass2
+
+    # Optional config objects (None when feature not active)
+    base_schema:      dict | None        # parsed --base-schema TTL
+    thesaurus:        Any                # SynonymIndex | None
+    error_gate:       Any                # ErrorGate | None
+
+    # Mode flags
+    review:           bool               # --review gate active
+    append:           bool               # --append mode active
+    append_new_files: set[str] | None    # new/modified files detected in append mode
+
+    # Tuning parameters (loaded from pipeline_config.yaml)
+    pass2_workers:    int
+    ingest_workers:   int
+    confidence_agg:   str               # "mean" or "max"
+    orphan_incremental: bool
+
+    # Schema-gap restart state
+    schema_hints:     list[dict]         # populated by orphan_connect on restart; default []
     schema_restart_count: int            # incremented on SchemaUpdatedError
-    ...
 ```
 
 Steps read from context when available and fall back to loading from disk (enabling cold re-entry after a process restart).
@@ -395,8 +422,8 @@ On restart, completed files are detected by shard existence and skipped. Only fi
 ```
 
 Where:
-- `type-prefix` = `node.type.lower()` — e.g., `"person"`, `"organization"`
-- `name-slug` = `canonical_name` with spaces replaced by hyphens
+- `type-prefix` = `re.sub(r"[^a-z0-9]", "", node.type.lower())` — non-alphanumeric characters stripped after lowercasing (e.g., `"SoftwareEngineer"` → `"softwareengineer"`)
+- `name-slug` = canonical name with non-alphanumeric characters (except spaces) stripped, then spaces replaced by hyphens (e.g., `"Alice O'Brien"` → `"alice-obrien"`)
 
 Example: `"person-alice-smith"`, `"organization-acme-corp"`
 
@@ -418,7 +445,7 @@ All merge decisions are logged to `intermediate/merge_log.json`.
 
 #### Edge Deduplication
 
-Key: `hash(type + from_id + to_id)`
+Key: `SHA256(type + sep + from_id + sep + to_id)` where `sep` is `ASSEMBLY_EDGE_DEDUP_SEPARATOR` from `pipeline_config.yaml` (default `"|"`). The separator prevents key collisions between e.g. `type="a_b", from="c"` and `type="a", from="b_c"`.
 
 Same attribute merge rules as nodes. Edge confidence = mean of all per-occurrence confidences. `source_files` = union.
 
@@ -592,7 +619,7 @@ All structured data uses Pydantic `BaseModel`. No Python `dataclasses`.
 ```
 
 - `method`: `"llm_extraction"` (Pass 2) or `"orphan_inferred"` (orphan pass)
-- Edge ID: `<type>-<hex6>` where hex6 is the first 6 hex chars of `SHA256(type + from_id + to_id)`
+- Edge ID: `<type>-<hex6>` where hex6 is the first 6 hex chars of `SHA256(type + sep + from_id + sep + to_id)` (configurable separator, default `"|"`)
 
 ---
 
@@ -630,9 +657,9 @@ Built from a `DiGraph` where node/edge attributes are flattened to GML-safe scal
 | Edge list | `edges_nx.txt` | Text pipelines |
 | Adjacency list | `adjacency.txt` | Topology-only consumers |
 
-### Interactive HTML (knowledge_graph.html)
+### Interactive HTML (networkx_output/knowledge_graph.html)
 
-Self-contained D3.js force-directed graph. No server required. Features: filter by node/edge type, filter by confidence threshold, search by name, hover popups with full attribute table, resizable sidebar.
+Self-contained vis.js force-directed graph written inside `networkx_output/` by `export_networkx()`. No server required. Features: filter by node/edge type, filter by confidence threshold, search by name, hover popups with full attribute table, resizable sidebar.
 
 ---
 
@@ -643,8 +670,20 @@ The pipeline is decoupled from any specific LLM provider via a single abstract b
 ```python
 class LLMAdapter(ABC):
     @abstractmethod
-    def complete(self, system: str, user: str) -> str:
-        """Send a prompt and return the LLM response text."""
+    def complete(
+        self,
+        system: str,
+        user: str,
+        context_label: str = "",
+        max_tokens: int | None = None,
+        timeout: int | None = None,
+    ) -> str:
+        """Send a prompt and return the LLM response text.
+
+        context_label: human-readable tag written to llm.log for each call.
+        max_tokens: per-call override; None uses the adapter's configured default.
+        timeout: per-call override in seconds; None uses the adapter's configured default.
+        """
 
     @abstractmethod
     def endpoint_label(self) -> str:
@@ -726,7 +765,7 @@ Triggered when `orphan_connect` discovers schema-gap orphans — nodes that cann
 
 1. `SchemaUpdatedError` is raised inside `step_orphan_connect`
 2. The orchestrator's outer `while True` loop catches it
-3. The invalidation set `_SCHEMA_RESTART_INVALIDATE` is applied: sentinel files and outputs for `schema_flatten`, `pass2`, `normalize_names`, `assemble`, `orphan_score`, `orphan_connect`, and `validate_graph` are deleted
+3. The invalidation set `_SCHEMA_RESTART_INVALIDATE` is applied: sentinel files and outputs for `schema_validate`, `schema_flatten`, `pass2`, `normalize_names`, `assemble`, `orphan_score`, `orphan_connect`, and `validate_graph` are deleted
 4. `schema_history/` and shard directories are preserved
 5. The step loop restarts from the top; only the chunks named in `schema_hints.shared_chunks` are re-extracted (surgical re-extraction — O(affected chunks), not O(all files))
 6. Restart count incremented; capped at `orphan_pass.schema_max_restarts`
