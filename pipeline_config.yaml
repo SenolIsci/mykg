@@ -19,9 +19,10 @@ profiles:
   # Token budget chain (use context_calculator.py to recompute when switching models):
   #   ① context_window    = 200000
   #   ② max_output_tokens = 100000
-  #   ③ input_headroom    = ① − ② = 100000  ← this IS batch_token_target
-  #      window_tokens     = ③ / 4 = 25000  (chunk size; many chunks batched up to batch_token_target)
-  #      overlap_tokens    = window_tokens × 0.10 = 2500
+  #   ③ input_headroom    = ① − ② = 100000
+  #      batch_token_target = ③ × 0.95 = 95000  (5% safety margin)
+  #      window_tokens      = batch_token_target / 4 = 23000  (chunk size; many chunks batched up to batch_token_target)
+  #      overlap_tokens     = window_tokens × 0.10 = 2000
   # ---------------------------------------------------------------------------
     provider: openrouter
     llm_retry:
@@ -58,7 +59,7 @@ profiles:
         stateful_chunks: true   # pass prior-chunk nodes to next chunk so IDs stay stable across chunk boundaries
         prep_mode: batch_chunks                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
         concat_batch_token_target: 100000  # target token budget per virtual batch (≤ input_headroom = 100000); used when prep_mode=concat
-        batch_token_target: 1000000         # token budget per chunk batch (≤ input_headroom = 100000); used when prep_mode=batch_chunks
+        batch_token_target: 100000          # token budget per chunk batch (≤ input_headroom = 100000); used when prep_mode=batch_chunks
         batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
         batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
@@ -131,9 +132,10 @@ profiles:
   # Token budget chain (use context_calculator.py to recompute when switching models):
   #   ① context_window    = 200000
   #   ② max_output_tokens = 100000
-  #   ③ input_headroom    = ① − ② = 100000  ← this IS batch_token_target
-  #      window_tokens     = ③ / 4 = 25000  (chunk size; many chunks batched up to batch_token_target)
-  #      overlap_tokens    = window_tokens × 0.10 = 2500
+  #   ③ input_headroom    = ① − ② = 100000
+  #      batch_token_target = ③ × 0.95 = 95000  (5% safety margin)
+  #      window_tokens      = batch_token_target / 4 = 23000  (chunk size; many chunks batched up to batch_token_target)
+  #      overlap_tokens     = window_tokens × 0.10 = 2000
   # ---------------------------------------------------------------------------
     provider: claude-cli
     llm_retry:
@@ -237,9 +239,10 @@ profiles:
   # Token budget chain (use context_calculator.py to recompute when switching models):
   #   ① context_window    = 128000
   #   ② max_output_tokens = 16384
-  #   ③ input_headroom    = ① − ② = 111616  ← this IS batch_token_target
-  #      window_tokens     = 28000  (~25% of input_headroom; leaves room to batch multiple chunks)
-  #      overlap_tokens    = 2800   (10% of window_tokens)
+  #   ③ input_headroom    = ① − ② = 111616
+  #      batch_token_target = ③ × 0.95 = 105000  (5% safety margin)
+  #      window_tokens      = batch_token_target / 4 = 26000  (~25% of batch_token_target; leaves room to batch multiple chunks)
+  #      overlap_tokens     = window_tokens × 0.10 = 2600
   # ---------------------------------------------------------------------------
     provider: openai
     llm_retry:
@@ -345,9 +348,10 @@ profiles:
   # Token budget chain — adjust for your model's actual context window:
   #   ① context_window    = 32768   (llama3.3 / gemma2 default; check `ollama show <model>`)
   #   ② max_output_tokens = 8192
-  #   ③ input_headroom    = ① − ② = 24576  ← this IS batch_token_target
-  #      window_tokens     = 6000   (~25% of input_headroom)
-  #      overlap_tokens    = 600    (10% of window_tokens)
+  #   ③ input_headroom    = ① − ② = 24576
+  #      batch_token_target = ③ × 0.95 = 23000  (5% safety margin)
+  #      window_tokens      = batch_token_target / 4 = 5500  (~25% of batch_token_target)
+  #      overlap_tokens     = window_tokens × 0.10 = 500
   # ---------------------------------------------------------------------------
     provider: ollama
     llm_retry:

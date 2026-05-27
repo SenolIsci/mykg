@@ -186,7 +186,7 @@ def suggest_chunk_divisor(
 def write_candidate_config(config_path: "Path", profile_name: str, result: dict) -> "Path":
     """Write a candidate pipeline_config.yaml next to the original with suggested token-budget values.
 
-    Copies the source file verbatim and patches only the seven token-budget keys
+    Copies the source file verbatim and patches the token-budget keys
     in the active profile, preserving all comments and formatting.
     Returns the path of the written candidate file.
     """
@@ -196,12 +196,13 @@ def write_candidate_config(config_path: "Path", profile_name: str, result: dict)
     lines = text.splitlines(keepends=True)
 
     patch_map = {
-        "context_window":     result["context_window"],
-        "max_output_tokens":  result["max_output_tokens"],
-        "batch_token_target": result["batch_token_target"],
-        "window_tokens":      result["window_tokens"],
-        "overlap_tokens":     result["overlap_tokens"],
-        "max_file_chars":     result["max_file_chars"],
+        "context_window":          result["context_window"],
+        "max_output_tokens":       result["max_output_tokens"],
+        "batch_token_target":      result["batch_token_target"],
+        "window_tokens":           result["window_tokens"],
+        "overlap_tokens":          result["overlap_tokens"],
+        "max_file_chars":          result["max_file_chars"],
+        "concat_batch_token_target": result["batch_token_target"],
     }
 
     in_profile = False
@@ -317,7 +318,7 @@ Examples:
     parser.add_argument("--from-config",    action="store_true",
                         help="Read context_window and max_output_tokens from pipeline_config.yaml active profile")
     parser.add_argument("--input-dir",      type=Path, default=None,
-                        help="Directory of .md input files to measure (default: pipeline_config paths.input_dir or ./input_files)")
+                        help="Directory of .md input files to measure (default: ./input_files or ./_input_files)")
     parser.add_argument("--model",          default=None,   help="Model name label (manual mode only)")
     parser.add_argument("--context",        type=int, default=None,   help="Model context window in tokens (manual mode)")
     parser.add_argument("--max-output",     type=int, default=None,   help="Model max output tokens (manual mode)")
