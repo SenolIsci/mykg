@@ -7,21 +7,36 @@
 
 **mykg** turns a directory of Markdown files into a typed, confidence-scored property graph — with no manual schema authoring required.
 
-It uses a two-pass LLM pipeline: Pass 1 induces a global RDFS schema from your documents; Pass 2 extracts typed node and edge instances against that schema. The result is exported to three parallel formats: JSONL for property-graph consumers, Turtle RDF for OWL toolchains, and seven NetworkX formats for graph analysis and visualization.
+It provides **two independent pipelines**:
+
+- **`mykg extract-graph`** — two-pass LLM pipeline that reads `.md` files and produces a knowledge graph. Pass 1 induces a global RDFS schema from your corpus; Pass 2 extracts typed node and edge instances per file against that schema.
+- **`mykg merge-graphs`** — merges two independently-produced graph sessions into a unified knowledge graph. Schemas are reconciled via the same three-stage merge chain as Pass 1; nodes are deduplicated across sessions by stable ID; new schema properties trigger targeted re-extraction.
+
+Both pipelines write to three parallel formats: JSONL for property-graph consumers, Turtle RDF for OWL toolchains, and seven NetworkX formats for graph analysis and visualization.
 
 ```
 mykg extract-graph my_notes/
+mykg merge-graphs session-a session-b
 ```
 
 ```
+# Extract output
 sessions/2026-05-17T18-31-07/
   output/
     nodes.jsonl                    ← typed entities with confidence scores
     edges.jsonl                    ← typed relationships with provenance
     knowledge_graph.ttl            ← RDFS TBox + RDF ABox (Protégé, SPARQL)
-    knowledge_graph.html           ← interactive D3.js graph, no server needed
-    networkx_output/               ← GML, GraphML, GEXF, Pajek, JSON node-link, …
+    networkx_output/               ← GML, GraphML, GEXF, Pajek, JSON node-link,
+                                      knowledge_graph.html (interactive vis)
   walkthrough.md                   ← per-run report: schema, stats, timing
+
+# Merge output (same structure, additional merge artifacts)
+sessions/2026-05-27T10-00-00/
+  intermediate/
+    source_map.json                ← file provenance for all namespaced files
+    merge_manifest.json            ← schema deltas, re-extraction strategy used
+  output/  ← same files as extract output above
+  walkthrough.md                   ← includes Merge Provenance section
 ```
 
 ---
@@ -31,13 +46,14 @@ sessions/2026-05-17T18-31-07/
 - [Features](#features)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
-- [Running](#running)
-- [Sessions](#sessions)
-- [Pipeline Steps](#pipeline-steps)
-- [Outputs](#outputs)
-- [Re-running from a Specific Step](#re-running-from-a-specific-step)
-- [Orphan-Connection Pass](#orphan-connection-pass)
-- [Merging Sessions](#merging-sessions)
+- [Extract Pipeline](#extract-pipeline)
+  - [Running](#running)
+  - [Sessions](#sessions)
+  - [Pipeline Steps](#pipeline-steps)
+  - [Outputs](#outputs)
+  - [Re-running from a Specific Step](#re-running-from-a-specific-step)
+  - [Orphan-Connection Pass](#orphan-connection-pass)
+- [Merge Pipeline](#merge-pipeline)
 - [Advanced Options](#advanced-options)
 - [Development](#development)
 - [Design](#design)
@@ -150,7 +166,11 @@ Run `python context_calculator.py --context <N> --max-output <M>` to compute cor
 
 ---
 
-## Running
+## Extract Pipeline
+
+Reads a directory of `.md` files and produces a typed knowledge graph in three output formats. The pipeline runs 11 sequential steps; all intermediate state is persisted so any step can be re-entered without repeating upstream work.
+
+### Running
 
 ```bash
 uv run mykg extract-graph <input_dir> [OPTIONS]
@@ -197,7 +217,7 @@ uv run mykg extract-graph my_notes/ --base-schema ontology/core.ttl
 
 ---
 
-## Sessions
+### Sessions
 
 Every run automatically creates an isolated session folder:
 
@@ -217,7 +237,7 @@ The sessions root is configurable via `pipeline.paths.sessions_dir` (default: `s
 
 ---
 
-## Pipeline Steps
+### Pipeline Steps
 
 The pipeline runs 11 steps in sequence. All intermediate state is written to disk so any step can be re-entered without repeating upstream work.
 
@@ -239,7 +259,7 @@ Pass 1 internally runs four sequential stages: parallel batch induction → algo
 
 ---
 
-## Outputs
+### Outputs
 
 ### Property Graph (JSONL)
 
@@ -322,7 +342,7 @@ Node/edge attributes are exported as `attr_<name>_value` / `attr_<name>_confiden
 
 ---
 
-## Re-running from a Specific Step
+### Re-running from a Specific Step
 
 Use `--from-step` to delete a step's outputs and all downstream outputs, then re-run from that point.
 
@@ -356,7 +376,7 @@ uv run mykg extract-graph my_notes/ --session $SESSION --from-step orphan_connec
 
 ---
 
-## Orphan-Connection Pass
+### Orphan-Connection Pass
 
 After assembly, nodes with zero edges are "orphans" — present in the graph but unreachable by traversal. The orphan pass reconnects them in two stages:
 
@@ -370,9 +390,9 @@ Configure via `pipeline.orphan_pass.*` in `pipeline_config.yaml`. Disable entire
 
 ---
 
-## Merging Sessions
+## Merge Pipeline
 
-Combine two independently-produced sessions into a unified knowledge graph:
+`mykg merge-graphs` is a 12-step pipeline that combines two independently-produced extract sessions into a single unified knowledge graph. Both sessions are read-only; all output lands in a fresh timestamped session.
 
 ```bash
 uv run mykg merge-graphs <session-A> <session-B> [OPTIONS]
@@ -395,6 +415,23 @@ uv run mykg merge-graphs A B --output-session <merged-name>
 | `--thesaurus PATH` | SKOS thesaurus for schema synonym matching |
 | `--base-schema PATH` | Locked TBox TTL base schema |
 | `--from-step NAME` | Force re-run from a specific merge step |
+
+### Merge Pipeline Steps
+
+| # | Step | LLM | What it does |
+|---|---|---|---|
+| 1 | `merge_setup` | — | Load both sessions, namespace shard files, write `source_map.json` |
+| 2 | `merge_schema` | ✓ (3 calls) | Schema union → LLM harmonization → LLM quality review → `schema.json` |
+| 3 | `schema_validate` | — | RDFS validation; LLM correction on failure |
+| 4 | `human_review` | — | Optional gate (`--review`); edit `schema.json` before re-extraction |
+| 5 | `schema_flatten` | — | Flatten inheritance for LLM prompts |
+| 6 | `merge_reextract` | ✓ | Re-extract chunks for new properties (`none`/`surgical`/`full`) |
+| 7 | `merge_raw` | — | Namespace + merge raw extractions from both sessions |
+| 8 | `assemble` | — | Stable IDs, node/edge dedup, edge metadata sidecar |
+| 9 | `orphan_score` | — | Co-occurrence heuristic for isolated nodes |
+| 10 | `orphan_connect` | ✓ | LLM confirmation for orphan edges |
+| 11 | `validate_graph` | — | Export `nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, `networkx_output/` |
+| 12 | `merge_manifest` | — | Write `merge_manifest.json` audit record |
 
 **What happens:**
 

@@ -31,9 +31,16 @@ For usage documentation, see [README.md](../README.md). For the full list of des
 
 ## System Overview
 
-mykg is a **two-pass LLM pipeline** that transforms a corpus of Markdown documents into a typed property graph with an RDFS-compatible ontology layer.
+mykg provides **two independent pipelines**, both invoked as CLI commands and both producing the same three output formats:
 
-The fundamental insight is to separate **schema induction** (what kinds of things and relationships exist in this corpus?) from **instance extraction** (which specific entities and relationships appear in each document?). This produces a globally consistent schema without requiring manual ontology authoring, while keeping extraction prompts focused and deterministic.
+| Command | Steps | What it does |
+|---|---|---|
+| `mykg extract-graph <dir>` | 11 | Reads `.md` files; induces schema (Pass 1); extracts instances (Pass 2); assembles and exports the graph |
+| `mykg merge-graphs <A> <B>` | 12 | Combines two extract sessions; reconciles schemas; deduplicates nodes/edges across sessions; re-extracts for new properties |
+
+### Extract Pipeline Overview
+
+The extract pipeline separates **schema induction** (what kinds of things and relationships exist in this corpus?) from **instance extraction** (which specific entities and relationships appear in each document?). This produces a globally consistent schema without requiring manual ontology authoring, while keeping extraction prompts focused and deterministic.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -82,6 +89,48 @@ The fundamental insight is to separate **schema induction** (what kinds of thing
 │  networkx_output/ (GML, GraphML, GEXF, JSON,            │
 │                    knowledge_graph.html, edge list …)    │
 └─────────────────────────────────────────────────────────┘
+```
+
+### Merge Pipeline Overview
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Input: session A + session B (both read-only)            │
+└──────────────────────┬───────────────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────────────┐
+│  merge_setup                                              │
+│  Namespace all file keys: session_a/<fname>               │
+│  Write source_map.json (full provenance)                  │
+└──────────────────────────────────────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────────────┐
+│  merge_schema  (3 LLM calls — same chain as Pass 1)       │
+│  merge_proposals([schema_a, schema_b])                    │
+│  → harmonize_schema() → review_schema_quality()           │
+│  → schema.json  schema.ttl  schema_history/               │
+└──────────────────────────────────────────────────────────┘
+                       │  [optional human review gate]
+                       ▼
+┌──────────────────────────────────────────────────────────┐
+│  merge_reextract  (strategy: none | surgical | full)      │
+│  Re-extract only chunks needed for new schema properties  │
+└──────────────────────────────────────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────────────┐
+│  merge_raw → assemble → orphan_score → orphan_connect     │
+│  (reused extract-pipeline steps)                          │
+└──────────────────────────────────────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────────────┐
+│  validate_graph + merge_manifest                          │
+│  nodes.jsonl  edges.jsonl  knowledge_graph.ttl            │
+│  networkx_output/   merge_manifest.json                   │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ---
