@@ -91,6 +91,10 @@ sessions/2026-05-17T18-31-07/
 Requires Python 3.11+ and one of: an Anthropic/OpenAI/OpenRouter API key, Ollama running locally, or the `claude` CLI.
 
 ```bash
+# 0. Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh   # macOS / Linux
+# Windows: winget install astral-sh.uv
+
 # 1. Install
 git clone <repo-url> && cd mykg
 uv sync          # or: pip install -e .
