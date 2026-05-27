@@ -33,6 +33,7 @@ dependencies = [
 
 [project.scripts]
 mykg = "mykg.cli:main"
+context-calculator = "mykg.utility.context_calculator:main"
 
 [build-system]
 requires = ["hatchling"]

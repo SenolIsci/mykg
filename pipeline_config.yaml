@@ -16,7 +16,7 @@ profiles:
   # Change llm.model to target a specific model (openrouter.ai/models).
   # Requires OPENROUTER_API_KEY in env / .env
   #
-  # Token budget chain (use context_calculator.py to recompute when switching models):
+  # Token budget chain (use context-calculator to recompute when switching models):
   #   ① context_window    = 200000
   #   ② max_output_tokens = 100000
   #   ③ input_headroom    = ① − ② = 100000
@@ -35,7 +35,7 @@ profiles:
       base_url: https://openrouter.ai/api/v1
       # Set model to a specific OpenRouter model slug (see openrouter.ai/models).
       # For 128K+ models raise window_tokens, overlap_tokens, and batch_token_target proportionally
-      # (run: python context_calculator.py --context <N> --max-output <M>).
+      # (run: context-calculator --context <N> --max-output <M>).
       model: google/gemini-3.5-flash #google/gemma-4-31b-it
       timeout: 1800                # seconds per LLM call before raising a timeout error
       retry_429_max: 1          # max retries on HTTP 429 rate-limit before giving up
@@ -129,7 +129,7 @@ profiles:
   # No ANTHROPIC_API_KEY needed — billing is via your Claude Pro/Max plan.
   # max_workers must be 1; the claude CLI is serial by design.
   #
-  # Token budget chain (use context_calculator.py to recompute when switching models):
+  # Token budget chain (use context-calculator to recompute when switching models):
   #   ① context_window    = 200000
   #   ② max_output_tokens = 100000
   #   ③ input_headroom    = ① − ② = 100000
@@ -236,7 +236,7 @@ profiles:
   # OpenAI GPT-4o — direct API, requires OPENAI_API_KEY in env / .env
   # Optional: set llm.base_url to use Azure OpenAI or any OpenAI-compatible endpoint.
   #
-  # Token budget chain (use context_calculator.py to recompute when switching models):
+  # Token budget chain (use context-calculator to recompute when switching models):
   #   ① context_window    = 128000
   #   ② max_output_tokens = 16384
   #   ③ input_headroom    = ① − ② = 111616

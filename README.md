@@ -140,7 +140,7 @@ Switch provider by setting `profile:` at the top of `pipeline_config.yaml`.
 | `pipeline.export.networkx_enabled` | `true` | Write NetworkX formats to `output/networkx_output/` |
 | `pipeline.error_gate.enabled` | `true` | Pause all workers on repeated API errors |
 
-Run `python context_calculator.py --context <N> --max-output <M>` to compute correct `window_tokens` and `batch_token_target` for a different model's context window.
+Run `context-calculator --context <N> --max-output <M>` to compute correct `window_tokens` and `batch_token_target` for a different model's context window.
 
 ## Extract Pipeline
 
@@ -490,7 +490,7 @@ uv run ruff format src/ tests/         # format
 When switching to a model with a different context window:
 
 ```bash
-python context_calculator.py --context 128000 --max-output 16384
+context-calculator --context 128000 --max-output 16384
 ```
 
 Outputs a ready-to-paste YAML snippet for the `pipeline:` block.
