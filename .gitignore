@@ -26,3 +26,4 @@ intermediate/
 sessions/
 .coverage
 htmlcov
+CLAUDE.md
