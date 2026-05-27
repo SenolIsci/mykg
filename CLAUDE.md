@@ -168,6 +168,9 @@ All intermediate state is persisted as JSON between pipeline stages for debuggin
 | `llm.log` | During the run (session mode) | One JSON line per LLM call — provider, model, token counts, latency, cache stats; written alongside `run.log` in the session root; absent when `--log-file` is omitted outside session mode |
 | `intermediate/llm_calls/` | During the run (when `capture_prompts: true`) | Full prompt/response pairs — one `<n>_<slug>_input.md` + `<n>_<slug>_output.md` pair per LLM call; absent if `logging.capture_prompts` is false |
 | `walkthrough.md` | After the run completes (session mode) | Human-readable markdown summary of the pipeline run — stats, schema overview, and per-step outcomes; written at session root by `step_walkthrough` |
+| `intermediate/source_map.json` | `merge_setup` (merge pipeline only) | Maps every namespaced file key (`session_alias/filename`) to provenance: original session name, alias, SHA256, role (`input_a`/`input_b`); `_meta` block records `prep_mode` of each source session |
+| `intermediate/merge_manifest.json` | `merge_manifest` step (merge pipeline only) | Audit record: `session_a`, `session_b`, `merged_at` (ISO timestamp), `schema_synonym_log`, `reextraction_strategy`, `schema_delta_session_a`, `schema_delta_session_b` |
+| `intermediate/merge_reextract.done` | After `merge_reextract` completes (merge pipeline only) | Sentinel file; tells `_is_done` that merge re-extraction finished so it is skipped on re-entry |
 
 ### D17 — Human Review Gate Between Passes
 After Pass 1, the schema is written to `intermediate/schema.json` (source of truth) and `intermediate/schema.ttl` (TBox-only RDFS view). Before the human review gate, `schema.ttl` is validated automatically using rdflib (syntax) and custom semantic checks (domain/range refer to declared classes, no conflicting ranges). If validation fails, the errors are sent back to the LLM with a correction prompt for one retry — the LLM returns a corrected schema, `schema.json` and `schema.ttl` are regenerated, and validation runs once more. The pipeline then always proceeds to the human review gate (Step 4) regardless of the second result. All validation outcomes (both attempts) are written to `intermediate/schema_validation_errors.json` for the reviewer. The user edits `schema.json` if needed; `schema.ttl` is regenerated from it before Pass 2 runs. The gate is optional but recommended.
@@ -393,6 +396,7 @@ Every schema write is recorded in `intermediate/schema_history/` as a numbered d
 - `schema_validate` — LLM correction after RDFS validation failure
 - `schema_gap` — new properties added by orphan schema-gap loop
 - `schema_gap_correct` — LLM correction after schema-gap proposal introduced invalid RDFS
+- `session_merge` — merged schema after cross-session `merge_schema` step
 
 This directory is written by `src/mykg/schema_history.py` and can be used to reconstruct the schema evolution across a run.
 

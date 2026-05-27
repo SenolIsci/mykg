@@ -432,8 +432,8 @@ def score_orphan_candidates_v2(
                 unresolvable_orphans.append(orphan_id)
 
     if unresolvable_orphans:
-        log.debug(
-            "Stage 1 — %d orphan(s) with unknown provenance skipped: %s",
+        log.warning(
+            "Stage 1 — %d orphan(s) with unknown provenance (no resolvable source chunk): %s",
             len(unresolvable_orphans),
             unresolvable_orphans,
         )
@@ -458,7 +458,7 @@ def score_orphan_candidates_v2(
         len(groups),
         sum(len(g.orphan_ids) for g in groups),
     )
-    return groups, []
+    return groups, unresolvable_orphans
 
 
 # ---------------------------------------------------------------------------

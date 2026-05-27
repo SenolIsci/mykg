@@ -49,7 +49,7 @@ def run_orphan_score(ctx: PipelineContext) -> None:
         if manifest_path.exists():
             file_manifest = json.loads(manifest_path.read_text())
 
-    groups, schema_gap_orphans = score_orphan_candidates_v2(
+    groups, unresolvable_orphans = score_orphan_candidates_v2(
         nodes,
         edge_metadata,
         chunk_node_index,
@@ -63,17 +63,32 @@ def run_orphan_score(ctx: PipelineContext) -> None:
 
     payload = {
         "groups": [g.model_dump() for g in groups],
-        "schema_gap_orphans": [s.model_dump() for s in schema_gap_orphans],
+        "schema_gap_orphans": [],
     }
     (ctx.intermediate_dir / "orphan_candidates.json").write_text(
         json.dumps(payload, indent=_cfg.JSON_INDENT)
     )
 
+    # Write advisory events for orphans with no resolvable source chunk.
+    if unresolvable_orphans:
+        orphan_log_path = ctx.intermediate_dir / "orphan_log.json"
+        existing: list[dict] = []
+        if orphan_log_path.exists():
+            try:
+                existing = json.loads(orphan_log_path.read_text())
+            except (json.JSONDecodeError, OSError):
+                existing = []
+        for orphan_id in unresolvable_orphans:
+            existing.append({"event": "orphan_unconnectable", "orphan_id": orphan_id})
+        orphan_log_path.write_text(json.dumps(existing, indent=_cfg.JSON_INDENT))
+
     total_orphans = sum(len(g.orphan_ids) for g in groups)
     blank_groups = sum(1 for g in groups if g.is_blank_response)
     log.info(
-        "Step orphan_score — %d orphan(s) in %d group(s) (%d blank-response group(s))",
+        "Step orphan_score — %d orphan(s) in %d group(s) (%d blank-response group(s)), "
+        "%d unresolvable orphan(s) logged as advisory",
         total_orphans,
         len(groups),
         blank_groups,
+        len(unresolvable_orphans),
     )

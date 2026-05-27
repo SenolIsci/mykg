@@ -357,10 +357,10 @@ def test_run_validate_graph_does_not_raise_on_tbox_errors(tmp_path):
 
 
 def test_export_step_not_llm_step():
-    """The export Step must have is_llm_step=False."""
+    """The validate_graph Step must have is_llm_step=False."""
     from mykg.pipeline import STEPS
 
-    export_step = next(s for s in STEPS if s.name == "export")
+    export_step = next(s for s in STEPS if s.name == "validate_graph")
     assert export_step.is_llm_step is False
 
 

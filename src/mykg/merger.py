@@ -553,6 +553,31 @@ def _build_targeted_reextract_chunks(
     return dict(targeted)
 
 
+def _namespace_shards(intermediate_dir: Path, session_alias: str) -> None:
+    """Rewrite shard _fname fields to include the session namespace prefix.
+
+    run_pass2/run_pass2_batched write shards with un-namespaced _fname values
+    (e.g. "notes.md"). After merge re-extraction, those shards must carry the
+    namespaced key (e.g. "session_a/notes.md") so that merge_raw and the orphan
+    pass can match them against the rest of the merged session's data.
+    """
+    for shard_subdir in ("raw_extractions_shards", "chunk_index_shards"):
+        shard_path = intermediate_dir / shard_subdir
+        if not shard_path.is_dir():
+            continue
+        prefix = f"{session_alias}/"
+        for shard_file in shard_path.glob("*.json"):
+            try:
+                data = json.loads(shard_file.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError) as exc:
+                log.warning("_namespace_shards — could not read %s: %s", shard_file, exc)
+                continue
+            fname = data.get("_fname", "")
+            if fname and not fname.startswith(prefix):
+                data["_fname"] = f"{prefix}{fname}"
+                shard_file.write_text(json.dumps(data, indent=_cfg.JSON_INDENT), encoding="utf-8")
+
+
 def reextract_for_merge(
     session_alias: str,
     session_path: Path,
@@ -767,6 +792,9 @@ def reextract_for_merge(
             session_alias,
             len(new_raw),
         )
+        # Namespace shard _fname fields written by run_pass2 so that merge_raw and
+        # the orphan pass can match them against the rest of the merged session's data.
+        _namespace_shards(intermediate_dir, session_alias)
         # Merge re-extracted files back into the full namespaced dict.
         # new_raw keys are un-namespaced; namespace them before updating.
         namespaced_new = namespace_raw_extractions(new_raw, session_alias)
@@ -828,4 +856,5 @@ def reextract_for_merge(
         session_alias,
         len(new_raw),
     )
+    _namespace_shards(intermediate_dir, session_alias)
     return namespace_raw_extractions(new_raw, session_alias)
