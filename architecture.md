@@ -1,142 +1,370 @@
-# Architecture
+# myKG — Architecture and Design
 
-Last reviewed: 2026-05-25 (Third four-agent review — merge pipeline, walkthrough health status, merge re-entry correctness)
+This document explains how **myKG** works at a conceptual level: the pipelines, the key stages, the data it produces, and the design choices behind it. For command-line usage and options, see [README.md](../README.md). For the authoritative record of all design decisions (D1–D38) and key invariants, see [CLAUDE.md](../CLAUDE.md).
+
+---
+
+## Contents
+
+- [System Overview](#system-overview)
+- [Orchestrator](#orchestrator)
+- [Extract Pipeline Steps](#extract-pipeline-steps)
+- [Merge Pipeline Steps](#merge-pipeline-steps)
+- [Extract Pipeline](#extract-pipeline)
+  - [Pass 1: Schema Induction](#pass-1-schema-induction)
+  - [Pass 2: Instance Extraction](#pass-2-instance-extraction)
+  - [Assembly and Deduplication](#assembly-and-deduplication)
+  - [Orphan-Connection Pass](#orphan-connection-pass)
+  - [Name Normalization](#name-normalization)
+- [Merge Pipeline](#merge-pipeline)
+- [Output Formats](#output-formats)
+- [Resumability and Re-entry](#resumability-and-re-entry)
+- [Re-entry Points](#re-entry-points)
+- [Correction Model](#correction-model)
+- [LLM Provider Support](#llm-provider-support)
+- [Key Design Decisions](#key-design-decisions)
+
+---
 
 ## System Overview
 
-mykg is a two-pass knowledge graph extractor that reads a directory of Markdown files and produces three parallel output families: `nodes.jsonl` + `edges.jsonl` for property graph consumers, `knowledge_graph.ttl` (pure RDFS Turtle) for OWL toolchains, and seven NetworkX formats (GML, GraphML, GEXF, Pajek, JSON node-link, edge list, adjacency list) in `output/networkx_output/` for graph analysis and web visualization tools. Pass 1 induces a global RDFS schema from batched file chunks; Pass 2 extracts typed node/edge instances per file against that schema; the assembler deduplicates, confidence-scores, and materialises the sidecar and final outputs. All pipeline state is persisted to intermediate JSON files so any stage can be re-entered without re-running upstream work. A two-stage orphan-connection pass runs after assembly to reconnect zero-edge nodes via co-occurrence heuristic + LLM confirmation. A two-tier correction model (KG-level correction + schema-level escalation via `SchemaUpdatedError`) handles failures automatically before falling back to human re-entry.
+**myKG** provides two independent pipelines, both producing the same three output formats (JSONL, Turtle RDF, and NetworkX):
 
-## Architecture Diagram
+| Command | What it does |
+|---|---|
+| `mykg extract-graph <dir>` | Reads Markdown files, induces a schema, extracts entities and relationships, and exports the graph |
+| `mykg merge-graphs <A> <B>` | Combines two independently-produced sessions into one unified knowledge graph |
+
+Both pipelines run as a sequence of named steps. All intermediate state is written to disk after every step, so any step can be re-entered without repeating upstream work.
 
 ```
-CLI (cli.py)
-  └── Orchestrator (orchestrator.py)
-        └── while True loop (schema restart guard)
-              └── Pipeline steps (pipeline.py → steps/)
-                    │
-                    ├── ingest          → intermediate/file_manifest.json
-                    │                     intermediate/base_schema_parsed.json (if --base-schema)
-                    │                     intermediate/thesaurus_parsed.json (if --thesaurus)
-                    ├── pass1           → intermediate/schema.json
-                    │                     intermediate/schema.ttl
-                    │                     intermediate/merge_log.json (synonym events)
-                    ├── schema_validate → intermediate/schema_validation_errors.json (failure only)
-                    │                     intermediate/schema_validate.done (sentinel)
-                    ├── human_review    → intermediate/schema_approved.flag (--review mode)
-                    ├── schema_flatten  → intermediate/flattened_schema.json
-                    ├── pass2           → intermediate/raw_extractions.json
-                    │                     intermediate/chunk_node_index.json
-                    ├── normalize_names → intermediate/name_normalization.json
-                    ├── assemble        → intermediate/edge_metadata.json
-                    │                     intermediate/nodes.json
-                    │                     intermediate/merge_log.json (dedup events)
-                    ├── orphan_score    → intermediate/orphan_candidates.json
-                    ├── orphan_connect  → intermediate/orphan_connections.json
-                    │                     intermediate/orphan_log.json
-                    │                     intermediate/schema_gap_proposals.json (if schema-gap)
-                    │                     (merges into edge_metadata.json in-place)
-                    │                     ↑ may raise SchemaUpdatedError → restart while loop
-                    └── export          → output/nodes.jsonl
-                                          output/edges.jsonl
-                                          output/knowledge_graph.ttl
-                                          output/knowledge_graph_validation.json
-                                          output/networkx_output/  (when networkx_enabled: true)
-
-LLM adapters (llm/)
-  ├── AnthropicAdapter    (provider: anthropic)
-  ├── OllamaAdapter       (provider: ollama)
-  ├── OpenAIAdapter       (provider: openai)
-  ├── OpenRouterAdapter   (provider: openrouter)
-  └── ClaudeCLIAdapter    (provider: claude-cli — uses `claude -p` subprocess; serial only, max_workers=1)
-  All selected at startup by load_adapter() from pipeline_config.yaml → provider
-
-Config (config.py)
-  └── Loads pipeline_config.yaml at import time; exposes named constants.
-      No hardcoded literals anywhere in pipeline or adapter code.
+┌─────────────────────────────────────────────────────────────────────┐
+│  INPUT                                                               │
+│  A directory of Markdown files (.md)                                 │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  PASS 1 — Schema Induction                                           │
+│                                                                      │
+│  Parallel LLM batches → Algorithmic merge → Harmonize → Quality      │
+│                                                                      │
+│  Output: a formal RDFS/OWL schema (concept types + relationships)    │
+│          ── optional human review gate ──                            │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  PASS 2 — Instance Extraction  (parallel across files)               │
+│                                                                      │
+│  For each file chunk → LLM extracts nodes[] + edges[]               │
+│  Results written to per-file shards immediately (resumable)          │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  ASSEMBLY                                                            │
+│                                                                      │
+│  Name normalization → Stable ID assignment → Deduplication          │
+│  Edge metadata sidecar written                                       │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  ORPHAN-CONNECTION PASS                                              │
+│                                                                      │
+│  Stage 1: Co-occurrence scoring (no LLM)                            │
+│  Stage 2: LLM confirmation per chunk group                           │
+│  ── schema-gap escalation triggers surgical Pass 2 restart ──        │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  EXPORT                                                              │
+│                                                                      │
+│  nodes.jsonl + edges.jsonl      → Neo4j, NetworkX, RAG              │
+│  knowledge_graph.ttl            → Protégé, SPARQL, OWL reasoners    │
+│  networkx_output/ (7 formats)   → Gephi, D3.js, yEd, …             │
+│  knowledge_graph.html           → Interactive browser visualization  │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Design Decisions
+---
 
-Key decisions from CLAUDE.md that shape the structure (full record in CLAUDE.md):
+## Orchestrator
 
-- **D3** — Provider-agnostic LLM via `LLMAdapter` ABC; one method (`complete`); swapped at startup.
-- **D4** — Sequential two-pass with global schema; Pass 2 can be parallelised per-file.
-- **D5/D7** — Schema is `concepts[]` + `properties[]`; relationship types are `rdf:Property`, never classes.
-- **D6** — Store own attributes only; flatten per-concept inheritance chain before Pass 2 (`schema_flatten` step).
-- **D8/D15** — Edge metadata lives in `edge_metadata.json` sidecar only; TTL is pure RDFS with no metadata.
-- **D9** — Every attribute carries `{value, confidence}`; missing attributes are `{null, 0.0}`, never dropped.
-- **D16/D26** — All intermediate state persisted; four re-entry points (A=schema, B=extraction, C=assembly, D=orphan pass).
-- **D17** — Automated schema validation with one LLM correction retry; optional human review gate.
-- **D18** — Python library is primary; CLI wraps it.
-- **D21** — `synonym_match` is purely lexical (PascalCase split + normalise + optional SKOS thesaurus).
-- **D29** — Node aliases: flat `list[str]` of non-canonical surface forms; absent (not `[]`) when normalization disabled; emitted as `skos:altLabel` in TTL ABox.
-- **D30** — Two-stage orphan-connection pass: Stage 1 co-occurrence heuristic → Stage 2 LLM confirmation with all name mentions via `_extract_relevant_excerpt()`.
-- **D31** — Two-tier correction model: Tier 1 KG-level (orphan reconnection, name normalization, per-step retry) and Tier 2 schema-level escalation (`SchemaUpdatedError` → iterative restart, capped at `schema_max_restarts`).
-- **D35** — Pass 1 runs three LLM stages per run after parallel batch induction: (1) parallel batch induction via `ThreadPoolExecutor`, (2) algorithmic merge (`merge_proposals()`), (3) harmonization LLM call (`harmonize_schema()`), (4) quality review LLM call (`review_schema_quality()`). All four stages write delta records to `schema_history/`.
-- **D36** — `schema_history` module (`src/mykg/schema_history.py`) tracks schema evolution via numbered delta files per trigger (`pass1_merge`, `schema_harmonize`, `schema_quality`, `schema_gap`, `schema_gap_correct`, `schema_validate`).
-- **D37** — Surgical re-extraction on schema-gap restart: shard directories are preserved; only orphan-source chunks (from `schema_hints.shared_chunks`) are re-extracted; all other file shards are reused unchanged.
-- **Invariant 7** — `pipeline_config.yaml` is the sole source of truth; `config.py` exposes constants.
-- **Invariant 8** — All data models use Pydantic `BaseModel`; no Python `dataclasses`.
-- **Invariant 9 (Run isolation)** — Each run is fully isolated; inputs, intermediate state, outputs, and logs are co-located and self-contained. A run can always be resumed from its own snapshot without depending on external state.
-- **Invariant 10 (Fine-grained resumability)** — Long-running extraction is resumable at the finest meaningful granularity. Work already completed is never repeated on restart; only the remaining work is resubmitted.
-- **Invariant 11 (Durable bounded logs)** — Log output is bounded and durable. Logs are scoped to their run, rotate automatically when large, and are never silently discarded.
-- **Invariant 12 (Mandatory parallelism)** — All data-processing stages that operate over independent items (files, chunks, candidates) must be parallelised using `ThreadPoolExecutor`. Serial loops over collections are a bug. Worker count is always configurable via `pipeline_config.yaml` — never hardcoded. Applies to ingest, Pass 1 batch dispatch, Pass 2 file extraction, orphan scoring, and any future bulk step.
-- **Invariant 13 (LLM context and rate limit respect)** — `window_tokens + max_tokens` must never exceed the active model's context window. Worker counts must be set conservatively enough to avoid 429 rate-limit errors. A 429 is a misconfiguration signal — reduce `max_workers` in `pipeline_config.yaml`; it is not a transient error to silently retry.
+The orchestrator drives the pipeline as a loop over an ordered list of named steps. For each step it:
+
+1. **Checks completion** — inspects sentinel files and expected output files on disk. Completed steps are skipped entirely, enabling seamless re-entry after a crash or manual edit.
+2. **Runs the step** — calls the step's function with the shared pipeline context object, which carries in-memory state and all resolved paths.
+3. **Handles failure** — on error, retries once automatically. If the step still fails and it is an LLM step, sends a targeted correction prompt back to the LLM and tries a third time. If all three attempts fail, the pipeline halts (or logs a warning for non-blocking steps).
+4. **Persists state** — writes `intermediate/pipeline_state.json` after every step transition, recording which steps are done, running, or failed.
+
+The orchestrator also manages the schema-gap restart loop: when the orphan-connection pass discovers that new schema properties are needed, it raises an internal signal that the orchestrator catches, invalidates the affected downstream steps, and restarts the loop from Pass 2 — without re-running schema induction.
+
+---
+
+## Extract Pipeline Steps
+
+The extract pipeline (`mykg extract-graph`) runs 11 steps in sequence. Steps marked **LLM** make one or more calls to the configured LLM provider.
+
+| # | Step | LLM | What it does | Key outputs |
+|---|---|---|---|---|
+| 1 | `ingest` | — | Reads all Markdown files, computes content hashes, splits each file into overlapping token windows, and builds the file manifest used by all downstream steps | `file_manifest.json` |
+| 2 | `pass1` | ✓ (3 calls) | Induces a global RDFS schema from the corpus via parallel batch induction, algorithmic merge, LLM harmonization, and LLM quality review | `schema.json`, `schema.ttl`, `schema_history/` |
+| 3 | `schema_validate` | — | Validates `schema.json` with rdflib (syntax) and custom semantic checks (domain/range refer to declared classes, no conflicting ranges). On failure, sends a correction prompt to the LLM and retries once | `schema_validate.done` |
+| 4 | `human_review` | — | Optional gate (active only with `--review`). Pauses the pipeline until you run `mykg approve-schema`. Lets you inspect and edit the schema in Protégé or a text editor before any entity is extracted | `schema_approved.flag` |
+| 5 | `schema_flatten` | — | Walks the concept hierarchy and computes the full attribute list for each type, including inherited attributes. The LLM in Pass 2 receives this flat list and never sees the inheritance structure | `flattened_schema.json` |
+| 6 | `pass2` | ✓ | Extracts typed entities and relationships from each document chunk, in parallel across files. Each file's results are written to a per-file shard immediately on completion | `raw_extractions_shards/`, `chunk_node_index.json`, `failed_chunks.json` |
+| 7 | `normalize_names` | ✓ | Sends all extracted names per concept type to the LLM and asks it to group surface-form variants. Returns an alias-to-canonical mapping used during assembly | `name_normalization.json` |
+| 8 | `assemble` | — | Assigns stable IDs, deduplicates nodes and edges across all files, applies the name normalization map, writes the edge metadata sidecar, and logs all merge decisions | `edge_metadata.json`, `nodes.json`, `merge_log.json` |
+| 9 | `orphan_score` | — | Maps each zero-edge node to its source chunk using the chunk node index. Produces one candidate group per source chunk that contains at least one orphan | `orphan_candidates.json` |
+| 10 | `orphan_connect` | ✓ | For each candidate group, calls the LLM once with the full source chunk text to find missing relationships. Validates and merges confirmed edges into the sidecar. Escalates to schema-gap restart if needed | `orphan_connections.json`, `orphan_log.json` |
+| 11 | `validate_graph` | — | Exports all three output formats from the same in-memory data: JSONL, Turtle RDF, and all NetworkX formats. Validates the Turtle file before writing. Generates the interactive HTML visualization | `nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, `networkx_output/` |
+
+---
+
+## Merge Pipeline Steps
+
+The merge pipeline (`mykg merge-graphs`) runs 12 steps. Steps 3–5 and 8–11 are reused directly from the extract pipeline.
+
+| # | Step | LLM | What it does | Key outputs |
+|---|---|---|---|---|
+| 1 | `merge_setup` | — | Loads both source sessions, prefixes all file keys with their session name (e.g. `session_a/notes.md`), copies shard files into the new session, and records full file provenance | `source_map.json` |
+| 2 | `merge_schema` | ✓ (3 calls) | Runs the same three-stage schema merge chain as Pass 1: algorithmic union of both schemas, LLM harmonization, LLM quality review | `schema.json`, `schema.ttl`, `schema_history/` |
+| 3 | `schema_validate` | — | Reused from extract pipeline | `schema_validate.done` |
+| 4 | `human_review` | — | Optional gate; controlled by `merge_graphs.human_review` config flag | `schema_approved.flag` |
+| 5 | `schema_flatten` | — | Reused from extract pipeline | `flattened_schema.json` |
+| 6 | `merge_reextract` | ✓ | Re-extracts chunks affected by new schema properties using the configured strategy: `none` (skip), `surgical` (only chunks containing nodes of the new property's domain/range type), or `full` (all files from both sessions) | Updated shard files |
+| 7 | `merge_raw` | — | Combines namespaced raw extractions from both sessions into a single merged extraction set, ready for assembly | `raw_extractions.json` |
+| 8 | `assemble` | — | Reused from extract pipeline | `edge_metadata.json`, `nodes.json`, `merge_log.json` |
+| 9 | `orphan_score` | — | Reused from extract pipeline | `orphan_candidates.json` |
+| 10 | `orphan_connect` | ✓ | Reused from extract pipeline | `orphan_connections.json`, `orphan_log.json` |
+| 11 | `validate_graph` | — | Reused from extract pipeline | `nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, `networkx_output/` |
+| 12 | `merge_manifest` | — | Writes the merge audit record: source session names, timestamp, schema deltas for each session, re-extraction strategy used, and synonym collapse events from schema merge | `merge_manifest.json` |
+
+---
+
+## Extract Pipeline
+
+The extract pipeline runs 11 steps. The first two are the core LLM passes; the rest handle normalization, assembly, quality improvement, and export.
+
+The fundamental separation is between **schema induction** — asking "what kinds of things and relationships exist in this document collection?" — and **instance extraction** — asking "which specific entities and relationships appear in each document?" Separating these two concerns produces a globally consistent vocabulary without requiring manual ontology authoring, while keeping each extraction prompt focused and deterministic.
+
+### Pass 1: Schema Induction
+
+Pass 1 reads the entire document corpus and produces a formal RDFS/OWL schema describing the concept types and relationship types that exist in your content.
+
+It runs four sequential stages:
+
+**Parallel batch induction.** Documents are split into overlapping windows. All windows are dispatched concurrently to the LLM, each batch producing a schema proposal: a set of concept types (like Person, Organization, Project) and relationship types (like works_at, depends_on). Batching is parallelised to minimise wall-clock time on large corpora.
+
+**Algorithmic merge.** All batch proposals are merged without another LLM call. Exact duplicates are collapsed first, then near-duplicates are resolved using string normalization and, if you supplied a SKOS thesaurus, vocabulary-aware synonym matching. Attributes from duplicate entries are unioned. If you supplied a locked base schema, those classes and properties are protected — the LLM cannot rename, remove, or restructure them.
+
+**Harmonization.** A single LLM call sees both the merged schema and the raw batch proposals. It collapses semantic near-duplicates the algorithmic step missed — for example, collapsing "MilitaryUnit" and "ArmyUnit" into one canonical type. The original is kept if the response is unparseable.
+
+**Quality review.** A second LLM call removes over-narrow named-entity singletons (a concept like "FourthAirForce" should be an instance of MilitaryUnit, not a concept type), fixes singleton types with no meaningful abstraction, and ensures every concept has at least a name attribute.
+
+The result is written to `intermediate/schema.json` and `intermediate/schema.ttl`. If you run with `--review`, the pipeline pauses here so you can inspect and edit the schema in Protégé or a text editor before any entity is extracted.
+
+Every schema write is also recorded as a numbered delta file in `intermediate/schema_history/` so you can reconstruct how the schema evolved across the run.
+
+### Pass 2: Instance Extraction
+
+Pass 2 runs against the induced schema. For each document, it extracts the specific entities and relationships present.
+
+**Schema flattening.** Before extraction begins, the pipeline walks the concept hierarchy and computes the full attribute list for each concept type, including inherited attributes from parent classes. The LLM receives this flat list. It never sees the word "inheritance". This ensures inherited attributes are always extracted, regardless of where they are declared in the hierarchy.
+
+**Parallel extraction.** All source files are processed concurrently. For each file, chunks are processed in sequence. Each LLM call returns a set of typed nodes and a set of typed edges between those nodes.
+
+After each LLM call, the pipeline validates the response: edges whose type is not in the schema are rejected, as are edges that reference node IDs not present in the same extraction. Any node that exists solely to anchor a rejected edge is also dropped. Missing attributes are backfilled with a null value and zero confidence — they are never silently omitted.
+
+**Stateful chunks.** When stateful chunk mode is enabled, each chunk receives the node IDs extracted from the previous chunk in the same file. This lets the LLM use stable, consistent IDs across chunk boundaries within a document.
+
+**Per-file shards.** When a file finishes, its results are written immediately to a per-file shard on disk. On restart, files with existing shards are skipped. Only unfinished files are re-extracted.
+
+### Assembly and Deduplication
+
+Once all files are extracted, the assembler combines everything into a single consistent graph.
+
+**Stable IDs.** Every node is assigned a human-readable stable ID derived from its type and canonical name — for example, `person-alice-smith` or `organization-acme-corp`. The same entity extracted from multiple files always produces the same ID.
+
+**Node deduplication.** Nodes sharing the same stable ID are merged. For each attribute, the value with the highest confidence is kept. When two sources both have maximum confidence but different string values, they are concatenated rather than silently discarded. Node confidence is the mean (or max, configurable) across all sources. All source files are recorded on the merged node.
+
+**Edge deduplication.** Edges are identified by their type, source node, and target node. Duplicates from multiple files are merged using the same rules as nodes.
+
+**Edge metadata sidecar.** All edge attributes — confidence scores, role, start date, and any other relationship-level fields — are stored in a separate sidecar file (`intermediate/edge_metadata.json`). The Turtle RDF output contains only pure RDFS triples; edge metadata never appears in the TTL.
+
+All merge decisions are logged to `intermediate/merge_log.json` for review and audit.
+
+### Orphan-Connection Pass
+
+After assembly, some nodes may have no edges — they were extracted but left isolated. The orphan-connection pass attempts to reconnect them in two stages.
+
+**Stage 1 — Co-occurrence scoring (no LLM).** For each orphan node, the pipeline looks up which source chunk it came from using the chunk node index. It then finds all other nodes that appear in the same chunk. These co-occurring nodes become candidates for a relationship with the orphan. This stage produces one group record per source chunk containing at least one orphan.
+
+**Stage 2 — LLM confirmation (one call per chunk group).** For each group, one LLM call receives the full source chunk text, the orphan node IDs and names, a sample of connected nodes from the same chunk, and all schema properties. The LLM returns a set of proposed edges. Each proposed edge is validated against the schema before being accepted. Confirmed edges are merged directly into the edge metadata sidecar and tagged with `method: orphan_inferred` to distinguish them from Pass 2 edges.
+
+Orphans that cannot be connected — because no source chunk can be found, or because the LLM finds no valid relationship — are logged as advisory events in `intermediate/orphan_log.json`.
+
+**Schema-gap escalation.** If the LLM finds clear relationships in the source text but no schema property covers them, it can propose new RDFS properties. When new properties are accepted, the pipeline automatically restarts Pass 2 for the affected chunks only, then re-runs assembly and the orphan pass. This surgical re-extraction pays only the cost of the affected chunks, not the full corpus.
+
+### Name Normalization
+
+Before assembly, the pipeline runs a name normalization step. It sends all extracted names per concept type to the LLM and asks it to group surface-form variants of the same entity — for example, recognizing that "Acme Corp", "ACME", and "Acme Corporation" all refer to the same organization.
+
+The LLM returns an alias-to-canonical mapping. At assembly time, this mapping is inverted and the aliases are attached to each node. In the JSONL output, aliases appear as a flat sorted list. In the Turtle output, each alias is emitted as a `skos:altLabel` triple.
+
+---
 
 ## Merge Pipeline
 
-`mykg merge-graphs <session-A> <session-B>` merges two independently-produced pipeline sessions into a new unified session. Both source sessions are read-only; all output lands in a fresh timestamped session folder. The merge reuses the same pipeline infrastructure (steps, orchestrator, assembler, exporter) as the extract pipeline via a `MergeContext` subclass and a dedicated `MERGE_STEPS` list.
+`mykg merge-graphs` combines two independently-produced sessions. Both source sessions are read-only; all output goes to a new timestamped session folder.
 
-### MERGE_STEPS (12 steps, in order)
+**File namespacing.** Before any merging begins, all file-keyed structures from both sessions are prefixed with their session name — for example, `session_a/notes.md` and `session_b/notes.md`. This makes same-filename documents from different sessions structurally distinct, so node deduplication can work correctly across both.
 
-| Step | Phase | Description |
-|------|-------|-------------|
-| `merge_setup` | 0 | Loads both `SessionData` objects, namespaces and copies shard files into the merged `intermediate/`, writes `source_map.json` |
-| `merge_schema` | 1 | Runs `merge_proposals()` + `harmonize_schema()` + `review_schema_quality()` on both session schemas; writes `schema.json`, `schema.ttl`; records delta in `schema_history/` with trigger `"session_merge"` |
-| `schema_validate` | 2 | Reused from extract pipeline; validates `schema.ttl` with rdflib (non-blocking advisory) |
-| `human_review` | 3 | Reused; optional gate controlled by `merge_graphs.human_review` config flag |
-| `schema_flatten` | 4 | Reused; writes `flattened_schema.json` for LLM prompts |
-| `merge_reextract` | 5 | Re-extracts only files from sessions where the merged schema introduced new properties absent from that session's original schema; strategy is `"surgical"` (default), `"full"`, or `"none"`; surgical mode re-extracts targeted chunks with the merged schema — both net-new edges and any net-new nodes under the richer schema survive into deduplication (D38, Invariant 15) |
-| `merge_raw` | 6 | Namespaces raw extractions from both sessions as `session_alias/filename` and merges into `raw_extractions.json` |
-| `assemble` | 7 | Reused; deduplicates nodes and edges across both sessions; same type+name → same stable ID regardless of source session |
-| `orphan_score` | 8 | Reused; maps orphan nodes from the merged graph to source chunks → `orphan_candidates.json` |
-| `orphan_connect` | 9 | Reused; LLM confirms edges for each orphan group → merges `orphan_connections.json` into `edge_metadata.json` |
-| `validate_graph` | 10 | Reused; exports `nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, NetworkX formats |
-| `merge_manifest` | 11 | Writes `merge_manifest.json` with full audit fields (non-blocking) |
+**Schema merge.** Both session schemas are treated as batch proposals and run through the same three-stage chain as Pass 1 schema induction: algorithmic merge, harmonization, and quality review.
 
-### MergeContext
+**Re-extraction.** When the merged schema introduces relationship types that were absent from one session's original schema, those relationship types have no instances in that session's files. The pipeline offers three strategies: accept the gaps without any re-extraction, surgically re-extract only the chunks containing nodes of the new property's domain or range type, or re-run Pass 2 on all files from both sessions.
 
-`MergeContext` extends `PipelineContext` with merge-specific fields. All standard pipeline step functions accept `PipelineContext` and work unchanged with `MergeContext` via Pydantic subclassing.
+**Provenance.** A `source_map.json` file records the full provenance of every file in the merge: original session name, file path, and a content hash. A `merge_manifest.json` records the schema deltas and re-extraction strategy used.
 
-- `session_a_name`, `session_b_name` — source session names passed at CLI invocation
-- `sessions_root` — parent directory of all sessions
-- `session_a`, `session_b` — `SessionData` objects populated by `merge_setup`
-- `source_map` — dict populated by `merge_setup`; maps every namespaced file key to its provenance
-- `synonym_log` — list of synonym collapse events from `merge_schema`
-- `schema_delta_a`, `schema_delta_b` — lists of new property names absent from each source session's original schema; populated by `merge_reextract`
+The merge pipeline reuses all extract pipeline steps from schema validation onward, including assembly, the orphan-connection pass, and export.
 
-### Intermediate files specific to merge
+### Merge-Specific Intermediate Files
 
 | File | Written by | Contents |
-|------|-----------|----------|
-| `intermediate/source_map.json` | `merge_setup` | Maps every namespaced file key (`session_alias/filename`) to provenance: original session name, alias, SHA256, role (`input_a`/`input_b`) |
-| `intermediate/merge_manifest.json` | `merge_manifest` | Audit record: `session_a`, `session_b`, `merged_at`, `schema_synonym_log`, `reextraction_strategy`, `schema_delta_session_a`, `schema_delta_session_b` |
+|---|---|---|
+| `intermediate/source_map.json` | `merge_setup` | Maps every namespaced file key (`session_alias/filename`) to provenance: original session name, alias, SHA256 content hash, and role (`input_a` / `input_b`) |
+| `intermediate/merge_manifest.json` | `merge_manifest` | Audit record: source session names, merge timestamp, schema synonym collapse events, re-extraction strategy used, and schema deltas for each source session |
 
 All other intermediate files (`schema.json`, `flattened_schema.json`, `raw_extractions.json`, `edge_metadata.json`, `nodes.json`, `merge_log.json`) use the same format as the extract pipeline and are produced by reused steps.
 
-### Re-entry points for merge
+### Merge Re-entry
 
-- **Schema review gate:** run `mykg approve-schema --session <merged-session>` then re-run with `--session <merged-session>` to continue past the gate.
-- **Re-run from any step:** pass `--session <merged-session>` to the CLI; the orchestrator resumes from the last incomplete step using the standard `_is_done` sentinel mechanism.
-
----
+To resume or correct a merge session, pass `--session <merged-session-name>` when re-running `mykg merge-graphs`. The orchestrator resumes from the last incomplete step using the same sentinel mechanism as the extract pipeline. To restart from a specific step, use `--from-step <step>` with the same step names shown in the Merge Pipeline Steps table above.
 
 ---
 
-## To-Do List
+## Output Formats
 
-Items tagged: `[critical]` `[high]` `[medium]` `[low]` and `[done]` when complete.
-New items added at top. Done items are never deleted — marked `[done]` for history.
+All three output formats are produced from the same in-memory data at export time and are always kept in sync.
 
-| # | Priority | Area | Task | Added | Done |
-|---|----------|------|------|-------|------|
+### Property Graph (JSONL)
+
+`nodes.jsonl` and `edges.jsonl` are the primary format for property graph consumers: Neo4j, NetworkX, visualizers like D3.js and Gephi, and LLM retrieval-augmented generation pipelines. Every node and edge record carries typed attributes with confidence scores, source file provenance, and — for nodes — an alias list.
+
+### RDF / OWL (Turtle)
+
+`knowledge_graph.ttl` is a valid RDFS/OWL Turtle file with two sections. The TBox section declares concept types as RDFS classes with their subclass hierarchy, and relationship types as RDF properties with domain and range constraints. The ABox section records one type triple and one label triple per entity, plus one direct object-property triple per relationship.
+
+The Turtle file contains no edge metadata, no blank nodes, no RDF reification, and no RDF-star. It loads cleanly in Protégé and can be queried with any SPARQL endpoint.
+
+### NetworkX Formats
+
+Seven graph formats are written to `output/networkx_output/`: GML (human-readable), GraphML (yEd, Gephi, Cytoscape), GEXF (Gephi native with full metadata), JSON node-link (D3.js, Sigma.js), Pajek, an edge list, and an adjacency list. Node and edge attributes are exported as typed scalar pairs for compatibility with GML's strict attribute model.
+
+### Interactive HTML
+
+`output/networkx_output/knowledge_graph.html` is a self-contained force-directed graph visualization built with vis.js. It requires no server. It supports filtering nodes and edges by type, filtering by confidence threshold, name search, and hover popups with full attribute values.
+
+---
+
+## Resumability and Re-entry
+
+Every pipeline step writes its outputs and a sentinel file to disk before moving on. On restart, the pipeline checks for these sentinels and skips completed steps. Only the remaining work is submitted.
+
+Within Pass 2, each file's results are written to a per-file shard as soon as that file finishes. On restart, files with existing shards are skipped — only unfinished files are re-extracted. This gives fine-grained resumability: a crash mid-corpus loses at most the one file currently in flight.
+
+---
+
+## Re-entry Points
+
+Use `--from-step <step>` to delete a step's outputs and re-run from that point forward. There are four natural correction points:
+
+| Re-entry | `--from-step` value | When to use | What you edit first | Files reused |
+|---|---|---|---|---|
+| **A — Schema** | `pass1` or `schema_validate` | The induced schema has wrong concept types, missing properties, or incorrect hierarchy | Edit `intermediate/schema.json` directly, or load `intermediate/schema.ttl` in Protégé and save back | None — all downstream steps are invalidated |
+| **B — Extraction** | `pass2` | The LLM missed entities, hallucinated edge types, or produced wrong attributes in specific files | Edit the per-file shard in `intermediate/raw_extractions_shards/<file-slug>.json` | `schema.json`, `flattened_schema.json` |
+| **C — Assembly** | `assemble` | Deduplication merged nodes incorrectly, or the merge log shows wrong decisions | Edit `intermediate/raw_extractions.json` | `schema.json`, `flattened_schema.json`, `raw_extractions.json` |
+| **D — Orphan pass** | `orphan_score` or `orphan_connect` | Orphan candidates are wrong (re-run both stages), or only the LLM confirmations need to be redone (re-run Stage 2 only) | Delete `intermediate/orphan_candidates.json` for a full re-score, or `intermediate/orphan_connections.json` for LLM-only redo | `schema.json`, `nodes.json`, `edge_metadata.json`, `chunk_node_index.json` |
+
+There is also an automated Re-entry A triggered by the schema-gap escalation in the orphan-connection pass. When new schema properties are accepted, the orchestrator automatically invalidates Pass 2 and all downstream steps, then re-runs only the specific source chunks where the orphans appeared — not the full corpus.
+
+---
+
+## Correction Model
+
+The pipeline applies two tiers of automatic correction before asking for human intervention.
+
+**Tier 1 — Step-level retry.** Every step gets one automatic retry if it fails. For LLM steps, a second failure triggers an LLM feedback correction call: the pipeline sends the error and the bad output back to the LLM with a targeted correction prompt, then attempts the step a third time. Feedback handlers exist for schema validation failures, name normalization failures, and orphan edge proposal failures.
+
+**Tier 2 — Schema-gap escalation.** When the orphan-connection pass detects that orphans cannot be connected because no schema property covers the relevant relationship types, it escalates automatically. The LLM proposes new RDFS properties; if valid new properties are accepted, Pass 2 is restarted surgically for only the affected source chunks. The restart count is capped by a configurable limit to prevent runaway loops.
+
+---
+
+## LLM Provider Support
+
+The pipeline is fully decoupled from any specific LLM provider. A single abstract adapter interface — accepting a system prompt and a user prompt, returning a string — is all that pipeline logic depends on. Five provider implementations ship out of the box:
+
+| Provider | Notes |
+|---|---|
+| Anthropic (Claude) | Recommended for quality; supports prompt caching |
+| OpenAI (GPT-4o) | Also works with Azure OpenAI and any OpenAI-compatible endpoint |
+| Ollama | Local inference; no API key required |
+| OpenRouter | Access many models via a single API key |
+| Claude CLI | Uses the `claude -p` subprocess; no API key; billing via Claude Pro/Max plan; serial only |
+
+All provider parameters — model, context window, token limits, timeout, base URL — are set in `pipeline_config.yaml`. There are no hardcoded defaults in adapter code. A 429 rate-limit response is treated as a misconfiguration signal (reduce worker count), not a transient error to silently retry indefinitely.
+
+---
+
+## Key Design Decisions
+
+### Architecture and Pipeline
+
+| Decision | What was chosen | Why |
+|---|---|---|
+| **Two-pass architecture** | Schema induction separate from instance extraction | Per-file schemas produce inconsistent vocabularies; a global schema keeps the vocabulary coherent across all documents |
+| **Provider-agnostic LLM** | Single abstract adapter interface; provider swapped at startup via config | Pipeline logic never depends on a specific provider; switching requires only a config change |
+| **Python library primary** | CLI wraps the library, not the other way around | Enables embedding the pipeline in larger programs without going through a subprocess |
+| **Session isolation** | Each run lives in a timestamped folder containing its own inputs, intermediate state, outputs, and logs | Runs never interfere; any run can be resumed or re-entered independently without touching other sessions |
+| **Single config file** | `pipeline_config.yaml` is the sole source of truth for all parameters | No hardcoded literals in pipeline or adapter code; switching provider, model, or tuning parameters requires only a config change |
+| **Pydantic for all data models** | All structured data between pipeline stages uses Pydantic BaseModel | Free JSON serialization, field validation, and type coercion at every pipeline boundary |
+
+### Schema and Ontology
+
+| Decision | What was chosen | Why |
+|---|---|---|
+| **RDFS + property sidecar** | Relationship types as RDF predicates; edge metadata in a JSON sidecar | Standard RDF cannot hold properties on edges; keeping the TTL pure means it works with any standard RDF toolchain without modification |
+| **Concept hierarchy — store own, flatten for LLM** | Schema stores only own attributes per concept; pipeline flattens the inheritance chain before each extraction call | Compact, DRY schema representation; LLM always receives the complete attribute list without needing to understand inheritance |
+| **Synonym resolution — lexical only** | `synonym_match` uses exact string match, normalized string match, and optional SKOS thesaurus — no embedding similarity | Fast, deterministic, reproducible; no dependency on an embedding model or vector index |
+| **Base schema locking** | Optional `--base-schema` TTL locks classes and properties the LLM cannot rename, remove, or restructure | Lets you anchor an existing formal ontology while still allowing the LLM to extend it with domain-specific concepts |
+| **Schema history** | Every schema write recorded as a numbered delta file in `intermediate/schema_history/` | Allows reconstruction of schema evolution across a run; useful for debugging harmonization and quality-review decisions |
+
+### Extraction and Assembly
+
+| Decision | What was chosen | Why |
+|---|---|---|
+| **Confidence on everything** | Every attribute, node, and edge carries a 0–1 confidence score; missing values are `{null, 0.0}`, never dropped | Downstream consumers can filter by threshold; no information is silently discarded |
+| **Stable human-readable IDs** | Node IDs derived from type + canonical name (e.g., `person-alice-smith`) | Deterministic across runs; readable in raw files; stable across re-runs and merges without a lookup table |
+| **Mandatory parallelism** | All stages operating over independent items (files, chunks, candidates) must use `ThreadPoolExecutor`; serial loops are a bug | Keeps wall-clock time proportional to the slowest item, not the sum; worker count always configurable via config |
+| **Fine-grained resumability** | Pass 2 writes a per-file shard immediately when each file completes | A crash mid-corpus loses at most the one file in flight; all completed files are skipped on restart |
+| **Lossless confidence-1.0 merge** | When two sources both have maximum confidence and different string values, concatenate with `"; "` rather than discarding one | No information lost silently; downstream consumers can split on `"; "` if needed |
+
+### Orphan Pass and Correction
+
+| Decision | What was chosen | Why |
+|---|---|---|
+| **Orphan pass — chunk-level batching** | One LLM call per source chunk group, not one per candidate pair | Dramatically reduces LLM calls (91 → ~10 in test runs); full chunk context gives the LLM enough signal to find relationships |
+| **Surgical re-extraction** | On schema-gap restart, only re-extract the specific chunks where orphans appeared; all other shards are reused | O(affected chunks) cost rather than O(all files × restarts); restart count capped by config |
+| **Two-tier correction** | Tier 1: per-step retry + LLM feedback call (up to 3 attempts). Tier 2: schema-gap escalation with automated Pass 2 restart | Handles transient LLM failures automatically at Tier 1; handles structural schema gaps automatically at Tier 2; human re-entry only needed when both tiers are exhausted |
+| **Rate-limit as misconfiguration** | A 429 response is treated as a signal to reduce `max_workers`, not a transient error to retry silently | Prevents runaway retry storms; keeps the operator in control of provider cost and throughput |
+
+### Output
+
+| Decision | What was chosen | Why |
+|---|---|---|
+| **Three parallel output families** | JSONL, Turtle RDF, and NetworkX — all generated from the same in-memory data | Each format serves a different consumer without requiring a separate pipeline run |
+| **Node aliases as `skos:altLabel`** | Non-canonical surface forms stored as a flat sorted list on each node; emitted as `skos:altLabel` triples in the TTL | Standard well-known predicate; no custom vocabulary needed; works in any SPARQL endpoint |
+| **Edge metadata excluded from TTL** | Confidence scores, role, start date, and other edge attributes live only in `edge_metadata.json` | Keeps the TTL valid with any standard RDF toolchain; avoids RDF reification, blank nodes, and RDF-star |

@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import json
-import pathlib
-
-import pytest
 
 from mykg.chunker import Chunk
 from mykg.pass2_batch import build_pass2_batches, make_batch_map

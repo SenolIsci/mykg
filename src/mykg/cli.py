@@ -375,8 +375,8 @@ def merge_graphs(
 
         thes = parse_thesaurus(Path(thesaurus).read_text(), source=str(thesaurus))
 
-    from mykg.merge_orchestrator import run_merge_graphs
     from mykg.config import MERGE_GRAPHS_HUMAN_REVIEW
+    from mykg.merge_orchestrator import run_merge_graphs
 
     run_merge_graphs(
         session_a,

@@ -1,7 +1,24 @@
 [project]
 name = "mykg"
 version = "0.1.0"
-description = "Two-pass Markdown-to-knowledge-graph extractor"
+description = "Two-pass LLM pipeline that turns Markdown files into a confidence-scored knowledge graph with an induced RDFS/OWL ontology"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Senol Isci", email = "senolisci081978@gmail.com" }
+]
+keywords = ["knowledge-graph", "llm", "rdf", "ontology", "nlp", "markdown"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Text Processing :: Markup",
+]
 requires-python = ">=3.11"
 dependencies = [
     "rdflib>=7.0",
@@ -53,3 +70,4 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+ignore = ["E501"]

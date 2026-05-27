@@ -5,7 +5,12 @@ import json
 from mykg import config as _cfg
 from mykg.logging import get
 from mykg.merge_context import MergeContext
-from mykg.merger import build_merged_manifest, build_source_map, copy_session_into_merged, load_session
+from mykg.merger import (
+    build_merged_manifest,
+    build_source_map,
+    copy_session_into_merged,
+    load_session,
+)
 
 log = get("mykg.steps.merge_setup")
 

@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Callable, TypeVar
 
 from mykg import config as _cfg
-from mykg.chunker import chunk_file, count_tokens as _token_count
+from mykg.chunker import chunk_file
+from mykg.chunker import count_tokens as _token_count
 from mykg.logging import get
 from mykg.orchestrator import PipelineContext
 

@@ -4,11 +4,11 @@ from unittest.mock import MagicMock
 from mykg.chunker import Chunk
 from mykg.orchestrator import PipelineContext
 from mykg.steps.step_assemble import run_assemble
-from mykg.steps.step_validate_graph import run_validate_graph
 from mykg.steps.step_ingest import run_ingest
 from mykg.steps.step_pass1 import run_pass1_step
 from mykg.steps.step_pass2 import _fname_slug, run_pass2_step, run_schema_flatten
 from mykg.steps.step_schema import run_human_review, run_schema_validate
+from mykg.steps.step_validate_graph import run_validate_graph
 
 SCHEMA = {
     "concepts": [{"type": "Person", "parent": None, "attributes": ["name"]}],

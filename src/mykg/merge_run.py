@@ -10,7 +10,6 @@ from mykg.orchestrator import (
     SchemaUpdatedError,
     Step,
     _is_done,
-    _log_advisory,
     _review_flag_exists,
     _try_run,
 )

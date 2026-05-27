@@ -722,17 +722,17 @@ def _section_node_edge_trace(session_root: Path) -> str | None:
         f"| — | Source: Session B | `nodes.json` / `edge_metadata.json` | — "
         f"| **{b_dedup_n:,}** | **{b_dedup_e:,}** "
         f"| After B's own dedup; B had {b_raw_n:,} raw nodes / {b_raw_e:,} raw edges across {b_files} files |",
-        f"| **1** | `merge_setup` | Copy & namespace shards | — | — | — "
-        f"| Renames all keys and shard filenames to `session_a/…` and `session_b/…`; no extraction yet |",
+        "| **1** | `merge_setup` | Copy & namespace shards | — | — | — "
+        "| Renames all keys and shard filenames to `session_a/…` and `session_b/…`; no extraction yet |",
         f"| **2** | `merge_schema` | `merge_proposals()` | — | — | — "
         f"| Pure union of {a_concepts}+{b_concepts} concepts and {a_props}+{b_props} properties (structural merge, no LLM) |",
-        f"| | | `harmonize_schema()` | ✓ **LLM ×1** | — | — | Near-synonym collapse |",
+        "| | | `harmonize_schema()` | ✓ **LLM ×1** | — | — | Near-synonym collapse |",
         f"| | | `review_schema_quality()` | ✓ **LLM ×1** | — | — "
         f"| Removes narrow/singleton types → **{m_concepts} concepts, {m_props} properties** |",
-        f"| **3** | `schema_validate` | rdflib + semantic checks | — | — | — | Pass; no correction needed |",
-        f"| **4** | `human_review` | Gate | — | — | — | Auto-approved (no `--review` flag) |",
-        f"| **5** | `schema_flatten` | Flatten inheritance chains | — | — | — "
-        f"| Produces `flattened_schema.json` for Pass 2 prompts |",
+        "| **3** | `schema_validate` | rdflib + semantic checks | — | — | — | Pass; no correction needed |",
+        "| **4** | `human_review` | Gate | — | — | — | Auto-approved (no `--review` flag) |",
+        "| **5** | `schema_flatten` | Flatten inheritance chains | — | — | — "
+        "| Produces `flattened_schema.json` for Pass 2 prompts |",
         f"| **6** | `merge_reextract` | Session B shards (pre-reextract) | — "
         f"| {b_raw_n_before:,} | {b_raw_e_before:,} | Original B raw extractions |",
         f"| | | Surgical re-extraction | {reextract_llm} | — | — | {reextract_note} |",
@@ -762,8 +762,8 @@ def _section_node_edge_trace(session_root: Path) -> str | None:
         f"| {filtered_edges} edges dropped: {filter_detail} — types in `edge_metadata` but absent from merged schema |",
         f"| | | Build `knowledge_graph.ttl` | — | {nodes_jsonl_count:,} | {edges_jsonl_count:,} | Same filter applied |",
         f"| | | NetworkX export | — | {nodes_jsonl_count:,} | {edges_jsonl_count:,} | Multi-format files |",
-        f"| **12** | `merge_manifest` | Write `merge_manifest.json` | — | — | — "
-        f"| Records provenance, synonym log, schema deltas |",
+        "| **12** | `merge_manifest` | Write `merge_manifest.json` | — | — | — "
+        "| Records provenance, synonym log, schema deltas |",
     ]
 
     # Summary loss table
@@ -831,8 +831,8 @@ def _section_merge_provenance(session_root: Path) -> str | None:
 
     out += [
         "",
-        f"| Field | Value |",
-        f"|---|---|",
+        "| Field | Value |",
+        "|---|---|",
         f"| Session A | `{name_a}` |",
         f"| Session B | `{name_b}` |",
         f"| Merged at (UTC) | {merged_at} |",
@@ -884,7 +884,7 @@ def _section_merge_provenance(session_root: Path) -> str | None:
 
     out += ["", "### Node Provenance", ""]
     out += [
-        f"| Category | Count |",
+        "| Category | Count |",
         "|---|---|",
         f"| From Session A only | {len((ids_a - ids_b) & set(merged_by_id))} |",
         f"| From Session B only | {len((ids_b - ids_a) & set(merged_by_id))} |",

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from mykg.orchestrator import Step
 from mykg.steps.step_assemble import run_assemble
-from mykg.steps.step_validate_graph import run_validate_graph
 from mykg.steps.step_ingest import run_ingest
 from mykg.steps.step_normalize import run_normalize_names
 from mykg.steps.step_orphan_connect import run_orphan_connect
@@ -10,6 +9,7 @@ from mykg.steps.step_orphan_score import run_orphan_score
 from mykg.steps.step_pass1 import run_pass1_step
 from mykg.steps.step_pass2 import run_pass2_step, run_schema_flatten
 from mykg.steps.step_schema import run_human_review, run_schema_validate
+from mykg.steps.step_validate_graph import run_validate_graph
 
 STEPS: list[Step] = [
     Step(name="ingest", fn=run_ingest, outputs=["file_manifest.json"]),

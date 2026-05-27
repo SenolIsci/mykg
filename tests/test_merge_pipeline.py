@@ -3,13 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from mykg.merge_context import MergeContext
 from mykg.merge_pipeline import MERGE_STEPS
 from mykg.merge_run import run_merge
-from mykg.orchestrator import PipelineState
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -240,9 +236,6 @@ def test_run_merge_resumable_skips_done_steps(tmp_path):
     """Second run_merge call on same ctx skips all steps whose outputs exist."""
     ctx, _, intermediate_dir = _make_ctx(tmp_path)
     run_merge(ctx)
-
-    # Record completion timestamps from first run
-    state1 = json.loads((intermediate_dir / "pipeline_state.json").read_text())
 
     # Re-build ctx pointing at same dirs and run again
     ctx2, _, _ = _make_ctx.__wrapped__(tmp_path) if hasattr(_make_ctx, "__wrapped__") else (

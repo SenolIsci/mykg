@@ -1,17 +1,23 @@
-# mykg — Markdown Knowledge Graph Extractor
+# myKG — Markdown Knowledge Graph Extractor
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-489%20passing-brightgreen.svg)](tests/)
 [![Providers](https://img.shields.io/badge/LLM-Anthropic%20%7C%20OpenAI%20%7C%20Ollama%20%7C%20OpenRouter-orange.svg)](#configuration)
+[![PyPI Downloads](https://img.shields.io/pypi/dm/mykg.svg)](https://clickpy.clickhouse.com/dashboard/mykg)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-senolisci-0077B5?logo=linkedin)](https://www.linkedin.com/in/senolisci/)
 
-**mykg** turns a directory of Markdown files into a typed, confidence-scored property graph — with no manual schema authoring required.
+**myKG** automatically generates a confidence-scored knowledge graph from a directory of Markdown files, grounded in an induced RDFS/OWL ontology schema.
 
-It uses a **two-pass LLM pipeline**: Pass 1 induces a global RDFS/OWL schema from your corpus; Pass 2 extracts typed node and edge instances per file against that schema. The result is exported to three parallel formats: JSONL for property-graph consumers, Turtle RDF for OWL toolchains, and seven NetworkX formats for graph analysis and visualization.
+It uses a **two-pass LLM pipeline**: Pass 1 induces a global RDFS/OWL schema from your document corpus; Pass 2 extracts typed entity and relationship instances per file against that schema. The result is exported to multiple formats: JSONL for property-graph consumers such as Neo4j, Turtle RDF for OWL toolchains, and seven NetworkX formats for graph analysis and visualization.
+
+## Command line
 
 ```
 mykg extract-graph my_notes/
 ```
+
+## Output
 
 ```
 sessions/2026-05-17T18-31-07/
@@ -48,8 +54,6 @@ sessions/2026-05-17T18-31-07/
 - [Development](#development)
 - [Design](#design)
 
----
-
 ## Features
 
 ### Ontology-Guided Extraction
@@ -57,14 +61,14 @@ sessions/2026-05-17T18-31-07/
 - **Schema-guided knowledge graph generation** — the extracted graph is always grounded in a formal RDFS/OWL schema: concept types, property names, domain/range constraints, and the is-a hierarchy are explicit and inspectable before any entity is extracted
 - **Bring your own ontology** — supply a `--base-schema` TTL file to lock in classes and properties from an existing formal ontology; the LLM expands it with domain-specific concepts but cannot rename, remove, or contradict your authoritative vocabulary
 - **SKOS thesaurus support** — pass `--thesaurus` to load a SKOS vocabulary; `skos:exactMatch` terms are collapsed silently, `skos:closeMatch` terms trigger a warning — giving the schema merger richer synonym awareness than string matching alone
-- **Verifiable TTL ontology** — after Pass 1, the induced schema is exported as a valid RDFS/OWL Turtle file (`intermediate/schema.ttl`) that can be opened directly in ontology editors such as [Protégé](https://protege.stanford.edu/); the same TTL is validated by rdflib (syntax + semantic checks: domain/range refer to declared classes, no conflicting ranges) before any extraction begins
+- **Verifiable TTL ontology** — after Pass 1, the induced schema is exported as a valid RDFS/OWL Turtle file (`intermediate/schema.ttl`) that can be opened directly in ontology editors such as [Protégé](https://protege.stanford.edu/). The TTL is validated by rdflib (syntax + semantic checks: domain/range refer to declared classes, no conflicting ranges) before any extraction begins
 - **Human-in-the-loop ontology design** — run with `--review` to pause after schema induction; inspect and edit `schema.json` (or load `schema.ttl` in Protégé, modify, and save back) before a single entity is extracted; resume with `mykg approve-schema`
 - **Incremental updates** — run with `--append` on an existing session to add new or modified Markdown files without re-running Pass 1; the schema is reused and only the new files go through Pass 2
 
 ### Input
 
 - **Markdown files** — any directory of `.md` files; subdirectory structure is preserved; YAML/TOML frontmatter, headings, lists, and code blocks are all treated as structural signals
-- **Other formats** — convert PDFs, Word docs, HTML, and other formats to Markdown first using a document parser such as [MinerU](https://github.com/opendatalab/mineru), then point mykg at the output directory
+- **Other formats** — convert PDFs, Word docs, HTML, and other formats to Markdown first using a document parser such as [MinerU](https://github.com/opendatalab/mineru), then point myKG at the output directory
 
 ### Graph & Output
 
@@ -78,11 +82,9 @@ sessions/2026-05-17T18-31-07/
 - **Resumable pipeline** — every stage persists intermediate state; re-enter at any step after a crash or edit
 - **Session isolation** — each run is fully self-contained; inputs, intermediate state, outputs, and logs co-located
 
----
-
 ## Quick Start
 
-**Requirements:** Python 3.11+, and one of: an Anthropic/OpenAI/OpenRouter API key, Ollama running locally, or the `claude` CLI.
+Requires Python 3.11+ and one of: an Anthropic/OpenAI/OpenRouter API key, Ollama running locally, or the `claude` CLI.
 
 ```bash
 # 1. Install
@@ -90,34 +92,7 @@ git clone <repo-url> && cd mykg
 uv sync          # or: pip install -e .
 
 # 2. Configure (example: Anthropic Claude)
-cat > pipeline_config.yaml << 'EOF'
-profile: anthropic-claude
-
-profiles:
-  anthropic-claude:
-    provider: anthropic
-    llm:
-      model: claude-opus-4-7
-      context_window: 200000
-      max_output_tokens: 64000
-      timeout: 300
-    pipeline:
-      chunking:
-        window_tokens: 30000
-        overlap_tokens: 3000
-        tiktoken_encoding: cl100k_base
-      pass1:
-        batch_token_target: 136000
-        max_workers: 4
-      pass2:
-        max_workers: 4
-        stateful_chunks: true
-      normalize_names:
-        enabled: true
-        max_names_per_type: 2000
-EOF
-
-export ANTHROPIC_API_KEY=sk-ant-...
+edit pipeline_config.yaml and create .env file from sample.env file. Enter your api key credentials
 
 # 3. Run
 uv run mykg extract-graph my_notes/
@@ -128,11 +103,9 @@ For Ollama (no API key needed):
 
 ```bash
 ollama pull llama3.3
-echo "profile: ollama-local" > pipeline_config.yaml
+change active profile in pipeline_config.yaml
 uv run mykg extract-graph my_notes/
 ```
-
----
 
 ## Configuration
 
@@ -168,8 +141,6 @@ Switch provider by setting `profile:` at the top of `pipeline_config.yaml`.
 | `pipeline.error_gate.enabled` | `true` | Pause all workers on repeated API errors |
 
 Run `python context_calculator.py --context <N> --max-output <M>` to compute correct `window_tokens` and `batch_token_target` for a different model's context window.
-
----
 
 ## Extract Pipeline
 
@@ -220,8 +191,6 @@ uv run mykg extract-graph my_notes/ --session 2026-05-17T18-31-07 --from-step as
 uv run mykg extract-graph my_notes/ --base-schema ontology/core.ttl
 ```
 
----
-
 ### Sessions
 
 Every run automatically creates an isolated session folder:
@@ -239,8 +208,6 @@ sessions/
 Sessions are the primary unit of resumability. Pass `--session <name>` to resume from the last completed step. Pass `--from-step <step>` to force-restart from a specific point.
 
 The sessions root is configurable via `pipeline.paths.sessions_dir` (default: `sessions/` in the current directory).
-
----
 
 ### Pipeline Steps
 
@@ -262,9 +229,7 @@ The pipeline runs 11 steps in sequence. All intermediate state is written to dis
 
 Pass 1 internally runs four sequential stages: parallel batch induction → algorithmic merge → harmonization LLM call → quality review LLM call.
 
----
-
-### Outputs
+## Outputs
 
 ### Property Graph (JSONL)
 
@@ -345,8 +310,6 @@ Load in Protégé, query with SPARQL (Fuseki, GraphDB), or reason with HermiT/Pe
 
 Node/edge attributes are exported as `attr_<name>_value` / `attr_<name>_confidence` scalar pairs for GML compatibility.
 
----
-
 ### Re-running from a Specific Step
 
 Use `--from-step` to delete a step's outputs and all downstream outputs, then re-run from that point.
@@ -379,8 +342,6 @@ uv run mykg extract-graph my_notes/ --session $SESSION --from-step orphan_connec
 | **C — Assembly errors** | Bad dedup decisions in `merge_log.json` | Edit `raw_extractions.json` → `--from-step assemble` |
 | **D — Orphan pass** | Wrong candidates or confirmations | `--from-step orphan_score` or `orphan_connect_fullsweep` |
 
----
-
 ### Orphan-Connection Pass
 
 After assembly, nodes with zero edges are "orphans" — present in the graph but unreachable by traversal. The orphan pass reconnects them in two stages:
@@ -392,8 +353,6 @@ After assembly, nodes with zero edges are "orphans" — present in the graph but
 Unconnectable orphans (no resolvable source chunk) are logged as `orphan_unconnectable` advisory events in `orphan_log.json`.
 
 Configure via `pipeline.orphan_pass.*` in `pipeline_config.yaml`. Disable entirely with `pipeline.orphan_pass.enabled: false`.
-
----
 
 ## Advanced Options
 

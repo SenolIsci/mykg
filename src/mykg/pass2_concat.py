@@ -4,7 +4,6 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
-from mykg import config as _cfg
 from mykg.chunker import count_tokens as _token_count
 
 

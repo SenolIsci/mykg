@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import MagicMock, patch
 
 import pytest
-
-from unittest.mock import MagicMock, patch
 
 from mykg.merger import (
     build_source_map,
@@ -16,7 +15,6 @@ from mykg.merger import (
     namespace_raw_extractions,
     reextract_for_merge,
 )
-
 
 # ---------------------------------------------------------------------------
 # namespace_raw_extractions

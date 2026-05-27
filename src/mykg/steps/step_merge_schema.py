@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from mykg import config as _cfg
 from mykg.exporter import export_ttl
 from mykg.logging import get
 from mykg.merge_context import MergeContext
