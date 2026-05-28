@@ -17,6 +17,11 @@ export.networkx_enabled; written to output/networkx_output/):
   edges_nx.txt                 — plain edge list with attributes
   adjacency.txt                — adjacency list, topology only
 
+Obsidian vault output (export_obsidian, toggled via mykg_config.yaml
+export.obsidian_enabled; written to output/obsidian_vault/):
+  <Type>/<node_id>.md          — one note per entity with YAML frontmatter and wikilinks
+  index.md                     — vault root overview with per-type entity tables
+
 Node/edge attributes are flattened to GML-safe scalars:
   attr_<name>_value / attr_<name>_confidence
 source_files lists are pipe-joined ("a.md|b.md") for format compatibility.
@@ -27,9 +32,11 @@ from __future__ import annotations
 import html as _html
 import json
 import re
+from collections import defaultdict
 from pathlib import Path
 
 import networkx as nx
+import yaml
 from networkx.readwrite import json_graph
 
 from mykg import config as _cfg
@@ -665,5 +672,189 @@ def export_networkx(nodes: list[dict], edge_metadata: dict, output_dir: Path) ->
 
     nx.write_adjlist(G, str(nx_dir / "adjacency.txt"))
     written.append("adjacency.txt")
+
+    return written
+
+
+# ---------------------------------------------------------------------------
+# Obsidian vault export
+# ---------------------------------------------------------------------------
+
+
+def _node_display_name(node: dict) -> str:
+    """Return the human-readable display name for a node (name attribute value or node ID)."""
+    name_attr = node.get("attributes", {}).get("name")
+    if isinstance(name_attr, dict):
+        val = name_attr.get("value")
+        if val:
+            return str(val)
+    return node["id"]
+
+
+def _obsidian_entity_note(
+    node: dict,
+    outgoing: list[tuple[str, str, float]],
+    incoming: list[tuple[str, str, float]],
+) -> str:
+    """Render a single entity note as a Markdown string with YAML frontmatter."""
+    node_id = node["id"]
+    node_type = node.get("type", "")
+    confidence = node.get("confidence", 0.0)
+    source_files = node.get("source_files", [])
+    attributes = node.get("attributes", {})
+    display_name = _node_display_name(node)
+
+    frontmatter_data: dict = {
+        "id": node_id,
+        "type": node_type,
+        "confidence": round(float(confidence), 4),
+    }
+    if source_files:
+        frontmatter_data["sources"] = list(source_files)
+
+    frontmatter = yaml.dump(frontmatter_data, default_flow_style=False, allow_unicode=True).rstrip()
+    lines: list[str] = ["---", frontmatter, "---", "", f"# {display_name}", ""]
+
+    # Attributes section (skip "name" — it is the heading)
+    attr_lines = []
+    for attr_name, payload in attributes.items():
+        if attr_name == "name":
+            continue
+        if isinstance(payload, dict):
+            val = payload.get("value")
+            conf = payload.get("confidence", 0.0)
+        else:
+            val = payload
+            conf = 0.0
+        if val is None:
+            continue
+        attr_lines.append(f"- **{attr_name}**: {val} ({round(float(conf), 2)})")
+
+    if attr_lines:
+        lines.append("## Attributes")
+        lines.extend(attr_lines)
+        lines.append("")
+
+    # Relationships section
+    if outgoing or incoming:
+        lines.append("## Relationships")
+        lines.append("")
+        if outgoing:
+            lines.append("### Outgoing")
+            for target_name, edge_type, edge_conf in outgoing:
+                lines.append(f"- [[{target_name}]] — {edge_type} ({round(float(edge_conf), 2)})")
+            lines.append("")
+        if incoming:
+            lines.append("### Incoming")
+            for source_name, edge_type, edge_conf in incoming:
+                lines.append(f"- [[{source_name}]] — {edge_type} ({round(float(edge_conf), 2)})")
+            lines.append("")
+
+    # Source Files section
+    if source_files:
+        lines.append("## Source Files")
+        for sf in source_files:
+            lines.append(f"- {sf}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def _obsidian_index(nodes: list[dict], edge_count: int) -> str:
+    """Render the vault index.md listing all entities grouped by type."""
+    lines: list[str] = [
+        "# Knowledge Graph Index",
+        "",
+        f"**{len(nodes)} entities** — **{edge_count} relationships**",
+        "",
+    ]
+
+    # Group nodes by type, sorted for deterministic output
+    by_type: dict[str, list[dict]] = defaultdict(list)
+    for node in nodes:
+        by_type[node.get("type", "Unknown")].append(node)
+
+    for node_type in sorted(by_type):
+        # Compute display name once per node to avoid double attribute lookups
+        group = sorted(
+            ((n, _node_display_name(n)) for n in by_type[node_type]),
+            key=lambda pair: pair[1],
+        )
+        lines.append(f"## {node_type}")
+        lines.append("")
+        lines.append("| Entity |")
+        lines.append("| --- |")
+        for _node, name in group:
+            lines.append(f"| [[{name}]] |")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def export_obsidian(
+    nodes: list[dict],
+    edge_metadata: dict,
+    schema: dict,  # kept for API symmetry with other export_ functions
+    output_dir: Path,
+) -> list[str]:
+    """Write an Obsidian vault to output_dir/obsidian_vault/.
+
+    One Markdown note per entity (Type/node_id.md), with YAML frontmatter,
+    attributes, wikilinked relationships, and an index.md overview.
+
+    Returns a list of written file paths as relative strings (same contract as
+    export_networkx).  Returns an empty list when OBSIDIAN_ENABLED is False.
+    """
+    if not getattr(_cfg, "OBSIDIAN_ENABLED", False):
+        return []
+
+    vault_dir = output_dir / "obsidian_vault"
+    vault_dir.mkdir(exist_ok=True)
+
+    # Build id → display_name lookup for wikilinks
+    id_to_name: dict[str, str] = {node["id"]: _node_display_name(node) for node in nodes}
+
+    # Build adjacency: outgoing/incoming per node_id
+    # Values: list of (peer_display_name, edge_type, confidence)
+    outgoing: dict[str, list[tuple[str, str, float]]] = defaultdict(list)
+    incoming: dict[str, list[tuple[str, str, float]]] = defaultdict(list)
+    for edge in edge_metadata.values():
+        from_id = edge.get("from", "")
+        to_id = edge.get("to", "")
+        edge_type = edge.get("type", "")
+        conf = float(edge.get("confidence", 0.0))
+        outgoing[from_id].append((id_to_name.get(to_id, to_id), edge_type, conf))
+        incoming[to_id].append((id_to_name.get(from_id, from_id), edge_type, conf))
+
+    # Pre-create one subdir per concept type to avoid repeated mkdir calls in the node loop
+    type_dirs: dict[str, Path] = {}
+    for node in nodes:
+        node_type = node.get("type", "Unknown")
+        if node_type not in type_dirs:
+            d = vault_dir / node_type
+            d.mkdir(exist_ok=True)
+            type_dirs[node_type] = d
+
+    written: list[str] = []
+
+    for node in nodes:
+        node_id = node["id"]
+        node_type = node.get("type", "Unknown")
+        type_dir = type_dirs[node_type]
+
+        note_content = _obsidian_entity_note(
+            node,
+            outgoing=outgoing.get(node_id, []),
+            incoming=incoming.get(node_id, []),
+        )
+        note_path = type_dir / f"{node_id}.md"
+        note_path.write_text(note_content, encoding="utf-8")
+        # Derive the relative path from the actual filesystem path to stay in sync
+        written.append(str(note_path.relative_to(output_dir)))
+
+    # Index
+    index_content = _obsidian_index(nodes, edge_count=len(edge_metadata))
+    (vault_dir / "index.md").write_text(index_content, encoding="utf-8")
+    written.append("obsidian_vault/index.md")
 
     return written

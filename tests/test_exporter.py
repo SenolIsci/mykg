@@ -1,6 +1,12 @@
-import json
+from __future__ import annotations
 
-from mykg.exporter import export_edges_jsonl, export_nodes_jsonl, export_ttl
+import json
+from pathlib import Path
+from unittest import mock
+
+import yaml
+
+from mykg.exporter import export_edges_jsonl, export_nodes_jsonl, export_obsidian, export_ttl
 
 SCHEMA = {
     "concepts": [
@@ -123,3 +129,169 @@ def test_ttl_escapes_newline_in_literal():
 
     g = Graph()
     g.parse(data=ttl, format="turtle")  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# export_obsidian tests
+# ---------------------------------------------------------------------------
+
+_OBS_NODES = [
+    {
+        "id": "person-alice-johnson",
+        "type": "Person",
+        "confidence": 0.94,
+        "source_files": ["team.md"],
+        "attributes": {
+            "name": {"value": "Alice Johnson", "confidence": 1.0},
+            "role": {"value": "Engineer", "confidence": 0.91},
+            "email": {"value": "alice@example.com", "confidence": 1.0},
+        },
+        "aliases": ["Alice", "A. Johnson"],
+    },
+    {
+        "id": "organization-acme-corp",
+        "type": "Organization",
+        "confidence": 0.99,
+        "source_files": ["team.md"],
+        "attributes": {
+            "name": {"value": "Acme Corp", "confidence": 0.99},
+        },
+    },
+    {
+        "id": "person-bob-smith",
+        "type": "Person",
+        "confidence": 0.88,
+        "source_files": ["team.md"],
+        "attributes": {
+            "name": {"value": "Bob Smith", "confidence": 1.0},
+        },
+    },
+]
+
+_OBS_EDGE_METADATA = {
+    "edge-001": {
+        "type": "works_at",
+        "from": "person-alice-johnson",
+        "to": "organization-acme-corp",
+        "confidence": 0.96,
+        "source_files": ["team.md"],
+        "attributes": {"role": {"value": "engineer", "confidence": 0.91}},
+    },
+    "edge-002": {
+        "type": "manages",
+        "from": "person-bob-smith",
+        "to": "person-alice-johnson",
+        "confidence": 0.88,
+        "source_files": ["team.md"],
+        "attributes": {},
+    },
+}
+
+_OBS_SCHEMA = {
+    "concepts": [
+        {"type": "Person", "parent": None, "attributes": ["name", "role", "email"]},
+        {"type": "Organization", "parent": None, "attributes": ["name"]},
+    ],
+    "properties": [
+        {"name": "works_at", "domain": "Person", "range": "Organization", "attributes": ["role"]},
+        {"name": "manages", "domain": "Person", "range": "Person", "attributes": []},
+    ],
+}
+
+
+def _run_obsidian(tmp_path: Path) -> list[str]:
+    """Call export_obsidian with OBSIDIAN_ENABLED patched to True."""
+    with mock.patch("mykg.exporter._cfg") as mock_cfg:
+        mock_cfg.OBSIDIAN_ENABLED = True
+        mock_cfg.JSON_INDENT = 2
+        return export_obsidian(_OBS_NODES, _OBS_EDGE_METADATA, _OBS_SCHEMA, tmp_path)
+
+
+def test_obsidian_returns_empty_when_disabled(tmp_path: Path) -> None:
+    """export_obsidian returns [] when OBSIDIAN_ENABLED is False (or absent)."""
+    with mock.patch("mykg.exporter._cfg") as mock_cfg:
+        mock_cfg.OBSIDIAN_ENABLED = False
+        result = export_obsidian(_OBS_NODES, _OBS_EDGE_METADATA, _OBS_SCHEMA, tmp_path)
+    assert result == []
+
+
+def test_obsidian_creates_type_subdirs(tmp_path: Path) -> None:
+    """Nodes are written under Type/ subdirectories inside obsidian_vault/."""
+    _run_obsidian(tmp_path)
+    vault = tmp_path / "obsidian_vault"
+    assert (vault / "Person").is_dir()
+    assert (vault / "Organization").is_dir()
+
+
+def test_obsidian_creates_node_files(tmp_path: Path) -> None:
+    """One .md file is created per node with the node_id as filename."""
+    _run_obsidian(tmp_path)
+    vault = tmp_path / "obsidian_vault"
+    assert (vault / "Person" / "person-alice-johnson.md").exists()
+    assert (vault / "Organization" / "organization-acme-corp.md").exists()
+    assert (vault / "Person" / "person-bob-smith.md").exists()
+
+
+def test_obsidian_frontmatter_is_valid_yaml(tmp_path: Path) -> None:
+    """YAML frontmatter in entity notes must parse without error."""
+    _run_obsidian(tmp_path)
+    note_path = tmp_path / "obsidian_vault" / "Person" / "person-alice-johnson.md"
+    content = note_path.read_text(encoding="utf-8")
+
+    # Extract frontmatter between the first pair of '---' delimiters
+    parts = content.split("---")
+    assert len(parts) >= 3, "expected YAML frontmatter delimiters"
+    fm = yaml.safe_load(parts[1])
+    assert fm["id"] == "person-alice-johnson"
+    assert fm["type"] == "Person"
+    assert isinstance(fm["confidence"], float)
+    assert "team.md" in fm["sources"]
+
+
+def test_obsidian_outgoing_wikilink(tmp_path: Path) -> None:
+    """Outgoing relationship section contains a wikilink to the target entity."""
+    _run_obsidian(tmp_path)
+    note_path = tmp_path / "obsidian_vault" / "Person" / "person-alice-johnson.md"
+    content = note_path.read_text(encoding="utf-8")
+    assert "[[Acme Corp]]" in content
+    assert "works_at" in content
+
+
+def test_obsidian_incoming_wikilink(tmp_path: Path) -> None:
+    """Incoming relationship section contains a wikilink to the source entity."""
+    _run_obsidian(tmp_path)
+    note_path = tmp_path / "obsidian_vault" / "Person" / "person-alice-johnson.md"
+    content = note_path.read_text(encoding="utf-8")
+    assert "[[Bob Smith]]" in content
+    assert "manages" in content
+
+
+def test_obsidian_index_exists(tmp_path: Path) -> None:
+    """index.md is created at the vault root."""
+    _run_obsidian(tmp_path)
+    assert (tmp_path / "obsidian_vault" / "index.md").exists()
+
+
+def test_obsidian_index_lists_all_nodes(tmp_path: Path) -> None:
+    """index.md wikilinks to every node by display name."""
+    _run_obsidian(tmp_path)
+    index = (tmp_path / "obsidian_vault" / "index.md").read_text(encoding="utf-8")
+    assert "[[Alice Johnson]]" in index
+    assert "[[Acme Corp]]" in index
+    assert "[[Bob Smith]]" in index
+
+
+def test_obsidian_return_value_is_list_of_strings(tmp_path: Path) -> None:
+    """Return value is a list of relative path strings."""
+    result = _run_obsidian(tmp_path)
+    assert isinstance(result, list)
+    assert all(isinstance(p, str) for p in result)
+    assert any(p.startswith("obsidian_vault/") for p in result)
+    assert "obsidian_vault/index.md" in result
+
+
+def test_obsidian_return_value_includes_all_node_paths(tmp_path: Path) -> None:
+    """Return value contains one path per node plus index.md."""
+    result = _run_obsidian(tmp_path)
+    node_paths = [p for p in result if p != "obsidian_vault/index.md"]
+    assert len(node_paths) == len(_OBS_NODES)
