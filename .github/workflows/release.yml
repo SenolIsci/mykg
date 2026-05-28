@@ -1,16 +1,16 @@
 name: Release
 
 on:
-  release:
-    types: [published]
-
+  push:
+    tags:
+      - "v*"
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
 
     environment:
       name: pypi
-      url: https://pypi.org/p/my-package
+      url: https://pypi.org/p/mykg
 
     permissions:
       id-token: write
