@@ -96,40 +96,31 @@ Requires Python 3.11+ and one of: an Anthropic/OpenAI/OpenRouter API key, Ollama
 
 ### Install from PyPI
 
+Install mykg, then run the interactive setup wizard — it asks for your provider, model, and API key and writes `mykg_config.yaml` and `.env` in one step.
+
 ```bash
 pip install mykg
-
-mykg init            # interactive setup: choose provider, paste API key
-                     # writes mykg_config.yaml and .env in one step
-
-# Run
+mykg init
 mykg extract-graph my_notes/
-# → open sessions/<timestamp>/output/knowledge_graph.html in your browser
 ```
+
+Open `sessions/<timestamp>/output/knowledge_graph.html` in your browser to explore the result.
 
 ### Install from source
 
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), clone the repo, sync dependencies, run the setup wizard, then extract.
+
 ```bash
-# 0. Install uv (if not already installed)
-curl -LsSf https://astral.sh/uv/install.sh | sh   # macOS / Linux
-# Windows: winget install astral-sh.uv
-
-# 1. Install
 git clone https://github.com/SenolIsci/mykg && cd mykg
-uv sync
-
-# 2. Configure
-mykg init           # interactive: choose provider, paste API key
-
-# 3. Run
+uv sync && mykg init
 uv run mykg extract-graph my_notes/
 ```
 
-For Ollama (no API key needed):
+For Ollama (local inference, no API key needed), pull a model and select the `ollama-local` profile when `mykg init` prompts you.
 
 ```bash
 ollama pull llama3.3
-# set profile: ollama-local in mykg_config.yaml
+mykg init
 mykg extract-graph my_notes/
 ```
 
@@ -139,17 +130,11 @@ myKG ships with a `claude-cli` profile that runs extractions through the locally
 
 ### Setup
 
+Install the `claude` CLI, then install mykg and run the setup wizard — select **[5] Claude CLI** when prompted (no API key needed).
+
 ```bash
-# 1. Install the claude CLI (if not already installed)
 npm install -g @anthropic-ai/claude-code
-
-# 2. Install mykg and run the setup wizard
-pip install mykg
-mkdir my-kg-project && cd my-kg-project
-mykg init
-# → select [5] Claude CLI when prompted (no API key needed)
-
-# 3. Run
+pip install mykg && mykg init
 mykg extract-graph my_notes/
 ```
 
