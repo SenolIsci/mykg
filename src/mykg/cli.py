@@ -274,6 +274,12 @@ def _print_next_steps(profile: str) -> None:
     default=None,
     help="Session name under sessions/ to resume or append; omit to auto-create",
 )
+@click.option(
+    "--obsidian-vault",
+    is_flag=True,
+    default=False,
+    help="Write an Obsidian vault to output/obsidian_vault/ (overrides config obsidian_enabled)",
+)
 def extract_graph(
     input_dir,
     output_dir,
@@ -288,6 +294,7 @@ def extract_graph(
     confidence_agg,
     append,
     session,
+    obsidian_vault,
 ):
     """Extract a knowledge graph from a directory of Markdown files."""
     from mykg.llm.config import load_adapter
@@ -354,6 +361,10 @@ def extract_graph(
     if from_step:
         from_step, orphan_incremental = _resolve_from_step(from_step)
         _delete_from_step(from_step, intermediate_dir, output_dir, incremental=orphan_incremental)
+
+    if obsidian_vault:
+        import mykg.config as _config_mod
+        _config_mod.OBSIDIAN_ENABLED = True
 
     from mykg.llm.error_gate import ErrorGate
 
@@ -625,9 +636,12 @@ def _delete_from_step(
             if incremental and filename in _INCREMENTAL_PRESERVE:
                 click.echo(f"Preserved {base_dir / filename} (incremental sweep)")
                 continue
-            path = base_dir / filename
+            path = base_dir / filename.rstrip("/")
             if path.exists():
-                path.unlink()
+                if path.is_dir():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
                 click.echo(f"Deleted {path}")
 
     # Shard directories are not listed in Step.outputs but must be cleared when
@@ -644,6 +658,16 @@ def _delete_from_step(
         if concat_map_path.exists():
             concat_map_path.unlink()
             click.echo(f"Deleted {concat_map_path}")
+
+    # obsidian_vault/ is written by validate_graph but not tracked in Step.outputs
+    # (it is optional; omitting it prevents _is_done from breaking when disabled).
+    # Delete it when re-running from validate_graph or any earlier step.
+    validate_graph_idx = step_names.index("validate_graph") if "validate_graph" in step_names else -1
+    if validate_graph_idx >= 0 and idx <= validate_graph_idx:
+        obsidian_path = output_dir / _cfg().OBSIDIAN_VAULT_DIR
+        if obsidian_path.exists():
+            shutil.rmtree(obsidian_path)
+            click.echo(f"Deleted {obsidian_path}")
 
     human_review_idx = step_names.index("human_review") if "human_review" in step_names else -1
     if idx > human_review_idx >= 0:

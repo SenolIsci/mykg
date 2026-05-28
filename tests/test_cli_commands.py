@@ -146,6 +146,17 @@ def test_extract_creates_session_dir(tmp_path, input_dir, monkeypatch):
     assert any((d / "intermediate").is_dir() for d in subdirs)
 
 
+def test_extract_graph_help_contains_obsidian_vault():
+    """--help output for extract-graph must advertise --obsidian-vault."""
+    import mykg.cli as cli_mod
+    from click.testing import CliRunner
+
+    runner = CliRunner()
+    result = runner.invoke(cli_mod.cli, ["extract-graph", "--help"])
+    assert result.exit_code == 0
+    assert "--obsidian-vault" in result.output
+
+
 def test_from_step_without_session_or_dirs_errors(tmp_path, input_dir, monkeypatch):
     import mykg.cli as cli_mod
     import mykg.config as cfg_mod

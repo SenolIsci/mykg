@@ -135,6 +135,8 @@ TTL_DATA_PREFIX_LABEL: str = _get("export", "data_prefix_label")
 TTL_COMMENT_WIDTH: int = _get("export", "comment_width")
 TTL_NAMESPACE_SKOS: str = _get("export", "skos_namespace")
 NETWORKX_ENABLED: bool = _get("export", "networkx_enabled")
+OBSIDIAN_ENABLED: bool = _get_opt("export", "obsidian_enabled", False)
+OBSIDIAN_VAULT_DIR: str = _get_opt("export", "obsidian_vault_dir", "obsidian_vault")
 
 # ---------------------------------------------------------------------------
 # Output / intermediate paths (D16, D18)

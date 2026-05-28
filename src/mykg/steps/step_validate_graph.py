@@ -35,6 +35,12 @@ def run_validate_graph(ctx: PipelineContext) -> None:
         written = export_networkx(nodes, valid_edge_metadata, ctx.output_dir)
         log.info("Step 12c — NetworkX export: %s", ", ".join(written))
 
+    if _cfg.OBSIDIAN_ENABLED:
+        from mykg.exporter import export_obsidian
+
+        obs_written = export_obsidian(nodes, valid_edge_metadata, schema, ctx.output_dir)
+        log.info("Step 12d — Obsidian vault export: %d notes written", len(obs_written))
+
     (ctx.output_dir / "knowledge_graph_validation.json").write_text(
         json.dumps(result, indent=_cfg.JSON_INDENT)
     )

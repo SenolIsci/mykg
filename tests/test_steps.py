@@ -356,6 +356,62 @@ def test_run_validate_graph_does_not_raise_on_tbox_errors(tmp_path):
     assert (output_dir / "knowledge_graph_validation.json").exists()
 
 
+def test_run_validate_graph_calls_export_obsidian_when_enabled(tmp_path, monkeypatch):
+    """run_validate_graph calls export_obsidian when OBSIDIAN_ENABLED is True."""
+    import mykg.config as cfg_mod
+    from unittest.mock import patch
+
+    monkeypatch.setattr(cfg_mod, "OBSIDIAN_ENABLED", True)
+    monkeypatch.setattr(cfg_mod, "OBSIDIAN_VAULT_DIR", "obsidian_vault")
+
+    ctx = _make_ctx(tmp_path)
+    (ctx.intermediate_dir / "schema.json").write_text(json.dumps(SCHEMA))
+    ctx.nodes = [
+        {
+            "id": "person-alice",
+            "type": "Person",
+            "confidence": 0.9,
+            "source_files": ["doc.md"],
+            "attributes": {"name": {"value": "Alice", "confidence": 0.9}},
+        }
+    ]
+    ctx.edge_metadata = {}
+
+    with patch("mykg.exporter.export_obsidian", create=True, wraps=None) as mock_obs:
+        mock_obs.return_value = ["obsidian_vault/person/alice.md"]
+        with patch("mykg.steps.step_validate_graph._cfg", cfg_mod):
+            run_validate_graph(ctx)
+
+    mock_obs.assert_called_once()
+
+
+def test_run_validate_graph_skips_export_obsidian_when_disabled(tmp_path, monkeypatch):
+    """run_validate_graph does not call export_obsidian when OBSIDIAN_ENABLED is False."""
+    import mykg.config as cfg_mod
+    from unittest.mock import patch
+
+    monkeypatch.setattr(cfg_mod, "OBSIDIAN_ENABLED", False)
+
+    ctx = _make_ctx(tmp_path)
+    (ctx.intermediate_dir / "schema.json").write_text(json.dumps(SCHEMA))
+    ctx.nodes = [
+        {
+            "id": "person-alice",
+            "type": "Person",
+            "confidence": 0.9,
+            "source_files": ["doc.md"],
+            "attributes": {"name": {"value": "Alice", "confidence": 0.9}},
+        }
+    ]
+    ctx.edge_metadata = {}
+
+    with patch("mykg.exporter.export_obsidian", create=True) as mock_obs:
+        with patch("mykg.steps.step_validate_graph._cfg", cfg_mod):
+            run_validate_graph(ctx)
+
+    mock_obs.assert_not_called()
+
+
 def test_export_step_not_llm_step():
     """The validate_graph Step must have is_llm_step=False."""
     from mykg.pipeline import STEPS
