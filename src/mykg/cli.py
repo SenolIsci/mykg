@@ -49,17 +49,147 @@ def _copy_input_files(input_dir: Path, session_root: Path, copy_config: bool = T
         shutil.copy2(_cfg().CONFIG_PATH, session_root / "pipeline_config.yaml")
 
 
+_PROFILE_META = {
+    "openrouter-free": {
+        "label": "OpenRouter (default — many free models, one API key)",
+        "key_var": "OPENROUTER_API_KEY",
+        "key_hint": "sk-or-...",
+        "key_url": "https://openrouter.ai/keys",
+    },
+    "anthropic-claude": {
+        "label": "Anthropic Claude (highest quality)",
+        "key_var": "ANTHROPIC_API_KEY",
+        "key_hint": "sk-ant-...",
+        "key_url": "https://console.anthropic.com/account/keys",
+    },
+    "openai": {
+        "label": "OpenAI (GPT-4o and friends)",
+        "key_var": "OPENAI_API_KEY",
+        "key_hint": "sk-...",
+        "key_url": "https://platform.openai.com/api-keys",
+    },
+    "ollama-local": {
+        "label": "Ollama (local inference, no API key needed)",
+        "key_var": None,
+        "key_hint": None,
+        "key_url": None,
+    },
+    "claude-cli": {
+        "label": "Claude CLI (uses claude -p, no API key needed)",
+        "key_var": None,
+        "key_hint": None,
+        "key_url": None,
+    },
+}
+
+
 @cli.command("init")
 @click.option("--force", is_flag=True, help="Overwrite existing pipeline_config.yaml")
-def init_config(force: bool) -> None:
-    """Copy the default pipeline_config.yaml template into the current directory."""
+@click.option("--profile", default=None, help="LLM profile to activate (skips interactive prompt)")
+@click.option("--api-key", default=None, help="API key to write to .env (skips interactive prompt)")
+def init_config(force: bool, profile: str | None, api_key: str | None) -> None:
+    """Create pipeline_config.yaml and optionally configure LLM provider and API key."""
     dest = Path.cwd() / "pipeline_config.yaml"
     if dest.exists() and not force:
-        click.echo(f"pipeline_config.yaml already exists. Use --force to overwrite.")
+        click.echo("pipeline_config.yaml already exists. Use --force to overwrite.")
         return
+
+    # --- Profile selection ---------------------------------------------------
+    profiles = list(_PROFILE_META.keys())
+    if profile is None:
+        click.echo("\nSelect an LLM profile:")
+        for i, p in enumerate(profiles, 1):
+            marker = " (default)" if p == "openrouter-free" else ""
+            click.echo(f"  [{i}] {_PROFILE_META[p]['label']}{marker}")
+        choice = click.prompt(
+            "Enter number",
+            default="1",
+            show_default=True,
+        )
+        try:
+            idx = int(choice) - 1
+            if not 0 <= idx < len(profiles):
+                raise ValueError
+            profile = profiles[idx]
+        except ValueError:
+            click.echo("Invalid choice — using default: openrouter-free")
+            profile = "openrouter-free"
+
+    if profile not in _PROFILE_META:
+        click.echo(f"Unknown profile '{profile}'. Valid options: {', '.join(profiles)}")
+        return
+
+    meta = _PROFILE_META[profile]
+
+    # --- Write pipeline_config.yaml with selected profile --------------------
     template = Path(__file__).parent / "data" / "pipeline_config.yaml"
-    shutil.copy2(template, dest)
-    click.echo(f"Created pipeline_config.yaml in {Path.cwd()}")
+    content = template.read_text()
+    # Replace the active profile line
+    import re
+    content = re.sub(r"^profile:.*$", f"profile: {profile}", content, count=1, flags=re.MULTILINE)
+    dest.write_text(content)
+    click.echo(f"\nCreated pipeline_config.yaml in {Path.cwd()} (profile: {profile})")
+
+    # --- API key setup -------------------------------------------------------
+    if meta["key_var"] is None:
+        click.echo(f"No API key required for '{profile}'.")
+        _print_next_steps(profile)
+        return
+
+    env_file = Path.cwd() / ".env"
+    var = meta["key_var"]
+
+    # Check if key is already set
+    existing_key = None
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            if line.startswith(f"{var}=") and line[len(var) + 1:].strip():
+                existing_key = line[len(var) + 1:].strip()
+                break
+
+    if existing_key:
+        click.echo(f"\n{var} is already set in .env.")
+    else:
+        if api_key is None:
+            click.echo(f"\nYou need an API key for {profile}.")
+            if meta["key_url"]:
+                click.echo(f"Get one at: {meta['key_url']}")
+            api_key = click.prompt(
+                f"Paste your {var} (or press Enter to skip)",
+                default="",
+                show_default=False,
+            ).strip()
+
+        if api_key:
+            _write_env_key(env_file, var, api_key)
+            click.echo(f"Written {var} to .env")
+        else:
+            click.echo(f"Skipped — set {var} in .env before running.")
+
+    _print_next_steps(profile)
+
+
+def _write_env_key(env_file: Path, var: str, value: str) -> None:
+    """Write or update a single key in .env, preserving other lines."""
+    lines = env_file.read_text().splitlines() if env_file.exists() else []
+    updated = False
+    for i, line in enumerate(lines):
+        if line.startswith(f"{var}="):
+            lines[i] = f"{var}={value}"
+            updated = True
+            break
+    if not updated:
+        lines.append(f"{var}={value}")
+    env_file.write_text("\n".join(lines) + "\n")
+
+
+def _print_next_steps(profile: str) -> None:
+    click.echo("\nNext steps:")
+    click.echo("  mykg extract-graph <your_notes_directory>/")
+    if profile == "ollama-local":
+        click.echo("  (make sure Ollama is running: ollama serve)")
+    elif profile == "claude-cli":
+        click.echo("  (make sure the claude CLI is installed: npm install -g @anthropic-ai/claude-code)")
 
 
 @cli.command("extract-graph")

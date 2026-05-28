@@ -99,11 +99,8 @@ Requires Python 3.11+ and one of: an Anthropic/OpenAI/OpenRouter API key, Ollama
 ```bash
 pip install mykg
 
-mykg init            # writes pipeline_config.yaml to the current directory
-
-# Add your API key
-echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
-# Edit pipeline_config.yaml to set profile: and model:
+mykg init            # interactive setup: choose provider, paste API key
+                     # writes pipeline_config.yaml and .env in one step
 
 # Run
 mykg extract-graph my_notes/
@@ -121,9 +118,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh   # macOS / Linux
 git clone https://github.com/SenolIsci/mykg && cd mykg
 uv sync
 
-# 2. Configure (example: Anthropic Claude)
-cp sample.env .env          # then add your API key to .env
-# edit pipeline_config.yaml to set profile: and model:
+# 2. Configure
+mykg init           # interactive: choose provider, paste API key
 
 # 3. Run
 uv run mykg extract-graph my_notes/
@@ -147,12 +143,11 @@ myKG ships with a `claude-cli` profile that runs extractions through the locally
 # 1. Install the claude CLI (if not already installed)
 npm install -g @anthropic-ai/claude-code
 
-# 2. Install mykg and create a config
+# 2. Install mykg and run the setup wizard
 pip install mykg
 mkdir my-kg-project && cd my-kg-project
 mykg init
-# In pipeline_config.yaml, set:
-#   profile: claude-cli
+# → select [5] Claude CLI when prompted (no API key needed)
 
 # 3. Run
 mykg extract-graph my_notes/
@@ -206,11 +201,38 @@ profiles:
 All configuration lives in a single `pipeline_config.yaml` file discovered automatically from the working directory (or any parent). There are no hardcoded defaults in the code — the YAML is the sole source of truth.
 
 ```bash
-mykg init           # create pipeline_config.yaml in the current directory (pip install users)
+mykg init           # interactive setup: choose provider, paste API key,
+                    # writes pipeline_config.yaml and .env in one step
 mykg init --force   # overwrite an existing config
+mykg init --profile openrouter-free --api-key sk-or-...   # non-interactive
 ```
 
-API keys are loaded from `.env`. For pip-install users, create `.env` manually with your key. For source installs, copy [`sample.env`](sample.env) to `.env` and fill in your credentials.
+### API Keys
+
+myKG reads API keys from environment variables. Set them by exporting directly or by creating a `.env` file in your project directory (loaded automatically on startup).
+
+**Option A — export in your shell:**
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+**Option B — create a `.env` file:**
+
+```bash
+# .env
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+| Variable | Profile | Notes |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | `anthropic-claude` | Claude API key |
+| `OPENAI_API_KEY` | `openai` | OpenAI API key |
+| `OPENROUTER_API_KEY` | `openrouter-free` | OpenRouter API key |
+| *(none required)* | `claude-cli` | Billing via Claude Pro/Max subscription |
+| *(none required)* | `ollama-local` | Local inference, no account needed |
+
+For source installs you can also copy [`sample.env`](sample.env) to `.env` as a starting template.
 
 ### LLM Providers
 
