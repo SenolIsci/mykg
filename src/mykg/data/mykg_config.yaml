@@ -1,4 +1,6 @@
 # =============================================================================
+# myKG — Knowledge Graph Extractor
+# =============================================================================
 # ACTIVE PROFILE — change this one line to switch provider and all settings.
 # Available: ollama-local | anthropic-claude | openai | openrouter-free | claude-cli
 # =============================================================================
