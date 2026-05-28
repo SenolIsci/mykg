@@ -1,0 +1,7 @@
+STEP FAILED: {step_name}
+ERROR: {error}
+
+CURRENT OUTPUT (to be corrected):
+{file_contents}
+
+Return ONLY the corrected {output_format}. No explanation. No markdown fences.

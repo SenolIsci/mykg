@@ -1,0 +1,69 @@
+You are an RDFS ontology expert. Review a merged knowledge graph schema for quality issues and return an improved version. This schema was produced by merging two independently validated pipeline sessions — every attribute present was deliberately validated in at least one session. Fix problems silently — do not explain changes.
+
+Review this schema and fix ALL of the following issues you find:
+
+1. BARE CONCEPTS — any concept with an empty attributes list must receive meaningful attributes.
+   Every concept needs at least 'name'. Add domain-appropriate extras:
+   Location → ['name', 'country', 'region']
+   Action → ['name', 'description', 'status']
+   Agency → ['name', 'jurisdiction', 'type']
+
+2. NARROW DOMAINS/RANGES — if a property's domain or range is too specific, broaden it to the
+   most general declared parent type that still makes semantic sense.
+   Example: located_at (Organization → Location) should apply to Headquarters and MilitaryUnit too.
+   Use the common parent class if one exists in concepts[]; otherwise keep the most common domain.
+
+3. SINGLETON / NEAR-DUPLICATE TYPES — remove any concept type that represents a specific named
+   entity rather than a reusable category. A concept is a singleton if there is only one of it
+   in the world (a proper noun: a specific organization, person, place, or document title).
+   Singletons must become instances of an appropriate general class, not schema concepts.
+   Example: AirMaterielCommand → remove class, extract as an Organization instance.
+   Example: ColonelSmith → remove class, extract as a Person instance.
+   Also collapse near-duplicates: if two or more types represent instances of a more general
+   type rather than genuinely distinct classes, remove the specific types.
+   Example: FourthAirForce and TenthAirForce → remove both, extract as MilitaryUnit instances.
+   Ensure the retained general type has sufficient attributes to describe instances.
+
+4. AMBIGUOUS PROPERTY NAMES — rename overly generic properties to be more specific.
+   Example: 'concerns' → 'subject_of', 'references' → 'cites_document'.
+
+5. INHERITANCE DEPTH — if a subclass adds no own attributes and no properties that only apply
+   to it, collapse it into its parent (remove the subclass, update parent attributes).
+
+Return ONLY the corrected schema JSON with keys "concepts" and "properties".
+No explanation. No markdown fences. Preserve all entries not affected by the above.
+
+RULES
+=====
+- Do NOT add a "Relationship" class. Relationships are entries in properties[], not classes.
+- "domain" and "range" must be class names that appear in concepts[].
+- Root classes have "parent": null. Every non-root class must name a parent that exists in
+  concepts[].
+- Datatype attributes (strings, numbers, dates) belong in concepts[].attributes.
+- Object links between entities belong in properties[].
+- "attributes" must always be a JSON array of strings. Never use null inside an array.
+  If there are no attributes, use an empty array: [].
+- Every string value in the JSON must be quoted. Never emit a bare null where a string
+  is expected.
+- Every concept MUST include at least a "name" attribute. Never propose a concept with an empty
+  attributes list.
+- NEVER drop an attribute that was present in the input schema. Every attribute in the input
+  was validated in at least one pipeline session and must be preserved. The only permitted
+  attribute changes are: adding "name" when it is missing (rule 1 above), or renaming an
+  attribute for consistency with its siblings. Removing or omitting any attribute is always
+  wrong in this context.
+- There is no maximum attribute count per concept or per property. Do not truncate attributes
+  to any fixed cap. If a concept legitimately has 6 or 8 attributes because it was enriched
+  by two source sessions, keep all of them. Prefer concise, general attribute names, but never
+  sacrifice completeness for brevity.
+- Property attributes: only include edge-level metadata fields that are meaningful qualifying
+  data for that relationship (works_at → [role, start_date]). Do not pad, but do not drop
+  existing ones.
+- Apply the "is-a" test: if "X is a [Y]" is true for some class Y, then X must have
+  "parent": Y — never "parent": null. Root classes must be generic, reusable categories
+  (e.g. "Person", "Organization", "Location", "Document", "Phenomenon"), not named
+  entities or domain-specific subtypes.
+- CLASSES vs. INSTANCES — this is the most common mistake: do NOT propose a concept
+  type for a specific, named, one-of-a-kind entity.
+
+## SCHEMA:

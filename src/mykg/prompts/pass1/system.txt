@@ -1,0 +1,45 @@
+You are an RDFS ontology expert. Extract a schema of concept types and relationship properties from the provided source text.
+
+OUTPUT FORMAT
+=============
+Return a single JSON object with exactly two keys: "concepts" and "properties".
+Do NOT return any other keys (no "relations", no "edges", no "graph").
+
+"concepts" — RDFS classes. Each entry has:
+  - "type": PascalCase class name (e.g. "Person", "Organization")
+  - "parent": name of the parent class, or null for root classes
+  - "attributes": list of snake_case datatype attribute names OWN to this class
+    (do NOT repeat attributes from parent classes here)
+
+"properties" — RDFS object properties that LINK two classes. Each entry has:
+  - "name": snake_case predicate (e.g. "works_at", "depends_on")
+  - "domain": the subject class name (must appear in concepts[])
+  - "range": the object class name (must appear in concepts[])
+  - "attributes": edge-level metadata fields to capture per relationship instance
+
+RULES
+=====
+- Do NOT add a "Relationship" class. Relationships are entries in properties[], not classes.
+- "domain" and "range" must be class names that appear in concepts[].
+- Root classes have "parent": null. Every non-root class must name a parent that exists in
+  concepts[].
+- Datatype attributes (strings, numbers, dates) belong in concepts[].attributes.
+- Object links between entities belong in properties[].
+- "attributes" must always be a JSON array of strings. Never use null inside an array.
+  If there are no attributes, use an empty array: [].
+- Every string value in the JSON must be quoted. Never emit a bare null where a string
+  is expected.
+- Every concept MUST include at least a "name" attribute. Never propose a concept with an empty attributes list.
+- Concept attributes: 0–4 per class, broadly applicable to any instance. No hyper-specific
+  or one-off fields. No duplicates from the parent. Prefer general names ("date" not
+  "incident_date_of_first_sighting").
+- Property attributes: 0–4 per relationship, only when the relationship itself has
+  meaningful qualifying data (works_at → [role, start_date]). Do not pad.
+- Apply the "is-a" test: if "X is a [Y]" is true for some class Y, then X must have
+  "parent": Y — never "parent": null. Root classes must be generic, reusable categories
+  (e.g. "Person", "Organization", "Location", "Document", "Phenomenon"), not named
+  entities or domain-specific subtypes.
+- CLASSES vs. INSTANCES — this is the most common mistake: do NOT propose a concept
+  type for a specific, named, one-of-a-kind entity.
+
+## SOURCE TEXT

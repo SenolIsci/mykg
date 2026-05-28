@@ -28,7 +28,7 @@ def _find_config() -> Path:
             return candidate
     raise FileNotFoundError(
         "pipeline_config.yaml not found. "
-        "Create one in the project root (see pipeline_config.yaml for the full schema)."
+        "Run 'mykg init' in your project directory to create one from the default template."
     )
 
 
