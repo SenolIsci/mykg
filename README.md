@@ -6,7 +6,7 @@
 [![Coverage](https://img.shields.io/badge/coverage-87%25-brightgreen.svg)](htmlcov/index.html)
 [![Providers](https://img.shields.io/badge/LLM-Anthropic%20%7C%20OpenAI%20%7C%20Ollama%20%7C%20OpenRouter-orange.svg)](#configuration)
 [![PyPI version](https://img.shields.io/pypi/v/mykg.svg)](https://pypi.org/project/mykg/)
-[![PyPI Downloads](https://img.shields.io/pypi/dm/mykg.svg)](https://clickpy.clickhouse.com/dashboard/mykg)
+[![PyPI Downloads](https://img.shields.io/pypi/dm/mykg.svg)](https://pypi.org/project/mykg/)
 [![GitHub Stars](https://img.shields.io/github/stars/SenolIsci/mykg?style=flat-square&logo=github)](https://github.com/SenolIsci/mykg/stargazers)
 [![GitHub Issues](https://img.shields.io/github/issues/SenolIsci/mykg.svg)](https://github.com/SenolIsci/mykg/issues)
 [![Visitors](https://visitor-badge.laobi.icu/badge?page_id=SenolIsci.mykg)](https://github.com/SenolIsci/mykg)
