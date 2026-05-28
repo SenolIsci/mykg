@@ -100,6 +100,8 @@ profiles:
         comment_width: 42          # column width for section divider comments in knowledge_graph.ttl
         skos_namespace: "http://www.w3.org/2004/02/skos/core#"  # SKOS namespace for skos:altLabel alias triples
         networkx_enabled: true     # write NetworkX multi-format exports to output/networkx_output/ (GML, GraphML, GEXF, etc.)
+        obsidian_enabled: true     # write Obsidian vault to output/obsidian_vault/ (markdown notes + graph links)
+        obsidian_vault_dir: obsidian_vault  # subdirectory under output/ for the Obsidian vault
       # --- Pipeline infrastructure --------------------------------------------
       error_gate:               # circuit-breaker: pauses the run when too many API errors accumulate
         enabled: false          # set false for fully unattended runs (e.g. providers with no rate limits)
@@ -316,6 +318,8 @@ profiles:
         comment_width: 42
         skos_namespace: "http://www.w3.org/2004/02/skos/core#"
         networkx_enabled: true
+        obsidian_enabled: true
+        obsidian_vault_dir: obsidian_vault
       # --- Pipeline infrastructure --------------------------------------------
       error_gate:
         enabled: false
@@ -425,6 +429,8 @@ profiles:
         comment_width: 42
         skos_namespace: "http://www.w3.org/2004/02/skos/core#"
         networkx_enabled: true
+        obsidian_enabled: true
+        obsidian_vault_dir: obsidian_vault
       # --- Pipeline infrastructure --------------------------------------------
       error_gate:
         enabled: false

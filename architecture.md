@@ -86,6 +86,7 @@ Both pipelines run as a sequence of named steps. All intermediate state is writt
 │  knowledge_graph.ttl            → Protégé, SPARQL, OWL reasoners    │
 │  networkx_output/ (7 formats)   → Gephi, D3.js, yEd, …             │
 │  knowledge_graph.html           → Interactive browser visualization  │
+│  obsidian_vault/                → Obsidian-ready linked notes        │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -120,7 +121,7 @@ The extract pipeline (`mykg extract-graph`) runs 11 steps in sequence. Steps mar
 | 8 | `assemble` | — | Assigns stable IDs, deduplicates nodes and edges across all files, applies the name normalization map, writes the edge metadata sidecar, and logs all merge decisions | `edge_metadata.json`, `nodes.json`, `merge_log.json` |
 | 9 | `orphan_score` | — | Maps each zero-edge node to its source chunk using the chunk node index. Produces one candidate group per source chunk that contains at least one orphan | `orphan_candidates.json` |
 | 10 | `orphan_connect` | ✓ | For each candidate group, calls the LLM once with the full source chunk text to find missing relationships. Validates and merges confirmed edges into the sidecar. Escalates to schema-gap restart if needed | `orphan_connections.json`, `orphan_log.json` |
-| 11 | `validate_graph` | — | Exports all three output formats from the same in-memory data: JSONL, Turtle RDF, and all NetworkX formats. Validates the Turtle file before writing. Generates the interactive HTML visualization | `nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, `networkx_output/` |
+| 11 | `validate_graph` | — | Exports all output formats from the same in-memory data: JSONL, Turtle RDF, NetworkX formats, and the Obsidian vault. Validates the Turtle file before writing. Generates the interactive HTML visualization | `nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, `networkx_output/`, `obsidian_vault/` |
 
 ---
 
@@ -140,7 +141,7 @@ The merge pipeline (`mykg merge-graphs`) runs 12 steps. Steps 3–5 and 8–11 a
 | 8 | `assemble` | — | Reused from extract pipeline | `edge_metadata.json`, `nodes.json`, `merge_log.json` |
 | 9 | `orphan_score` | — | Reused from extract pipeline | `orphan_candidates.json` |
 | 10 | `orphan_connect` | ✓ | Reused from extract pipeline | `orphan_connections.json`, `orphan_log.json` |
-| 11 | `validate_graph` | — | Reused from extract pipeline | `nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, `networkx_output/` |
+| 11 | `validate_graph` | — | Reused from extract pipeline | `nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, `networkx_output/`, `obsidian_vault/` |
 | 12 | `merge_manifest` | — | Writes the merge audit record: source session names, timestamp, schema deltas for each session, re-extraction strategy used, and synonym collapse events from schema merge | `merge_manifest.json` |
 
 ---
@@ -248,7 +249,7 @@ To resume or correct a merge session, pass `--session <merged-session-name>` whe
 
 ## Output Formats
 
-All three output formats are produced from the same in-memory data at export time and are always kept in sync.
+All four output formats are produced from the same in-memory data at export time and are always kept in sync.
 
 ### Property Graph (JSONL)
 
@@ -267,6 +268,18 @@ Seven graph formats are written to `output/networkx_output/`: GML (human-readabl
 ### Interactive HTML
 
 `output/networkx_output/knowledge_graph.html` is a self-contained force-directed graph visualization built with vis.js. It requires no server. It supports filtering nodes and edges by type, filtering by confidence threshold, name search, and hover popups with full attribute values.
+
+### Obsidian Vault
+
+`output/obsidian_vault/` is a directory of linked Markdown files that can be opened directly as a vault in [Obsidian](https://obsidian.md). One `.md` note is written per extracted entity, grouped into subdirectories by concept type (e.g. `Person/`, `Organization/`). An `index.md` at the root summarizes node counts per type and links to every entity note.
+
+Each entity note is structured as:
+- **YAML frontmatter** — `id`, `type`, `confidence`, and `sources` (list of source files)
+- **Attributes section** — one bullet per extracted attribute with value and confidence
+- **Relationships section** — outgoing and incoming edges as Obsidian wikilinks (`[[Entity Name]] — edge_type (confidence)`); wikilinks are resolved by Obsidian's native backlink index, so Graph View shows the full relationship network automatically
+- **Source files section** — Markdown files from which the entity was extracted
+
+Enabled by default via `pipeline.export.obsidian_enabled: true` in `mykg_config.yaml`. The output directory name is configurable via `pipeline.export.obsidian_vault_dir`.
 
 ---
 
@@ -365,6 +378,7 @@ All provider parameters — model, context window, token limits, timeout, base U
 
 | Decision | What was chosen | Why |
 |---|---|---|
-| **Three parallel output families** | JSONL, Turtle RDF, and NetworkX — all generated from the same in-memory data | Each format serves a different consumer without requiring a separate pipeline run |
+| **Four parallel output families** | JSONL, Turtle RDF, NetworkX, and Obsidian vault — all generated from the same in-memory data | Each format serves a different consumer without requiring a separate pipeline run |
+| **Obsidian vault as first-class output** | One entity note per node with YAML frontmatter, attribute listings, and wikilinked relationships; `index.md` as overview | Enables native Obsidian Graph View and backlink navigation with zero manual setup; vault is ready to open immediately after extraction |
 | **Node aliases as `skos:altLabel`** | Non-canonical surface forms stored as a flat sorted list on each node; emitted as `skos:altLabel` triples in the TTL | Standard well-known predicate; no custom vocabulary needed; works in any SPARQL endpoint |
 | **Edge metadata excluded from TTL** | Confidence scores, role, start date, and other edge attributes live only in `edge_metadata.json` | Keeps the TTL valid with any standard RDF toolchain; avoids RDF reification, blank nodes, and RDF-star |
