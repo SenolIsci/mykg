@@ -1,6 +1,6 @@
 [project]
 name = "mykg"
-version = "0.1.4"
+version = "0.1.5"
 description = "Two-pass LLM pipeline that turns Markdown files into a confidence-scored knowledge graph with an induced RDFS/OWL ontology"
 readme = "README.md"
 license = { text = "MIT" }
