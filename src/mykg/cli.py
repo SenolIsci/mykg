@@ -50,6 +50,19 @@ def _copy_input_files(input_dir: Path, session_root: Path, copy_config: bool = T
         shutil.copy2(_cfg.CONFIG_PATH, session_root / "pipeline_config.yaml")
 
 
+@cli.command("init")
+@click.option("--force", is_flag=True, help="Overwrite existing pipeline_config.yaml")
+def init_config(force: bool) -> None:
+    """Copy the default pipeline_config.yaml template into the current directory."""
+    dest = Path.cwd() / "pipeline_config.yaml"
+    if dest.exists() and not force:
+        click.echo(f"pipeline_config.yaml already exists. Use --force to overwrite.")
+        return
+    template = Path(__file__).parent / "data" / "pipeline_config.yaml"
+    shutil.copy2(template, dest)
+    click.echo(f"Created pipeline_config.yaml in {Path.cwd()}")
+
+
 @cli.command("extract-graph")
 @click.argument("input_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option(

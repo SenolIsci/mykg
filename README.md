@@ -94,14 +94,34 @@ sessions/2026-05-17T18-31-07/
 
 Requires Python 3.11+ and one of: an Anthropic/OpenAI/OpenRouter API key, Ollama running locally, or the `claude` CLI.
 
+### Install from PyPI
+
+```bash
+pip install mykg
+
+# Create a project directory and generate the default config
+mkdir my-kg-project && cd my-kg-project
+mykg init            # writes pipeline_config.yaml to the current directory
+
+# Add your API key
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
+# Edit pipeline_config.yaml to set profile: and model:
+
+# Run
+mykg extract-graph my_notes/
+# → open sessions/<timestamp>/output/knowledge_graph.html in your browser
+```
+
+### Install from source
+
 ```bash
 # 0. Install uv (if not already installed)
 curl -LsSf https://astral.sh/uv/install.sh | sh   # macOS / Linux
 # Windows: winget install astral-sh.uv
 
 # 1. Install
-git clone <repo-url> && cd mykg
-uv sync          # or: pip install -e .
+git clone https://github.com/SenolIsci/mykg && cd mykg
+uv sync
 
 # 2. Configure (example: Anthropic Claude)
 cp sample.env .env          # then add your API key to .env
@@ -109,7 +129,6 @@ cp sample.env .env          # then add your API key to .env
 
 # 3. Run
 uv run mykg extract-graph my_notes/
-# → open sessions/<timestamp>/output/knowledge_graph.html in your browser
 ```
 
 For Ollama (no API key needed):
@@ -117,7 +136,7 @@ For Ollama (no API key needed):
 ```bash
 ollama pull llama3.3
 # set profile: ollama-local in pipeline_config.yaml
-uv run mykg extract-graph my_notes/
+mykg extract-graph my_notes/
 ```
 
 ## Using with Claude Code
@@ -130,12 +149,15 @@ myKG ships with a `claude-cli` profile that runs extractions through the locally
 # 1. Install the claude CLI (if not already installed)
 npm install -g @anthropic-ai/claude-code
 
-# 2. Set the active profile
-#    In pipeline_config.yaml, set:
-#    profile: claude-cli
+# 2. Install mykg and create a config
+pip install mykg
+mkdir my-kg-project && cd my-kg-project
+mykg init
+# In pipeline_config.yaml, set:
+#   profile: claude-cli
 
 # 3. Run
-uv run mykg extract-graph my_notes/
+mykg extract-graph my_notes/
 ```
 
 ### How it works
@@ -153,7 +175,7 @@ You can run myKG extractions as a tool call from within a Claude Code session. T
 
 ```bash
 # From any Claude Code session terminal:
-uv run mykg extract-graph ./docs/ --session my-docs-kg
+mykg extract-graph ./docs/ --session my-docs-kg
 
 # Then reference the output in your session:
 # sessions/my-docs-kg/output/nodes.jsonl
@@ -183,9 +205,14 @@ profiles:
 
 ## Configuration
 
-All configuration lives in a single [`pipeline_config.yaml`](pipeline_config.yaml) file discovered automatically from the working directory (or any parent). There are no hardcoded defaults in the code — the YAML is the sole source of truth.
+All configuration lives in a single `pipeline_config.yaml` file discovered automatically from the working directory (or any parent). There are no hardcoded defaults in the code — the YAML is the sole source of truth.
 
-API keys are loaded from `.env` — copy [`sample.env`](sample.env) to `.env` and fill in your credentials.
+```bash
+mykg init           # create pipeline_config.yaml in the current directory (pip install users)
+mykg init --force   # overwrite an existing config
+```
+
+API keys are loaded from `.env`. For pip-install users, create `.env` manually with your key. For source installs, copy [`sample.env`](sample.env) to `.env` and fill in your credentials.
 
 ### LLM Providers
 
@@ -225,7 +252,8 @@ Reads a directory of `.md` files and produces a typed knowledge graph in three o
 ### Running
 
 ```bash
-uv run mykg extract-graph <input_dir> [OPTIONS]
+mykg extract-graph <input_dir> [OPTIONS]
+# source installs: uv run mykg extract-graph <input_dir> [OPTIONS]
 ```
 
 `<input_dir>` is any directory of `.md` files. Subdirectories are included recursively.
@@ -249,22 +277,22 @@ uv run mykg extract-graph <input_dir> [OPTIONS]
 
 ```bash
 # New run — auto-creates a timestamped session
-uv run mykg extract-graph my_notes/
+mykg extract-graph my_notes/
 
 # Resume a session with 4 parallel Pass 2 workers
-uv run mykg extract-graph my_notes/ --session 2026-05-17T18-31-07 --workers 4
+mykg extract-graph my_notes/ --session 2026-05-17T18-31-07 --workers 4
 
 # Pause for schema review after Pass 1
-uv run mykg extract-graph my_notes/ --review
+mykg extract-graph my_notes/ --review
 # → edit sessions/<name>/intermediate/schema.json
 mykg approve-schema --session 2026-05-17T18-31-07
-uv run mykg extract-graph my_notes/ --session 2026-05-17T18-31-07 --review
+mykg extract-graph my_notes/ --session 2026-05-17T18-31-07 --review
 
 # Re-run from assembly onward (reuses existing extractions)
-uv run mykg extract-graph my_notes/ --session 2026-05-17T18-31-07 --from-step assemble
+mykg extract-graph my_notes/ --session 2026-05-17T18-31-07 --from-step assemble
 
 # Lock a base ontology so the LLM won't rename its classes
-uv run mykg extract-graph my_notes/ --base-schema ontology/core.ttl
+mykg extract-graph my_notes/ --base-schema ontology/core.ttl
 ```
 
 ### Sessions
@@ -394,19 +422,19 @@ Use `--from-step` to delete a step's outputs and all downstream outputs, then re
 SESSION=2026-05-17T18-31-07
 
 # Re-run from Pass 2 (reuse the existing schema)
-uv run mykg extract-graph my_notes/ --session $SESSION --from-step pass2
+mykg extract-graph my_notes/ --session $SESSION --from-step pass2
 
 # Re-run only assembly + export (reuse raw extractions)
-uv run mykg extract-graph my_notes/ --session $SESSION --from-step assemble
+mykg extract-graph my_notes/ --session $SESSION --from-step assemble
 
 # Re-run both orphan stages
-uv run mykg extract-graph my_notes/ --session $SESSION --from-step orphan_score
+mykg extract-graph my_notes/ --session $SESSION --from-step orphan_score
 
 # Orphan LLM pass only — full clean sweep
-uv run mykg extract-graph my_notes/ --session $SESSION --from-step orphan_connect_fullsweep
+mykg extract-graph my_notes/ --session $SESSION --from-step orphan_connect_fullsweep
 
 # Orphan LLM pass only — additive (preserves prior confirmed edges)
-uv run mykg extract-graph my_notes/ --session $SESSION --from-step orphan_connect_incremental
+mykg extract-graph my_notes/ --session $SESSION --from-step orphan_connect_incremental
 ```
 
 **Four re-entry patterns:**
@@ -437,10 +465,10 @@ Configure via `pipeline.orphan_pass.*` in `pipeline_config.yaml`. Disable entire
 Pause after Pass 1 to inspect and edit the induced schema before Pass 2 runs:
 
 ```bash
-uv run mykg extract-graph my_notes/ --review
+mykg extract-graph my_notes/ --review
 # → pipeline halts; edit sessions/<name>/intermediate/schema.json
 mykg approve-schema --session <name>
-uv run mykg extract-graph my_notes/ --session <name> --review   # resumes from Pass 2
+mykg extract-graph my_notes/ --session <name> --review   # resumes from Pass 2
 ```
 
 ### Locked Base Schema (`--base-schema`)
@@ -448,7 +476,7 @@ uv run mykg extract-graph my_notes/ --session <name> --review   # resumes from P
 Lock certain classes and properties so the LLM cannot rename, remove, or restructure them:
 
 ```bash
-uv run mykg extract-graph my_notes/ --base-schema ontology/base.ttl
+mykg extract-graph my_notes/ --base-schema ontology/base.ttl
 ```
 
 Locked entries can still receive additional attributes proposed by the LLM. Near-duplicate LLM proposals are collapsed into the locked entry with a warning.
@@ -458,7 +486,7 @@ Locked entries can still receive additional attributes proposed by the LLM. Near
 Resolve near-duplicate concept names during schema merge using a SKOS vocabulary:
 
 ```bash
-uv run mykg extract-graph my_notes/ --thesaurus ontology/terms.skos.ttl
+mykg extract-graph my_notes/ --thesaurus ontology/terms.skos.ttl
 ```
 
 - `skos:exactMatch` → silent collapse
@@ -470,7 +498,7 @@ uv run mykg extract-graph my_notes/ --thesaurus ontology/terms.skos.ttl
 Re-run the pipeline on new or modified files without re-running Pass 1:
 
 ```bash
-uv run mykg extract-graph my_notes/ --session <name> --append
+mykg extract-graph my_notes/ --session <name> --append
 ```
 
 ### Merging Sessions
@@ -478,13 +506,13 @@ uv run mykg extract-graph my_notes/ --session <name> --append
 Combine two independently-produced sessions into a unified knowledge graph:
 
 ```bash
-uv run mykg merge-graphs <session-A> <session-B> [OPTIONS]
+mykg merge-graphs <session-A> <session-B> [OPTIONS]
 
 # Example
-uv run mykg merge-graphs 2026-05-01T10-00-00 2026-05-15T14-30-00
+mykg merge-graphs 2026-05-01T10-00-00 2026-05-15T14-30-00
 
 # Resume a merge (last incomplete step auto-detected)
-uv run mykg merge-graphs A B --output-session <merged-name>
+mykg merge-graphs A B --output-session <merged-name>
 ```
 
 **Options:**
@@ -519,7 +547,7 @@ A human-readable summary is written to `sessions/<name>/walkthrough.md` after ev
 
 ```bash
 # Regenerate the walkthrough for an existing session
-uv run mykg walkthrough --session 2026-05-17T18-31-07
+mykg walkthrough --session 2026-05-17T18-31-07
 ```
 
 Disable with `pipeline.report.enabled: false`.
@@ -531,7 +559,7 @@ Disable with `pipeline.report.enabled: false`.
 ### Installation
 
 ```bash
-git clone <repo-url> && cd mykg
+git clone https://github.com/SenolIsci/mykg && cd mykg
 uv sync
 ```
 

@@ -1,0 +1,3 @@
+You are an RDF/RDFS ontology expert. You will be given a schema JSON plus proposed additions that introduced validation errors. Fix the combined result.
+
+Return a corrected schema JSON with keys "concepts" and "properties". The proposed additions introduced RDFS errors — fix them while preserving all valid existing entries and the valid parts of the proposals. Ensure all domain/range values reference declared concepts.

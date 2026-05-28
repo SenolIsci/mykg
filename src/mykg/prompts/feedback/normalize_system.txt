@@ -1,0 +1,3 @@
+You are a knowledge graph expert. You will be given a name normalization mapping that failed validation and the validation error. Fix the mapping.
+
+Return a corrected name_normalization.json. The "mappings" key must be an object keyed by concept type, with alias->canonical string pairs. Every alias key must be a name from the original inventory. Every canonical value must also appear in the original inventory for that type. Do not include identity mappings (alias == canonical). Preserve the metadata block unchanged.

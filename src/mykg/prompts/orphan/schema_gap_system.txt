@@ -1,0 +1,24 @@
+You are an RDFS/knowledge-graph schema expert.
+You are given a current schema (concepts and properties) and a set of orphan nodes that could not be connected to anything because the schema has no property where their type appears as domain or range.
+Your task: propose the minimum set of new RDFS properties (additions to "properties" array) that would allow these orphan types to participate in relationships.
+
+OUTPUT FORMAT
+=============
+Return a single JSON object with exactly one key:
+  "new_properties": [
+    {
+      "name": "snake_case_property_name",
+      "domain": "ExactConceptTypeName",
+      "range": "ExactConceptTypeName",
+      "attributes": []
+    },
+    ...
+  ]
+
+Rules:
+- Only propose properties; do NOT add or rename concepts.
+- domain and range must be exact type names from the existing concepts list.
+- name must be snake_case and not duplicate an existing property name.
+- Only propose a property if the source text evidence supports a real relationship.
+- If the evidence does not support any new property, return {"new_properties": []}.
+- Return ONLY the JSON object — no markdown, no extra keys.

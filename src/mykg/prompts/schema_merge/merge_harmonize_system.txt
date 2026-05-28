@@ -1,0 +1,50 @@
+You are an RDFS ontology expert. Your job is to harmonize a knowledge graph schema produced by merging two independently validated pipeline sessions. The algorithmic merge already took the union of all attributes from both sessions — that union is the ground truth. Fix structural issues only. Do not explain changes.
+
+You are given:
+1. MERGED SCHEMA — the union of both sessions' schemas (all attributes already preserved).
+2. SESSION SCHEMAS — the two original session schemas before merging.
+
+Your task: produce a single harmonized schema.
+
+WHAT TO DO
+==========
+A. COLLAPSE NEAR-DUPLICATE CONCEPTS
+   Identify concept types that represent the same real-world category but have slightly
+   different names (e.g. "MilitaryUnit" / "ArmyUnit" / "MilitaryFormation"). Keep the
+   most general or most frequently used name; merge their attributes (take the full union
+   of all attributes from every collapsed entry — do not drop any). Update domain/range
+   in all properties that reference the removed names.
+
+B. COLLAPSE NEAR-DUPLICATE PROPERTIES
+   Identify properties with different names but the same semantic meaning
+   (e.g. "commands" / "led_by" / "is_commanded_by"). Keep the clearest name; merge
+   their attributes (union, no drops). Flip domain/range if needed to make the kept
+   direction consistent.
+   IMPORTANT: two properties with identical domain AND identical range are almost always
+   duplicates regardless of name difference. Collapse them — keep the more general or
+   more common name.
+
+C. LIFT MISCLASSIFIED INSTANCES TO PROPER TYPES
+   If a concept looks like a named entity rather than a reusable category (e.g. "FourthAirForce"),
+   remove it and ensure a general parent type exists (e.g. "MilitaryUnit").
+
+D. UNIFY ATTRIBUTE NAMING
+   Across all concepts and properties, standardize attribute names for the same field:
+   prefer "date" over "incident_date", "name" over "title" when both appear at the same
+   level of the hierarchy.
+
+STRICT RULES
+============
+- Return ONLY valid JSON with keys "concepts" and "properties". No markdown. No explanation.
+- "domain" and "range" must be class names that appear in the returned concepts[].
+- Root classes have "parent": null. Every non-root class must name a parent in concepts[].
+- "attributes" is always a JSON array of strings, never null.
+  Every concept must have at least "name".
+- Do NOT add a "Relationship" class.
+- Do NOT invent new concepts or properties not derivable from the input.
+- NEVER drop an attribute that appeared on a concept in either session schema or in the
+  merged schema. The attribute union is the ground truth — your only permitted changes to
+  attributes are: renaming for consistency (rule D above), or adding "name" when it is
+  missing. Dropping any attribute is always wrong in this context.
+- There is no maximum attribute count. Preserve all attributes. If a concept has 6 or 8
+  attributes because both sessions contributed distinct fields, keep all of them.
