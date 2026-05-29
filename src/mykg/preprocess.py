@@ -22,12 +22,13 @@ import hashlib
 import json
 import shutil
 import subprocess
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from mykg import config as _cfg
 from mykg.logging import get
@@ -177,6 +178,9 @@ class MineruRunner(BaseModel):
     language: str = Field(default_factory=lambda: _cfg.PREPROCESS_LANGUAGE)
     timeout_seconds: int = Field(default_factory=lambda: _cfg.PREPROCESS_TIMEOUT_SECONDS)
 
+    _version_cache: str | None = PrivateAttr(default=None)
+    _version_resolved: bool = PrivateAttr(default=False)
+
     def resolve_binary(self) -> str | None:
         """Resolve the MinerU binary via ``shutil.which`` (handles bare names + paths).
 
@@ -194,8 +198,16 @@ class MineruRunner(BaseModel):
         return None
 
     def version(self) -> str | None:
+        """Return the MinerU CLI version, cached after the first call.
+
+        Spawning ``mineru --version`` is non-trivial; one runner can serve many
+        files so we compute the version at most once per instance.
+        """
+        if self._version_resolved:
+            return self._version_cache
         binary = self.resolve_binary()
         if binary is None:
+            self._version_resolved = True
             return None
         try:
             proc = subprocess.run(
@@ -205,9 +217,11 @@ class MineruRunner(BaseModel):
                 timeout=10,
             )
             text = ((proc.stdout or "") + (proc.stderr or "")).strip()
-            return text.splitlines()[0] if text else None
+            self._version_cache = text.splitlines()[0] if text else None
         except (subprocess.SubprocessError, OSError):
-            return None
+            self._version_cache = None
+        self._version_resolved = True
+        return self._version_cache
 
     def convert(self, input_path: Path, output_dir: Path) -> ConvertResult:
         """Run MinerU on a single file; copy output ``.md`` (and ``images/``)
@@ -227,11 +241,11 @@ class MineruRunner(BaseModel):
         started = datetime.now(timezone.utc)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # MinerU writes a deeply nested tree; use a per-file scratch dir so we
-        # can locate the canonical .md unambiguously via rglob.
-        work_dir = output_dir / f".{input_path.stem}.mineru_work"
-        if work_dir.exists():
-            shutil.rmtree(work_dir)
+        # MinerU writes a deeply nested tree; use a per-call scratch dir so we
+        # can locate the canonical .md unambiguously via rglob. The uuid suffix
+        # prevents races between parallel conversions of inputs sharing a stem
+        # (e.g. ``foo.pdf`` and ``foo.docx`` run concurrently).
+        work_dir = output_dir / f".{input_path.stem}.{uuid.uuid4().hex[:8]}.mineru_work"
         work_dir.mkdir(parents=True, exist_ok=True)
 
         cmd = [
