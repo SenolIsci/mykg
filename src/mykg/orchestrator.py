@@ -68,6 +68,9 @@ class PipelineContext(BaseModel):
     append_new_files: set[str] | None = None
     pass2_workers: int = Field(default_factory=lambda: _cfg.PASS2_MAX_WORKERS)
     ingest_workers: int = Field(default_factory=lambda: _cfg.INGEST_MAX_WORKERS)
+    preprocess_workers: int = Field(
+        default_factory=lambda: getattr(_cfg, "PREPROCESS_MAX_WORKERS", 4)
+    )
     confidence_agg: str = Field(default_factory=lambda: _cfg.ASSEMBLY_CONFIDENCE_AGG)
     # times Re-entry A has fired this run; capped at ORPHAN_SCHEMA_MAX_RESTARTS
     schema_restart_count: int = 0

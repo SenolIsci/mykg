@@ -114,6 +114,27 @@ PASS2_BATCH_RETRY_MAX: int = _get_opt("pass2", "batch_retry_max", 1)
 INGEST_MAX_WORKERS: int = _get("ingest", "max_workers")
 
 # ---------------------------------------------------------------------------
+# Preprocess — optional upstream conversion (D39–D48)
+# Converts PDF/DOCX/PPTX/XLSX/image/HTML inputs to Markdown before ingest.
+# All values optional so older configs without a preprocess: block keep working.
+# ---------------------------------------------------------------------------
+PREPROCESS_ENABLED: bool = bool(_get_opt("preprocess", "enabled", True))
+PREPROCESS_MAX_WORKERS: int = int(_get_opt("preprocess", "max_workers", 4))
+PREPROCESS_MINERU_PATH: str = str(_get_opt("preprocess", "mineru_path", "mineru"))
+PREPROCESS_BACKEND: str = str(_get_opt("preprocess", "backend", "pipeline"))
+PREPROCESS_LANGUAGE: str = str(_get_opt("preprocess", "language", "en"))
+PREPROCESS_TIMEOUT_SECONDS: int = int(_get_opt("preprocess", "timeout_seconds", 900))
+PREPROCESS_EXTENSIONS: list = list(
+    _get_opt(
+        "preprocess",
+        "extensions",
+        ["pdf", "docx", "doc", "pptx", "xlsx", "png", "jpg", "jpeg"],
+    )
+)
+PREPROCESS_HTML_EXTENSIONS: list = list(_get_opt("preprocess", "html_extensions", ["html", "htm"]))
+PREPROCESS_FAIL_FAST: bool = bool(_get_opt("preprocess", "fail_fast", False))
+
+# ---------------------------------------------------------------------------
 # Assembly (D9, D10, D19, D22)
 # ---------------------------------------------------------------------------
 ASSEMBLY_CONFIDENCE_AGG: str = _get("assembly", "confidence_agg")

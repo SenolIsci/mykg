@@ -46,6 +46,20 @@ profiles:
       # --- Ingestion & chunking -----------------------------------------------
       ingest:
         max_workers: 8          # parallel file readers; safe to set high — purely I/O-bound
+      # --- Preprocess: convert non-Markdown inputs (PDF/DOCX/PPTX/XLSX/images/HTML) ---
+      # MinerU CLI is invoked for binary documents (PDF/DOCX/PPTX/XLSX/images);
+      # HTML is handled in-process via markdownify. Install MinerU separately:
+      #   pip install mykg[mineru]
+      preprocess:
+        enabled: true                              # master toggle for the preprocess step
+        max_workers: 4                             # parallel converters (MinerU is heavy; default low)
+        mineru_path: mineru                        # CLI path; resolved via PATH if not absolute
+        backend: pipeline                          # MinerU backend: pipeline | hybrid-auto-engine | vlm-* | hybrid-http-client
+        language: en                               # OCR language for MinerU
+        timeout_seconds: 900                       # per-file timeout (15 min)
+        extensions: [pdf, docx, doc, pptx, xlsx, png, jpg, jpeg]  # MinerU-handled extensions
+        html_extensions: [html, htm]               # markdownify-handled extensions
+        fail_fast: false                           # if true, halt pipeline on first conversion failure
       chunking:
         window_tokens: 25000     # = input_headroom / 4 = 25000  (keep small; many chunks batched together in pass1)
         overlap_tokens: 2500     # = window_tokens × 0.10 = 2500  (10% overlap preserves context at boundaries)
@@ -156,6 +170,17 @@ profiles:
       # --- Ingestion & chunking -----------------------------------------------
       ingest:
         max_workers: 2          # parallel file readers; safe to set high — purely I/O-bound
+      # --- Preprocess: convert non-Markdown inputs (PDF/DOCX/PPTX/XLSX/images/HTML) ---
+      preprocess:
+        enabled: true
+        max_workers: 2
+        mineru_path: mineru
+        backend: pipeline
+        language: en
+        timeout_seconds: 900
+        extensions: [pdf, docx, doc, pptx, xlsx, png, jpg, jpeg]
+        html_extensions: [html, htm]
+        fail_fast: false
       chunking:
         window_tokens: 2500     # = input_headroom / 4 = 25000  (keep small; many chunks batched together in pass1)
         overlap_tokens: 250     # = window_tokens × 0.10 = 2500  (10% overlap preserves context at boundaries)
@@ -264,6 +289,17 @@ profiles:
       # --- Ingestion & chunking -----------------------------------------------
       ingest:
         max_workers: 8
+      # --- Preprocess: convert non-Markdown inputs (PDF/DOCX/PPTX/XLSX/images/HTML) ---
+      preprocess:
+        enabled: true
+        max_workers: 4
+        mineru_path: mineru
+        backend: pipeline
+        language: en
+        timeout_seconds: 900
+        extensions: [pdf, docx, doc, pptx, xlsx, png, jpg, jpeg]
+        html_extensions: [html, htm]
+        fail_fast: false
       chunking:
         window_tokens: 28000    # = input_headroom / 4 ≈ 28000
         overlap_tokens: 2800    # = window_tokens × 0.10
@@ -375,6 +411,17 @@ profiles:
       # --- Ingestion & chunking -----------------------------------------------
       ingest:
         max_workers: 4            # local inference is CPU/GPU-bound; keep workers modest
+      # --- Preprocess: convert non-Markdown inputs (PDF/DOCX/PPTX/XLSX/images/HTML) ---
+      preprocess:
+        enabled: true
+        max_workers: 2
+        mineru_path: mineru
+        backend: pipeline
+        language: en
+        timeout_seconds: 900
+        extensions: [pdf, docx, doc, pptx, xlsx, png, jpg, jpeg]
+        html_extensions: [html, htm]
+        fail_fast: false
       chunking:
         window_tokens: 6000     # = input_headroom / 4 ≈ 6000
         overlap_tokens: 600     # = window_tokens × 0.10

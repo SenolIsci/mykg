@@ -8,10 +8,18 @@ from mykg.steps.step_orphan_connect import run_orphan_connect
 from mykg.steps.step_orphan_score import run_orphan_score
 from mykg.steps.step_pass1 import run_pass1_step
 from mykg.steps.step_pass2 import run_pass2_step, run_schema_flatten
+from mykg.steps.step_preprocess import run_preprocess
 from mykg.steps.step_schema import run_human_review, run_schema_validate
 from mykg.steps.step_validate_graph import run_validate_graph
 
 STEPS: list[Step] = [
+    Step(
+        name="preprocess",
+        fn=run_preprocess,
+        outputs=["preprocess.done", "preprocess_manifest.json"],
+        is_llm_step=False,
+        blocking=False,
+    ),
     Step(name="ingest", fn=run_ingest, outputs=["file_manifest.json"]),
     Step(
         name="pass1",

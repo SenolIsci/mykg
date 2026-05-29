@@ -173,6 +173,57 @@ def test_pass2_extraction_structural_validity(tmp_path, openrouter_api_key, live
 
 
 @pytest.mark.live
+def test_live_pdf_to_kg(tmp_path, openrouter_api_key):
+    """End-to-end PDF -> KG via the preprocess step + extract-graph.
+
+    Requires MinerU installed AND an OpenRouter key. Skipped automatically
+    when MinerU is absent. Tries a tiny PDF colocated in ``blog_demo_input/``
+    first; falls back to the user's canonical artefact if present.
+    """
+    if shutil.which("mineru") is None:
+        pytest.skip("mineru CLI not on PATH — install with: pip install mykg[mineru]")
+
+    # Locate a suitable PDF (small first; user-side artefact second).
+    repo_root = __import__("pathlib").Path(__file__).resolve().parent.parent
+    candidates = [
+        repo_root / "blog_demo_input" / "sample.pdf",
+        __import__("pathlib").Path("/Users/senolisci/mineru/input.pdf"),
+    ]
+    pdf = next((p for p in candidates if p.exists()), None)
+    if pdf is None:
+        pytest.skip("no PDF artefact available for live test")
+
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    shutil.copy(pdf, input_dir / "sample.pdf")
+
+    output_dir = tmp_path / "output"
+    intermediate_dir = tmp_path / "intermediate"
+    output_dir.mkdir()
+    intermediate_dir.mkdir()
+
+    adapter = load_adapter(_raw=_raw_config(openrouter_api_key))
+    ctx = PipelineContext(
+        input_dir=input_dir,
+        output_dir=output_dir,
+        intermediate_dir=intermediate_dir,
+        adapter=adapter,
+        base_schema=None,
+        thesaurus=None,
+        review=False,
+    )
+    run(STEPS, ctx)
+
+    # Converted markdown should exist alongside the PDF source.
+    assert (input_dir / "sample.md").exists()
+    assert (intermediate_dir / "preprocess.done").exists()
+
+    # Pipeline should produce real outputs even if the PDF is tiny.
+    assert (output_dir / "nodes.jsonl").exists()
+    assert (output_dir / "edges.jsonl").exists()
+
+
+@pytest.mark.live
 def test_claude_cli_adapter_smoke():
     if shutil.which("claude") is None:
         pytest.skip("claude CLI not on PATH")

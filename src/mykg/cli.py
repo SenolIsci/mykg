@@ -38,16 +38,38 @@ def _make_session_dirs(sessions_root: Path) -> tuple[str, Path, Path]:
 
 
 def _copy_input_files(input_dir: Path, session_root: Path, copy_config: bool = True) -> None:
-    """Copy .md files from input_dir into session_root/input/, preserving subfolder structure."""
+    """Copy supported source files into session_root/input/, preserving subfolder structure.
+
+    Always copies ``*.md``. When ``preprocess.extensions`` /
+    ``preprocess.html_extensions`` are configured (D45), also copies binary
+    documents (PDF/DOCX/PPTX/XLSX/images) and HTML so the optional
+    ``preprocess`` step can convert them in-place inside the session.
+    """
     dest = session_root / "input"
     dest.mkdir(parents=True, exist_ok=True)
-    for f in input_dir.rglob("*.md"):
+
+    cfg = _cfg()
+    extra_exts = {
+        e.lower().lstrip(".")
+        for e in (
+            list(getattr(cfg, "PREPROCESS_EXTENSIONS", []))
+            + list(getattr(cfg, "PREPROCESS_HTML_EXTENSIONS", []))
+        )
+    }
+    suffixes = {"md", *extra_exts}
+
+    for f in input_dir.rglob("*"):
+        if not f.is_file():
+            continue
+        suffix = f.suffix.lower().lstrip(".")
+        if suffix not in suffixes:
+            continue
         rel = f.relative_to(input_dir)
         target = dest / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(f, target)
     if copy_config:
-        shutil.copy2(_cfg().CONFIG_PATH, session_root / "mykg_config.yaml")
+        shutil.copy2(cfg.CONFIG_PATH, session_root / "mykg_config.yaml")
 
 
 _PROFILE_META = {
@@ -371,7 +393,13 @@ def extract_graph(
     orphan_incremental = False
     if from_step:
         from_step, orphan_incremental = _resolve_from_step(from_step)
-        _delete_from_step(from_step, intermediate_dir, output_dir, incremental=orphan_incremental)
+        _delete_from_step(
+            from_step,
+            intermediate_dir,
+            output_dir,
+            incremental=orphan_incremental,
+            input_dir=input_dir,
+        )
 
     if obsidian_vault:
         import mykg.config as _config_mod
@@ -425,6 +453,111 @@ def extract_graph(
             session_root,
             log_file=Path(log_file) if log_file else session_root / "run.log",
         )
+
+
+@cli.command("convert")
+@click.option(
+    "--input-dir",
+    "-i",
+    required=True,
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Directory containing files to convert (PDF/DOCX/PPTX/XLSX/images/HTML).",
+)
+@click.option(
+    "--output-dir",
+    "-o",
+    required=True,
+    type=click.Path(path_type=Path),
+    help="Destination directory for the converted Markdown + sidecars.",
+)
+@click.option(
+    "--workers",
+    "-w",
+    default=None,
+    type=int,
+    help="Number of parallel converters (default: preprocess.max_workers from config).",
+)
+@click.option(
+    "--backend",
+    default=None,
+    type=str,
+    help="MinerU backend (default: preprocess.backend from config).",
+)
+@click.option(
+    "--language",
+    default=None,
+    type=str,
+    help="OCR language for MinerU (default: preprocess.language from config).",
+)
+@click.option(
+    "--include",
+    default=None,
+    type=str,
+    help="Comma-separated list of extensions to convert (overrides config).",
+)
+@click.option(
+    "--fail-fast",
+    is_flag=True,
+    default=False,
+    help="Halt on the first conversion failure instead of recording it.",
+)
+@click.option("--verbose", "-v", is_flag=True, help="Enable DEBUG-level logging.")
+def convert_cmd(
+    input_dir: Path,
+    output_dir: Path,
+    workers: int | None,
+    backend: str | None,
+    language: str | None,
+    include: str | None,
+    fail_fast: bool,
+    verbose: bool,
+) -> None:
+    """Convert non-Markdown sources (PDF/DOCX/PPTX/XLSX/images/HTML) to Markdown.
+
+    Stand-alone counterpart of the in-pipeline ``preprocess`` step. Produces
+    one ``.md`` file plus a ``<stem>.mineru.json`` provenance sidecar per
+    source, preserving the input directory layout. Does NOT create a session.
+    """
+    from mykg.logging import setup
+    from mykg.preprocess import MineruRunner, convert_directory
+
+    setup(log_file=None, verbose=verbose)
+
+    cfg = _cfg()
+    extensions = list(cfg.PREPROCESS_EXTENSIONS)
+    html_extensions = list(cfg.PREPROCESS_HTML_EXTENSIONS)
+
+    if include:
+        all_requested = [e.strip().lower().lstrip(".") for e in include.split(",") if e.strip()]
+        html_set = {e.lower() for e in html_extensions}
+        extensions = [e for e in all_requested if e not in html_set]
+        html_extensions = [e for e in all_requested if e in html_set]
+
+    runner = MineruRunner(
+        mineru_path=cfg.PREPROCESS_MINERU_PATH,
+        backend=backend or cfg.PREPROCESS_BACKEND,
+        language=language or cfg.PREPROCESS_LANGUAGE,
+        timeout_seconds=cfg.PREPROCESS_TIMEOUT_SECONDS,
+    )
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest = convert_directory(
+        input_dir,
+        output_dir,
+        extensions=extensions,
+        html_extensions=html_extensions,
+        max_workers=workers if workers is not None else cfg.PREPROCESS_MAX_WORKERS,
+        runner=runner,
+        fail_fast=fail_fast,
+    )
+
+    click.echo(f"Converted: {len(manifest.converted)}")
+    click.echo(f"Failed:    {len(manifest.failed)}")
+    click.echo(f"Skipped:   {len(manifest.skipped)}")
+    if manifest.failed:
+        for rel, err in manifest.failed.items():
+            click.echo(f"  FAIL {rel}: {err}", err=True)
 
 
 @cli.command("approve-schema")
@@ -633,10 +766,13 @@ def _delete_from_step(
     output_dir: Path,
     *,
     incremental: bool = False,
+    input_dir: Path | None = None,
 ) -> None:
     from mykg.pipeline import STEPS
 
     step_names = [s.name for s in STEPS]
+    # ``ingest`` is always re-run when present; ``preprocess`` is opt-in but
+    # remains a valid --from-step target so users can re-convert sources.
     valid_names = [s.name for s in STEPS if s.name != "ingest"]
 
     if step_name not in valid_names:
@@ -695,6 +831,16 @@ def _delete_from_step(
         if flag_path.exists():
             flag_path.unlink()
             click.echo(f"Deleted {flag_path}")
+
+    # Preprocess re-entry (D47): also delete every converted .md + sidecar
+    # listed in the manifest so MinerU runs again on the next invocation.
+    # Original source files (PDF/DOCX/…) are preserved.
+    if step_name == "preprocess" and input_dir is not None:
+        from mykg.steps.step_preprocess import cleanup_converted_outputs
+
+        removed = cleanup_converted_outputs(intermediate_dir, input_dir)
+        if removed:
+            click.echo(f"Deleted {removed} converted preprocess output(s)")
 
 
 def _delete_merge_from_step(

@@ -83,7 +83,7 @@ sessions/2026-05-17T18-31-07/
 ### Input
 
 - **Markdown files** — any directory of `.md` files; subdirectory structure is preserved; YAML/TOML frontmatter, headings, lists, and code blocks are all treated as structural signals
-- **Other formats** — convert PDFs, Word docs, HTML, and other formats to Markdown first using a document parser such as [MinerU](https://github.com/opendatalab/mineru), then point myKG at the output directory
+- **Other formats (built-in)** — install the optional `[mineru]` extras to convert PDF, DOCX, PPTX, XLSX, and image files automatically as part of `extract-graph`; HTML is converted in-process via `markdownify` without extra dependencies. See "Other input formats (PDF, DOCX, PPTX, XLSX, images, HTML)" below.
 
 ### Graph & Output
 
@@ -339,23 +339,78 @@ The sessions root is configurable via `pipeline.paths.sessions_dir` (default: `s
 
 ### Pipeline Steps
 
-The pipeline runs 11 steps in sequence. All intermediate state is written to disk so any step can be re-entered without repeating upstream work.
+The pipeline runs 12 steps in sequence. All intermediate state is written to disk so any step can be re-entered without repeating upstream work.
 
 | # | Step | LLM | Key outputs |
 |---|---|---|---|
-| 1 | `ingest` | — | `file_manifest.json` |
-| 2 | `pass1` | ✓ (3 calls) | `schema.json`, `schema.ttl`, `schema_history/` |
-| 3 | `schema_validate` | — | `schema_validate.done` |
-| 4 | `human_review` | — | `schema_approved.flag` *(only with `--review`)* |
-| 5 | `schema_flatten` | — | `flattened_schema.json` |
-| 6 | `pass2` | ✓ | `raw_extractions.json`, `chunk_node_index.json` |
-| 7 | `normalize_names` | ✓ | `name_normalization.json` |
-| 8 | `assemble` | — | `edge_metadata.json`, `nodes.json`, `merge_log.json` |
-| 9 | `orphan_score` | — | `orphan_candidates.json` |
-| 10 | `orphan_connect` | ✓ | `orphan_connections.json`, `orphan_log.json` |
-| 11 | `validate_graph` | — | `nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, `knowledge_graph.html`, `networkx_output/`, `obsidian_vault/` |
+| 1 | `preprocess` | — | `preprocess.done`, `preprocess_manifest.json` *(only converts non-Markdown sources; no-op for pure-MD corpora)* |
+| 2 | `ingest` | — | `file_manifest.json` |
+| 3 | `pass1` | ✓ (3 calls) | `schema.json`, `schema.ttl`, `schema_history/` |
+| 4 | `schema_validate` | — | `schema_validate.done` |
+| 5 | `human_review` | — | `schema_approved.flag` *(only with `--review`)* |
+| 6 | `schema_flatten` | — | `flattened_schema.json` |
+| 7 | `pass2` | ✓ | `raw_extractions.json`, `chunk_node_index.json` |
+| 8 | `normalize_names` | ✓ | `name_normalization.json` |
+| 9 | `assemble` | — | `edge_metadata.json`, `nodes.json`, `merge_log.json` |
+| 10 | `orphan_score` | — | `orphan_candidates.json` |
+| 11 | `orphan_connect` | ✓ | `orphan_connections.json`, `orphan_log.json` |
+| 12 | `validate_graph` | — | `nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, `knowledge_graph.html`, `networkx_output/`, `obsidian_vault/` |
 
 Pass 1 internally runs four sequential stages: parallel batch induction → algorithmic merge → harmonization LLM call → quality review LLM call.
+
+### Other input formats (PDF, DOCX, PPTX, XLSX, images, HTML)
+
+myKG can convert non-Markdown sources to Markdown automatically before extraction. Two converters share one routing layer (D39–D48):
+
+- **HTML / HTM** — handled in-process via `markdownify`. Works out of the box, no extra install.
+- **PDF / DOCX / DOC / PPTX / XLSX / PNG / JPG / JPEG** — handled by [MinerU](https://github.com/opendatalab/mineru) invoked as a CLI subprocess. Install the optional extras to enable:
+
+```bash
+pip install 'mykg[mineru]'
+```
+
+Two entry points use the same converter:
+
+1. **In-pipeline (`preprocess` step)** — drop mixed `.md` / `.pdf` / `.docx` files into your input directory and run `mykg extract-graph` normally; converted markdown files land next to the source files inside `sessions/<run>/input/` with a `<stem>.mineru.json` provenance sidecar, and `ingest` picks them up alongside hand-written notes.
+
+   ```bash
+   mykg extract-graph ./my_mixed_corpus/
+   ```
+
+2. **Standalone (`mykg convert`)** — convert a directory once, inspect or edit the output, then feed it to `extract-graph` separately:
+
+   ```bash
+   mykg convert -i ./pdfs/ -o ./converted/
+   mykg extract-graph ./converted/
+   ```
+
+Available options for `mykg convert`:
+
+```bash
+mykg convert -i <input-dir> -o <output-dir> \
+  [--workers N] \
+  [--backend pipeline | hybrid-auto-engine | vlm-*] \
+  [--language en] \
+  [--include pdf,docx,html] \
+  [--fail-fast]
+```
+
+All defaults flow from the `preprocess:` block in `mykg_config.yaml`:
+
+```yaml
+preprocess:
+  enabled: true
+  max_workers: 4
+  mineru_path: mineru        # absolute path or PATH binary
+  backend: pipeline
+  language: en
+  timeout_seconds: 900
+  extensions: [pdf, docx, doc, pptx, xlsx, png, jpg, jpeg]
+  html_extensions: [html, htm]
+  fail_fast: false
+```
+
+If MinerU is not installed but non-HTML files are present, the step logs an actionable error (`MinerU not found … install with: pip install mykg[mineru]`); pure-HTML corpora work without MinerU. Set `preprocess.enabled: false` to disable the step entirely.
 
 ## Outputs
 
