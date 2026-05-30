@@ -220,6 +220,18 @@ The wizard walks you through three prompts:
 2. **Model** — accept the default or type any model slug for that provider
 3. **API key** — paste your key (skipped for Ollama and Claude CLI)
 
+### LLM Providers
+
+| Provider | Profile name | API key env var | Notes |
+|---|---|---|---|
+| Anthropic (Claude) | `anthropic-claude` | `ANTHROPIC_API_KEY` | Recommended for quality |
+| OpenAI | `openai` | `OPENAI_API_KEY` | |
+| Ollama | `ollama-local` | — | Local inference, no key needed |
+| OpenRouter | `openrouter-free` | `OPENROUTER_API_KEY` | Access many models via one key |
+| Claude CLI | `claude-cli` | — | Uses `claude -p` subprocess; billing via Claude Pro/Max; serial only |
+
+Switch provider by setting `profile:` at the top of [`mykg_config.yaml`](mykg_config.yaml).
+
 
 ### API Keys
 
@@ -237,49 +249,9 @@ export ANTHROPIC_API_KEY=sk-ant-...
 # .env.mykg
 ANTHROPIC_API_KEY=sk-ant-...
 ```
-
-| Variable | Profile | Notes |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | `anthropic-claude` | Claude API key |
-| `OPENAI_API_KEY` | `openai` | OpenAI API key |
-| `OPENROUTER_API_KEY` | `openrouter-free` | OpenRouter API key |
-| *(none required)* | `claude-cli` | Billing via Claude Pro/Max subscription |
-| *(none required)* | `ollama-local` | Local inference, no account needed |
-
 For source installs you can also copy [`sample.env.mykg`](sample.env.mykg) to `.env.mykg` as a starting template.
 
-### LLM Providers
 
-| Provider | Profile name | API key env var | Notes |
-|---|---|---|---|
-| Anthropic (Claude) | custom (see Quick Start) | `ANTHROPIC_API_KEY` | Recommended for quality |
-| OpenAI (GPT-4o) | `openai` | `OPENAI_API_KEY` | |
-| Ollama | `ollama-local` | — | Local inference, no key needed |
-| OpenRouter | `openrouter-free` | `OPENROUTER_API_KEY` | Access many models via one key |
-| Claude CLI | `claude-cli` | — | Uses `claude -p` subprocess; billing via Claude Pro/Max; serial only |
-
-Switch provider by setting `profile:` at the top of [`mykg_config.yaml`](mykg_config.yaml).
-
-### Key Pipeline Parameters
-
-| Key | Default | Description |
-|---|---|---|
-| `pipeline.chunking.window_tokens` | `2000` | Chunk size in tokens |
-| `pipeline.chunking.overlap_tokens` | `200` | Overlap between adjacent chunks |
-| `pipeline.pass1.batch_token_target` | `8000` | Max tokens per Pass 1 LLM batch |
-| `pipeline.pass1.max_workers` | `4` | Parallel LLM workers for Pass 1 |
-| `pipeline.pass2.max_workers` | `1` | Parallel workers for Pass 2 |
-| `pipeline.pass2.stateful_chunks` | `false` | Pass prior-chunk node IDs to subsequent chunks for stable IDs |
-| `pipeline.pass2.prep_mode` | `per_file` | `per_file` \| `concat` \| `batch_chunks` |
-| `pipeline.normalize_names.enabled` | `true` | Run LLM name normalization step |
-| `pipeline.orphan_pass.enabled` | `true` | Run the orphan-connection pass |
-| `pipeline.orphan_pass.schema_max_restarts` | `1` | Max automated Pass 2 restarts from schema-gap recovery |
-| `pipeline.export.networkx_enabled` | `true` | Write NetworkX formats to `output/networkx_output/` |
-| `pipeline.export.obsidian_enabled` | `true` | Write Obsidian vault to `output/obsidian_vault/` |
-| `pipeline.export.obsidian_vault_dir` | `obsidian_vault` | Subdirectory name for the Obsidian vault inside `output/` |
-| `pipeline.error_gate.enabled` | `true` | Pause all workers on repeated API errors |
-
-Run `context-calculator --context <N> --max-output <M>` to compute correct `window_tokens` and `batch_token_target` for a different model's context window.
 
 ## Extract Pipeline
 
