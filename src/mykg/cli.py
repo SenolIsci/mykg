@@ -614,20 +614,6 @@ def merge_graphs(
     click.echo(f"Merged session written to: {merged_session_root}")
 
 
-def _resolve_mineru() -> str | None:
-    """Find the `mineru` executable, preferring the current interpreter's venv.
-
-    A venv install puts `mineru` next to `python` (Path(sys.executable).parent),
-    but that directory is not on PATH unless the venv is activated. Without
-    this, `shutil.which("mineru")` returns None for an unactivated venv even
-    though mineru is installed — yielding spurious "not found" errors.
-    """
-    venv_bin = Path(sys.executable).parent / "mineru"
-    if venv_bin.exists():
-        return str(venv_bin)
-    return shutil.which("mineru")
-
-
 @cli.command(
     "parse-docs",
     context_settings={"ignore_unknown_options": True},
@@ -650,24 +636,37 @@ def _resolve_mineru() -> str | None:
 def parse_docs(input_path: Path, output_path: Path, extra_args: tuple[str, ...]) -> None:
     """Convert non-Markdown documents (PDF, DOCX, images, etc.) to Markdown using MinerU.
 
-    Wraps `mineru -p INPUT -o OUTPUT` (mineru's `-p` / `--path` is the input).
-    Requires `pip install "mykg[mineru]"`. Extra arguments are passed through
-    to mineru.
+    Wraps `mineru -p INPUT -o OUTPUT`. MinerU runs inside an ephemeral
+    Python venv created via `uv` (pinned to preprocess.uv_python_version)
+    and deleted on exit; no MinerU bits are installed into mykg's own
+    interpreter. Extra arguments after --output are passed through to mineru.
     """
-    mineru = _resolve_mineru()
-    if mineru is None:
-        raise click.ClickException(
-            'mineru CLI not found. Install with: pip install "mykg[mineru]"'
-        )
+    from mykg import config as _cfg
+    from mykg.uv_venv import ephemeral_mineru_venv
 
-    output_path.mkdir(parents=True, exist_ok=True)
+    with ephemeral_mineru_venv(
+        _cfg.PREPROCESS_UV_PYTHON_VERSION,
+        _cfg.PREPROCESS_MINERU_SPEC,
+        _cfg.PREPROCESS_UV_PATH,
+        _cfg.PREPROCESS_INSTALL_TIMEOUT_SECONDS,
+    ) as mineru_bin:
+        output_path.mkdir(parents=True, exist_ok=True)
+        cmd = [str(mineru_bin), "-p", str(input_path), "-o", str(output_path)] + list(extra_args)
+        click.echo(f"Running: {' '.join(cmd)}")
 
-    cmd = [mineru, "-p", str(input_path), "-o", str(output_path)] + list(extra_args)
-    click.echo(f"Running: {' '.join(cmd)}")
+        try:
+            proc = subprocess.run(
+                cmd,
+                check=False,
+                timeout=_cfg.PREPROCESS_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise click.ClickException(
+                f"mineru timed out after {_cfg.PREPROCESS_TIMEOUT_SECONDS}s"
+            ) from exc
 
-    proc = subprocess.run(cmd, check=False)
-    if proc.returncode != 0:
-        raise click.ClickException(f"mineru exited with code {proc.returncode}")
+        if proc.returncode != 0:
+            raise click.ClickException(f"mineru exited with code {proc.returncode}")
 
     click.echo(f"Done. Output written to: {output_path}")
 

@@ -40,7 +40,20 @@ Both pipelines run as a sequence of named steps. All intermediate state is writt
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │  INPUT                                                               │
-│  A directory of Markdown files (.md)                                 │
+│  A directory of Markdown plus optional non-md sources                │
+│  (PDF, DOCX, PPTX, images, HTML)                                     │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  PREPROCESS  (optional; opt-in via preprocess.enabled)               │
+│                                                                      │
+│  Routing by file extension:                                          │
+│    PDF / DOCX / PPTX / images → MinerU (ephemeral uv venv)          │
+│    HTML / HTM                  → markdownify (in-process)           │
+│    everything else             → logged + skipped                    │
+│                                                                      │
+│  Converted .md lands under input/_preprocessed/                      │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │
                                ▼
@@ -107,27 +120,28 @@ The orchestrator also manages the schema-gap restart loop: when the orphan-conne
 
 ## Extract Pipeline Steps
 
-The extract pipeline (`mykg extract-graph`) runs 11 steps in sequence. Steps marked **LLM** make one or more calls to the configured LLM provider.
+The extract pipeline (`mykg extract-graph`) runs 12 steps in sequence. Steps marked **LLM** make one or more calls to the configured LLM provider.
 
 | # | Step | LLM | What it does | Key outputs |
 |---|---|---|---|---|
-| 1 | `ingest` | — | Reads all Markdown files, computes content hashes, splits each file into overlapping token windows, and builds the file manifest used by all downstream steps | `file_manifest.json` |
-| 2 | `pass1` | ✓ (3 calls) | Induces a global RDFS schema from the corpus via parallel batch induction, algorithmic merge, LLM harmonization, and LLM quality review | `schema.json`, `schema.ttl`, `schema_history/` |
-| 3 | `schema_validate` | — | Validates `schema.json` with rdflib (syntax) and custom semantic checks (domain/range refer to declared classes, no conflicting ranges). On failure, sends a correction prompt to the LLM and retries once | `schema_validate.done` |
-| 4 | `human_review` | — | Optional gate (active only with `--review`). Pauses the pipeline until you run `mykg approve-schema`. Lets you inspect and edit the schema in Protégé or a text editor before any entity is extracted | `schema_approved.flag` |
-| 5 | `schema_flatten` | — | Walks the concept hierarchy and computes the full attribute list for each type, including inherited attributes. The LLM in Pass 2 receives this flat list and never sees the inheritance structure | `flattened_schema.json` |
-| 6 | `pass2` | ✓ | Extracts typed entities and relationships from each document chunk, in parallel across files. Each file's results are written to a per-file shard immediately on completion | `raw_extractions_shards/`, `chunk_node_index.json`, `failed_chunks.json` |
-| 7 | `normalize_names` | ✓ | Sends all extracted names per concept type to the LLM and asks it to group surface-form variants. Returns an alias-to-canonical mapping used during assembly | `name_normalization.json` |
-| 8 | `assemble` | — | Assigns stable IDs, deduplicates nodes and edges across all files, applies the name normalization map, writes the edge metadata sidecar, and logs all merge decisions | `edge_metadata.json`, `nodes.json`, `merge_log.json` |
-| 9 | `orphan_score` | — | Maps each zero-edge node to its source chunk using the chunk node index. Produces one candidate group per source chunk that contains at least one orphan | `orphan_candidates.json` |
-| 10 | `orphan_connect` | ✓ | For each candidate group, calls the LLM once with the full source chunk text to find missing relationships. Validates and merges confirmed edges into the sidecar. Escalates to schema-gap restart if needed | `orphan_connections.json`, `orphan_log.json` |
-| 11 | `validate_graph` | — | Exports all output formats from the same in-memory data: JSONL, Turtle RDF, NetworkX formats, and the Obsidian vault. Validates the Turtle file before writing. Generates the interactive HTML visualization | `nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, `networkx_output/`, `obsidian_vault/` |
+| 1 | `preprocess` | — | Optional. Converts non-Markdown sources to `.md` before ingest. Routing is per file extension: PDF / DOCX / PPTX / images go to MinerU (subprocess in an ephemeral `uv` venv); HTML / HTM go to `markdownify` in-process; anything else is logged and skipped. Disabled unless `preprocess.enabled: true`. Skipped on re-entry when the sentinel exists | `preprocess.done`, `preprocess_manifest.json`, files under `input/_preprocessed/` |
+| 2 | `ingest` | — | Reads all Markdown files (including converted output under `input/_preprocessed/`), computes content hashes, splits each file into overlapping token windows, and builds the file manifest used by all downstream steps | `file_manifest.json` |
+| 3 | `pass1` | ✓ (3 calls) | Induces a global RDFS schema from the corpus via parallel batch induction, algorithmic merge, LLM harmonization, and LLM quality review | `schema.json`, `schema.ttl`, `schema_history/` |
+| 4 | `schema_validate` | — | Validates `schema.json` with rdflib (syntax) and custom semantic checks (domain/range refer to declared classes, no conflicting ranges). On failure, sends a correction prompt to the LLM and retries once | `schema_validate.done` |
+| 5 | `human_review` | — | Optional gate (active only with `--review`). Pauses the pipeline until you run `mykg approve-schema`. Lets you inspect and edit the schema in Protégé or a text editor before any entity is extracted | `schema_approved.flag` |
+| 6 | `schema_flatten` | — | Walks the concept hierarchy and computes the full attribute list for each type, including inherited attributes. The LLM in Pass 2 receives this flat list and never sees the inheritance structure | `flattened_schema.json` |
+| 7 | `pass2` | ✓ | Extracts typed entities and relationships from each document chunk, in parallel across files. Each file's results are written to a per-file shard immediately on completion | `raw_extractions_shards/`, `chunk_node_index.json`, `failed_chunks.json` |
+| 8 | `normalize_names` | ✓ | Sends all extracted names per concept type to the LLM and asks it to group surface-form variants. Returns an alias-to-canonical mapping used during assembly | `name_normalization.json` |
+| 9 | `assemble` | — | Assigns stable IDs, deduplicates nodes and edges across all files, applies the name normalization map, writes the edge metadata sidecar, and logs all merge decisions | `edge_metadata.json`, `nodes.json`, `merge_log.json` |
+| 10 | `orphan_score` | — | Maps each zero-edge node to its source chunk using the chunk node index. Produces one candidate group per source chunk that contains at least one orphan | `orphan_candidates.json` |
+| 11 | `orphan_connect` | ✓ | For each candidate group, calls the LLM once with the full source chunk text to find missing relationships. Validates and merges confirmed edges into the sidecar. Escalates to schema-gap restart if needed | `orphan_connections.json`, `orphan_log.json` |
+| 12 | `validate_graph` | — | Exports all output formats from the same in-memory data: JSONL, Turtle RDF, NetworkX formats, and the Obsidian vault. Validates the Turtle file before writing. Generates the interactive HTML visualization | `nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, `networkx_output/`, `obsidian_vault/` |
 
 ---
 
 ## Merge Pipeline Steps
 
-The merge pipeline (`mykg merge-graphs`) runs 12 steps. Steps 3–5 and 8–11 are reused directly from the extract pipeline.
+The merge pipeline (`mykg merge-graphs`) runs 12 steps. `schema_validate`, `human_review`, `schema_flatten`, `assemble`, `orphan_score`, `orphan_connect`, and `validate_graph` are reused directly from the extract pipeline. The merge pipeline has no `preprocess` step of its own — sources come from two already-completed sessions whose `input/` trees are already in Markdown form.
 
 | # | Step | LLM | What it does | Key outputs |
 |---|---|---|---|---|
@@ -148,9 +162,21 @@ The merge pipeline (`mykg merge-graphs`) runs 12 steps. Steps 3–5 and 8–11 a
 
 ## Extract Pipeline
 
-The extract pipeline runs 11 steps. The first two are the core LLM passes; the rest handle normalization, assembly, quality improvement, and export.
+The extract pipeline runs 12 steps. Step 1 (preprocess) is optional and runs only if non-Markdown sources are present and the config enables it; steps 2–3 are the core LLM passes; the rest handle normalization, assembly, quality improvement, and export.
 
 The fundamental separation is between **schema induction** — asking "what kinds of things and relationships exist in this document collection?" — and **instance extraction** — asking "which specific entities and relationships appear in each document?" Separating these two concerns produces a globally consistent vocabulary without requiring manual ontology authoring, while keeping each extraction prompt focused and deterministic.
+
+### Preprocess: Non-Markdown Conversion
+
+The preprocess step converts non-Markdown sources to Markdown so the rest of the pipeline only sees `.md`. It is opt-in via `preprocess.enabled: true` and a no-op when the input directory is pure Markdown.
+
+Discovery walks the session's `input/` tree and routes each non-`.md` file by its extension (case-insensitive), against two allowlists in `mykg_config.yaml`:
+
+- `preprocess.extensions` (default `.pdf .docx .doc .pptx .png .jpg .jpeg`) → **MinerU**, invoked via a `mykg parse-docs` subprocess. The subprocess builds an ephemeral Python 3.12 virtualenv via `uv`, installs `mineru[all]` into it, runs MinerU once on the whole input directory, and deletes the venv on exit. Nothing about MinerU is installed into mykg's own interpreter, which keeps mykg compatible with Python 3.11+ even though MinerU pins 3.12.
+- `preprocess.html_extensions` (default `.html .htm`) → **markdownify**, in-process. `markdownify(html, strip=["img", "a"])` is called per file — anchors and image tags are stripped because their `href`/`src` paths would not resolve outside the original page. Subdirectory structure is preserved relative to the input dir.
+- Anything else is logged at INFO and recorded under `preprocess_manifest.json["skipped_files"]` as `{path, ext}` records. The file is left untouched on disk and never reaches `ingest`. This is the right behaviour for sidecar assets that accompany HTML pages (e.g. `.php`, `.svg`, `.css` files in a saved Wikipedia bundle) — neither dropped silently nor force-converted.
+
+Converted Markdown lands under `input/_preprocessed/` with the source stem and `.md` suffix. The `ingest` step picks them up via the same recursive glob it uses for hand-authored Markdown. Per-file failures in the HTML branch are recorded in `preprocess_manifest.json["html_records"]` but do not halt the pipeline; MinerU subprocess failures halt the run with a non-zero exit code.
 
 ### Pass 1: Schema Induction
 
@@ -297,7 +323,8 @@ Use `--from-step <step>` to delete a step's outputs and re-run from that point f
 
 | Re-entry | `--from-step` value | When to use | What you edit first | Files reused |
 |---|---|---|---|---|
-| **A — Schema** | `pass1` or `schema_validate` | The induced schema has wrong concept types, missing properties, or incorrect hierarchy | Edit `intermediate/schema.json` directly, or load `intermediate/schema.ttl` in Protégé and save back | None — all downstream steps are invalidated |
+| **— Preprocess** | `preprocess` | A converted file is wrong (MinerU mis-OCR'd a PDF, markdownify mangled HTML) and needs a fresh conversion run | Re-run with `--from-step preprocess`; the sentinel + entire `input/_preprocessed/` tree is deleted and rebuilt. Original sources under `input/` are never touched | None — preprocess is the earliest step |
+| **A — Schema** | `pass1` or `schema_validate` | The induced schema has wrong concept types, missing properties, or incorrect hierarchy | Edit `intermediate/schema.json` directly, or load `intermediate/schema.ttl` in Protégé and save back | `preprocess.done`, converted `.md` under `input/_preprocessed/` |
 | **B — Extraction** | `pass2` | The LLM missed entities, hallucinated edge types, or produced wrong attributes in specific files | Edit the per-file shard in `intermediate/raw_extractions_shards/<file-slug>.json` | `schema.json`, `flattened_schema.json` |
 | **C — Assembly** | `assemble` | Deduplication merged nodes incorrectly, or the merge log shows wrong decisions | Edit `intermediate/raw_extractions.json` | `schema.json`, `flattened_schema.json`, `raw_extractions.json` |
 | **D — Orphan pass** | `orphan_score` or `orphan_connect` | Orphan candidates are wrong (re-run both stages), or only the LLM confirmations need to be redone (re-run Stage 2 only) | Delete `intermediate/orphan_candidates.json` for a full re-score, or `intermediate/orphan_connections.json` for LLM-only redo | `schema.json`, `nodes.json`, `edge_metadata.json`, `chunk_node_index.json` |

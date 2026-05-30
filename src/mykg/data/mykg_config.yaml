@@ -38,7 +38,7 @@ profiles:
       # Set model to a specific OpenRouter model slug (see openrouter.ai/models).
       # For 128K+ models raise window_tokens, overlap_tokens, and batch_token_target proportionally
       # (run: context-calculator --context <N> --max-output <M>).
-      model: google/gemini-3.5-flash #google/gemma-4-31b-it
+      model: openrouter/free #google/gemma-4-31b-it
       timeout: 1800                # seconds per LLM call before raising a timeout error
       retry_429_max: 1          # max retries on HTTP 429 rate-limit before giving up
       retry_429_base_delay: 2.0 # initial backoff seconds; doubles on each retry (exponential)
@@ -47,12 +47,25 @@ profiles:
       ingest:
         max_workers: 8          # parallel file readers; safe to set high — purely I/O-bound
       # --- Preprocess (optional non-md document conversion via MinerU) ----------
+      # MinerU runs inside an ephemeral uv-managed venv created per parse-docs
+      # call and deleted on exit; nothing is installed into mykg's interpreter.
       preprocess:
-        enabled: false                # set true to convert non-md files (PDF/DOCX/images) via MinerU before ingest
+        enabled: true                # set true to convert non-md files (PDF/DOCX/images) via MinerU before ingest
         subdir: _preprocessed         # converted .md files land in <session>/input/<subdir>/
-        mineru_path: mineru           # path or PATH name of the MinerU CLI
         extra_args: []                # extra arguments passed through to mineru (e.g. ["--backend", "pipeline"])
-        timeout_seconds: 1800         # per-call mineru subprocess timeout (30 min)
+        timeout_seconds: 1800         # mineru run-phase timeout (30 min)
+        uv_path: uv                   # path or PATH name of the uv CLI (uv is a core mykg dependency)
+        uv_python_version: "3.12"    # interpreter version uv pins the ephemeral venv to
+        mineru_spec: mineru[all]      # package spec installed via `uv pip install -U <spec>`
+        install_timeout_seconds: 1800 # install-phase timeout (30 min); first-run downloads PyTorch/Ray
+        extensions:                   # only these suffixes are routed to MinerU; anything else (e.g. .html) is logged + recorded but left untouched
+          - .pdf
+          - .docx
+          - .doc
+          - .pptx
+          - .png
+          - .jpg
+          - .jpeg
       chunking:
         window_tokens: 25000     # = input_headroom / 4 = 25000  (keep small; many chunks batched together in pass1)
         overlap_tokens: 2500     # = window_tokens × 0.10 = 2500  (10% overlap preserves context at boundaries)
@@ -164,12 +177,25 @@ profiles:
       ingest:
         max_workers: 2          # parallel file readers; safe to set high — purely I/O-bound
       # --- Preprocess (optional non-md document conversion via MinerU) ----------
+      # MinerU runs inside an ephemeral uv-managed venv created per parse-docs
+      # call and deleted on exit; nothing is installed into mykg's interpreter.
       preprocess:
         enabled: false                # set true to convert non-md files (PDF/DOCX/images) via MinerU before ingest
         subdir: _preprocessed         # converted .md files land in <session>/input/<subdir>/
-        mineru_path: mineru           # path or PATH name of the MinerU CLI
         extra_args: []                # extra arguments passed through to mineru (e.g. ["--backend", "pipeline"])
-        timeout_seconds: 1800         # per-call mineru subprocess timeout (30 min)
+        timeout_seconds: 1800         # mineru run-phase timeout (30 min)
+        uv_path: uv                   # path or PATH name of the uv CLI (uv is a core mykg dependency)
+        uv_python_version: "3.12"    # interpreter version uv pins the ephemeral venv to
+        mineru_spec: mineru[all]      # package spec installed via `uv pip install -U <spec>`
+        install_timeout_seconds: 1800 # install-phase timeout (30 min); first-run downloads PyTorch/Ray
+        extensions:                   # only these suffixes are routed to MinerU; anything else (e.g. .html) is logged + recorded but left untouched
+          - .pdf
+          - .docx
+          - .doc
+          - .pptx
+          - .png
+          - .jpg
+          - .jpeg
       chunking:
         window_tokens: 2500     # = input_headroom / 4 = 25000  (keep small; many chunks batched together in pass1)
         overlap_tokens: 250     # = window_tokens × 0.10 = 2500  (10% overlap preserves context at boundaries)
@@ -224,8 +250,6 @@ profiles:
         comment_width: 42          # column width for section divider comments in knowledge_graph.ttl
         skos_namespace: "http://www.w3.org/2004/02/skos/core#"  # SKOS namespace for skos:altLabel alias triples
         networkx_enabled: true     # write NetworkX multi-format exports to output/networkx_output/ (GML, GraphML, GEXF, etc.)
-        obsidian_enabled: true
-        obsidian_vault_dir: obsidian_vault
       # --- Pipeline infrastructure --------------------------------------------
       error_gate:               # circuit-breaker: pauses the run when too many API errors accumulate
         enabled: false
@@ -280,6 +304,26 @@ profiles:
       # --- Ingestion & chunking -----------------------------------------------
       ingest:
         max_workers: 8
+      # --- Preprocess (optional non-md document conversion via MinerU) ----------
+      # MinerU runs inside an ephemeral uv-managed venv created per parse-docs
+      # call and deleted on exit; nothing is installed into mykg's interpreter.
+      preprocess:
+        enabled: false                # set true to convert non-md files (PDF/DOCX/images) via MinerU before ingest
+        subdir: _preprocessed         # converted .md files land in <session>/input/<subdir>/
+        extra_args: []                # extra arguments passed through to mineru (e.g. ["--backend", "pipeline"])
+        timeout_seconds: 1800         # mineru run-phase timeout (30 min)
+        uv_path: uv                   # path or PATH name of the uv CLI (uv is a core mykg dependency)
+        uv_python_version: "3.12"    # interpreter version uv pins the ephemeral venv to
+        mineru_spec: mineru[all]      # package spec installed via `uv pip install -U <spec>`
+        install_timeout_seconds: 1800 # install-phase timeout (30 min); first-run downloads PyTorch/Ray
+        extensions:                   # only these suffixes are routed to MinerU; anything else (e.g. .html) is logged + recorded but left untouched
+          - .pdf
+          - .docx
+          - .doc
+          - .pptx
+          - .png
+          - .jpg
+          - .jpeg
       chunking:
         window_tokens: 28000    # = input_headroom / 4 ≈ 28000
         overlap_tokens: 2800    # = window_tokens × 0.10
@@ -391,6 +435,26 @@ profiles:
       # --- Ingestion & chunking -----------------------------------------------
       ingest:
         max_workers: 4            # local inference is CPU/GPU-bound; keep workers modest
+      # --- Preprocess (optional non-md document conversion via MinerU) ----------
+      # MinerU runs inside an ephemeral uv-managed venv created per parse-docs
+      # call and deleted on exit; nothing is installed into mykg's interpreter.
+      preprocess:
+        enabled: false                # set true to convert non-md files (PDF/DOCX/images) via MinerU before ingest
+        subdir: _preprocessed         # converted .md files land in <session>/input/<subdir>/
+        extra_args: []                # extra arguments passed through to mineru (e.g. ["--backend", "pipeline"])
+        timeout_seconds: 1800         # mineru run-phase timeout (30 min)
+        uv_path: uv                   # path or PATH name of the uv CLI (uv is a core mykg dependency)
+        uv_python_version: "3.12"    # interpreter version uv pins the ephemeral venv to
+        mineru_spec: mineru[all]      # package spec installed via `uv pip install -U <spec>`
+        install_timeout_seconds: 1800 # install-phase timeout (30 min); first-run downloads PyTorch/Ray
+        extensions:                   # only these suffixes are routed to MinerU; anything else (e.g. .html) is logged + recorded but left untouched
+          - .pdf
+          - .docx
+          - .doc
+          - .pptx
+          - .png
+          - .jpg
+          - .jpeg
       chunking:
         window_tokens: 6000     # = input_headroom / 4 ≈ 6000
         overlap_tokens: 600     # = window_tokens × 0.10

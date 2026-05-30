@@ -193,12 +193,39 @@ LOG_ERROR_OUTPUT_MAX_CHARS: int = int(_get_opt("logging", "error_output_max_char
 
 # ---------------------------------------------------------------------------
 # Preprocess — optional document conversion before ingest (D39–D48)
+# MinerU runs in an ephemeral uv-managed venv created per parse-docs call;
+# nothing about MinerU is installed into mykg's own interpreter. The four
+# PREPROCESS_UV_* / _MINERU_SPEC / _INSTALL_TIMEOUT keys control that venv.
 # ---------------------------------------------------------------------------
 PREPROCESS_ENABLED: bool = bool(_get_opt("preprocess", "enabled", False))
 PREPROCESS_SUBDIR: str = _get_opt("preprocess", "subdir", "_preprocessed")
-PREPROCESS_MINERU_PATH: str = _get_opt("preprocess", "mineru_path", "mineru")
 PREPROCESS_EXTRA_ARGS: list = list(_get_opt("preprocess", "extra_args", []) or [])
 PREPROCESS_TIMEOUT_SECONDS: int = int(_get_opt("preprocess", "timeout_seconds", 1800))
+PREPROCESS_UV_PATH: str = _get_opt("preprocess", "uv_path", "uv")
+PREPROCESS_UV_PYTHON_VERSION: str = _get_opt("preprocess", "uv_python_version", "3.12")
+PREPROCESS_MINERU_SPEC: str = _get_opt("preprocess", "mineru_spec", "mineru[all]")
+PREPROCESS_INSTALL_TIMEOUT_SECONDS: int = int(
+    _get_opt("preprocess", "install_timeout_seconds", 1800)
+)
+# Allowlist of file extensions actually routed to MinerU. Anything not in
+# this set is logged + recorded in preprocess_manifest.json under
+# "skipped_files" and left untouched on disk. Suffixes are matched
+# case-insensitively and must include the leading dot.
+PREPROCESS_EXTENSIONS: frozenset[str] = frozenset(
+    str(ext).lower()
+    for ext in _get_opt(
+        "preprocess",
+        "extensions",
+        [".pdf", ".docx", ".doc", ".pptx", ".png", ".jpg", ".jpeg"],
+    )
+)
+# HTML inputs bypass MinerU (which does not natively accept HTML) and go
+# through markdownify in-process. Any suffix listed here is converted
+# inline by step_preprocess.
+PREPROCESS_HTML_EXTENSIONS: frozenset[str] = frozenset(
+    str(ext).lower()
+    for ext in _get_opt("preprocess", "html_extensions", [".html", ".htm"])
+)
 
 # ---------------------------------------------------------------------------
 # JSON pretty-print (all intermediate files)

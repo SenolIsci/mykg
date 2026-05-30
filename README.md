@@ -83,7 +83,8 @@ sessions/2026-05-17T18-31-07/
 ### Input
 
 - **Markdown files** — any directory of `.md` files; subdirectory structure is preserved; YAML/TOML frontmatter, headings, lists, and code blocks are all treated as structural signals
-- **Other formats** — convert PDFs, Word docs, images, and more to Markdown with the built-in `mykg parse-docs` wrapper around [MinerU](https://github.com/opendatalab/mineru), or enable it as an automatic preprocess step inside `extract-graph` (see [Non-Markdown inputs](#non-markdown-inputs-pdf-docx-images-) below)
+- **Other formats** — convert PDFs, Word docs, PowerPoint, and images to Markdown with the built-in `mykg parse-docs` wrapper around [MinerU](https://github.com/opendatalab/mineru); MinerU runs inside an ephemeral Python 3.12 venv created and deleted by `mykg` itself — nothing is installed into your active environment (see [Non-Markdown inputs](#non-markdown-inputs-pdf-docx-html-images-) below)
+- **HTML** — converted in-process with [`markdownify`](https://pypi.org/project/markdownify/); no MinerU venv involved. Anchors and image tags are stripped (their `href`/`src` paths wouldn't resolve outside the original page anyway)
 
 ### Graph & Output
 
@@ -133,15 +134,22 @@ mykg init
 mykg extract-graph my_notes/
 ```
 
-## Non-Markdown inputs (PDF, DOCX, images, …)
+## Non-Markdown inputs (PDF, DOCX, HTML, images, …)
 
-myKG ships with `mykg parse-docs`, a thin wrapper around [MinerU](https://github.com/opendatalab/mineru) that converts PDFs, Word docs, PowerPoint, images, and other formats to Markdown so they can be fed into `extract-graph`.
+myKG converts non-Markdown sources to Markdown before ingest. Two backends are wired in, picked per file extension:
 
-MinerU is heavyweight (pulls in PyTorch and OCR backends), so it lives in an optional extras group:
+| Backend | Extensions | How it runs |
+|---|---|---|
+| **MinerU** (PDF, DOCX, images) | `.pdf .docx .doc .pptx .png .jpg .jpeg` | Ephemeral Python 3.12 venv via `uv` |
+| **markdownify** (HTML) | `.html .htm` | In-process, no venv |
 
-```bash
-pip install "mykg[mineru]"
-```
+Anything outside both extension lists (e.g. `.php`, `.svg`, `.css` assets sitting next to an HTML page) is **logged and skipped**, not silently dropped and not force-converted. The skipped list is recorded in `intermediate/preprocess_manifest.json` under `skipped_files` so you can audit it after a run.
+
+### MinerU — no extra install step
+
+MinerU is heavy (PyTorch, Ray, OCR backends) and pinned to Python 3.12, so `mykg` no longer installs it into your environment. Instead, every `mykg parse-docs` call creates a fresh, ephemeral Python 3.12 virtualenv via [`uv`](https://docs.astral.sh/uv/) (a core `mykg` dependency), installs `mineru[all]` into it, runs MinerU, and deletes the venv on exit. `uv` automatically downloads Python 3.12 if your system lacks it.
+
+The first call therefore downloads several GB of wheels; subsequent calls do the same (there is no cache by design — sessions stay fully isolated). If that latency matters, run `mykg parse-docs` once on a large batch rather than per file.
 
 Standalone conversion (input and output paths mirror `mineru` itself):
 
@@ -149,18 +157,38 @@ Standalone conversion (input and output paths mirror `mineru` itself):
 mykg parse-docs --input docs/ --output converted/
 ```
 
-Extra flags after the required `--input` / `--output` are passed through to mineru unchanged, e.g. `mykg parse-docs --input docs/ --output converted/ --backend pipeline`.
+Extra flags after the required `--input` / `--output` are passed through to mineru unchanged, e.g. `mykg parse-docs --input docs/ --output converted/ --backend pipeline`. `mykg parse-docs` handles MinerU inputs only — HTML files in the input directory are ignored by this subcommand. To convert HTML, use `extract-graph` (which routes HTML through the in-process converter automatically).
 
-To have `extract-graph` run conversion automatically, set `preprocess.enabled: true` under your active profile in `mykg_config.yaml`:
+### HTML — in-process, no venv
+
+HTML files are converted inside the `extract-graph` pipeline by `step_preprocess` using `markdownify`. The call is `markdownify(html, strip=["img", "a"])` — anchor and image tags are stripped because their `href`/`src` paths wouldn't resolve outside the original page, and images are inert ballast to the LLM. Subdirectory structure under the input dir is preserved; `input/blog/post.html` → `input/_preprocessed/blog/post.md`. Per-file failures are logged and recorded in `preprocess_manifest.json["html_records"]` but do not halt the pipeline.
+
+### Auto-conversion in `extract-graph`
+
+Set `preprocess.enabled: true` under your active profile in `mykg_config.yaml`:
 
 ```yaml
 pipeline:
   preprocess:
-    enabled: true       # convert non-md files via MinerU before ingest
+    enabled: true                # convert non-md files before ingest
     subdir: _preprocessed
-    mineru_path: mineru
-    extra_args: []
-    timeout_seconds: 1800
+    extra_args: []               # passed through to mineru, e.g. ["--backend", "pipeline"]
+    timeout_seconds: 1800        # mineru run-phase timeout
+    uv_path: uv                  # uv CLI path (core mykg dependency)
+    uv_python_version: "3.12"   # interpreter pinned for the ephemeral venv
+    mineru_spec: mineru[all]     # spec passed to `uv pip install -U`
+    install_timeout_seconds: 1800 # install-phase timeout
+    extensions:                  # suffixes routed to MinerU
+      - .pdf
+      - .docx
+      - .doc
+      - .pptx
+      - .png
+      - .jpg
+      - .jpeg
+    html_extensions:             # suffixes routed to markdownify (in-process)
+      - .html
+      - .htm
 ```
 
 then point `extract-graph` at the mixed directory:
@@ -169,7 +197,7 @@ then point `extract-graph` at the mixed directory:
 mykg extract-graph docs/
 ```
 
-Converted Markdown lands in `<session>/input/_preprocessed/`; the existing `ingest` step picks it up automatically.
+Converted Markdown lands in `<session>/input/_preprocessed/`; the existing `ingest` step picks it up automatically. HTML files are converted before the MinerU venv is spawned, so an HTML-only corpus never pays the multi-GB MinerU download cost.
 
 ## Using with Claude Code
 
@@ -377,21 +405,22 @@ The sessions root is configurable via `pipeline.paths.sessions_dir` (default: `s
 
 ### Pipeline Steps
 
-The pipeline runs 11 steps in sequence. All intermediate state is written to disk so any step can be re-entered without repeating upstream work.
+The pipeline runs 12 steps in sequence. All intermediate state is written to disk so any step can be re-entered without repeating upstream work.
 
 | # | Step | LLM | Key outputs |
 |---|---|---|---|
-| 1 | `ingest` | — | `file_manifest.json` |
-| 2 | `pass1` | ✓ (3 calls) | `schema.json`, `schema.ttl`, `schema_history/` |
-| 3 | `schema_validate` | — | `schema_validate.done` |
-| 4 | `human_review` | — | `schema_approved.flag` *(only with `--review`)* |
-| 5 | `schema_flatten` | — | `flattened_schema.json` |
-| 6 | `pass2` | ✓ | `raw_extractions.json`, `chunk_node_index.json` |
-| 7 | `normalize_names` | ✓ | `name_normalization.json` |
-| 8 | `assemble` | — | `edge_metadata.json`, `nodes.json`, `merge_log.json` |
-| 9 | `orphan_score` | — | `orphan_candidates.json` |
-| 10 | `orphan_connect` | ✓ | `orphan_connections.json`, `orphan_log.json` |
-| 11 | `validate_graph` | — | `nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, `knowledge_graph.html`, `networkx_output/`, `obsidian_vault/` |
+| 1 | `preprocess` | — | `preprocess.done`, `preprocess_manifest.json`, files under `input/_preprocessed/` *(no-op if `preprocess.enabled: false` or no non-md inputs)* |
+| 2 | `ingest` | — | `file_manifest.json` |
+| 3 | `pass1` | ✓ (3 calls) | `schema.json`, `schema.ttl`, `schema_history/` |
+| 4 | `schema_validate` | — | `schema_validate.done` |
+| 5 | `human_review` | — | `schema_approved.flag` *(only with `--review`)* |
+| 6 | `schema_flatten` | — | `flattened_schema.json` |
+| 7 | `pass2` | ✓ | `raw_extractions.json`, `chunk_node_index.json` |
+| 8 | `normalize_names` | ✓ | `name_normalization.json` |
+| 9 | `assemble` | — | `edge_metadata.json`, `nodes.json`, `merge_log.json` |
+| 10 | `orphan_score` | — | `orphan_candidates.json` |
+| 11 | `orphan_connect` | ✓ | `orphan_connections.json`, `orphan_log.json` |
+| 12 | `validate_graph` | — | `nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, `knowledge_graph.html`, `networkx_output/`, `obsidian_vault/` |
 
 Pass 1 internally runs four sequential stages: parallel batch induction → algorithmic merge → harmonization LLM call → quality review LLM call.
 
