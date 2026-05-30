@@ -71,6 +71,7 @@ sessions/2026-05-17T18-31-07/
 - [Development](#development)
 - [Roadmap](#roadmap)
 - [Design](#design)
+- [License](#license)
 
 ## Features
 
@@ -255,7 +256,7 @@ For source installs you can also copy [`sample.env.mykg`](sample.env.mykg) to `.
 
 ## Extract Pipeline
 
-Reads a directory of `.md` files and produces a typed knowledge graph in three output formats. The pipeline runs 12 sequential steps; all intermediate state is persisted so any step can be re-entered without repeating upstream work.
+Reads a directory of mixed format files and produces a typed knowledge graph in three output formats. The pipeline runs 12 sequential steps; all intermediate state is persisted so any step can be re-entered without repeating upstream work.
 
 ### Running
 
