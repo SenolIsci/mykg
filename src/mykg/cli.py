@@ -614,6 +614,20 @@ def merge_graphs(
     click.echo(f"Merged session written to: {merged_session_root}")
 
 
+def _resolve_mineru() -> str | None:
+    """Find the `mineru` executable, preferring the current interpreter's venv.
+
+    A venv install puts `mineru` next to `python` (Path(sys.executable).parent),
+    but that directory is not on PATH unless the venv is activated. Without
+    this, `shutil.which("mineru")` returns None for an unactivated venv even
+    though mineru is installed — yielding spurious "not found" errors.
+    """
+    venv_bin = Path(sys.executable).parent / "mineru"
+    if venv_bin.exists():
+        return str(venv_bin)
+    return shutil.which("mineru")
+
+
 @cli.command(
     "parse-docs",
     context_settings={"ignore_unknown_options": True},
@@ -639,14 +653,15 @@ def parse_docs(input_path: Path, output_path: Path, extra_args: tuple[str, ...])
     Wraps `mineru -p -i INPUT -o OUTPUT`. Requires `pip install "mykg[mineru]"`.
     Extra arguments are passed through to mineru.
     """
-    if shutil.which("mineru") is None:
+    mineru = _resolve_mineru()
+    if mineru is None:
         raise click.ClickException(
-            'mineru CLI not found on PATH. Install with: pip install "mykg[mineru]"'
+            'mineru CLI not found. Install with: pip install "mykg[mineru]"'
         )
 
     output_path.mkdir(parents=True, exist_ok=True)
 
-    cmd = ["mineru", "-p", "-i", str(input_path), "-o", str(output_path)] + list(extra_args)
+    cmd = [mineru, "-p", "-i", str(input_path), "-o", str(output_path)] + list(extra_args)
     click.echo(f"Running: {' '.join(cmd)}")
 
     proc = subprocess.run(cmd, check=False)
