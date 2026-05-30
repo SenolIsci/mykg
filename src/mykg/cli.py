@@ -63,7 +63,7 @@ _PROFILE_META = {
         "key_var": "OPENROUTER_API_KEY",
         "key_hint": "sk-or-...",
         "key_url": "https://openrouter.ai/keys",
-        "default_model": "google/gemini-3.5-flash",
+        "default_model": "openrouter/free",
     },
     "anthropic-claude": {
         "label": "Anthropic Claude (highest quality)",
