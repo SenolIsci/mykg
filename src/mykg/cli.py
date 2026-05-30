@@ -39,10 +39,16 @@ def _make_session_dirs(sessions_root: Path) -> tuple[str, Path, Path]:
 
 
 def _copy_input_files(input_dir: Path, session_root: Path, copy_config: bool = True) -> None:
-    """Copy .md files from input_dir into session_root/input/, preserving subfolder structure."""
+    """Copy all files from input_dir into session_root/input/, preserving subfolder structure.
+
+    Non-Markdown files are copied so the optional preprocess step (D39–D48) can
+    convert them via MinerU. The ingest step still only reads ``*.md``.
+    """
     dest = session_root / "input"
     dest.mkdir(parents=True, exist_ok=True)
-    for f in input_dir.rglob("*.md"):
+    for f in input_dir.rglob("*"):
+        if not f.is_file():
+            continue
         rel = f.relative_to(input_dir)
         target = dest / rel
         target.parent.mkdir(parents=True, exist_ok=True)

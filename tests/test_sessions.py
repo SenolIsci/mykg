@@ -143,7 +143,7 @@ def test_make_session_dirs_timestamp_format(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# 3. _copy_input_files copies files (not subdirs)
+# 3. _copy_input_files copies every file (md and non-md, recursively)
 # ---------------------------------------------------------------------------
 
 
@@ -161,7 +161,32 @@ def test_copy_input_files_copies_flat(tmp_path):
 
     assert (session / "input" / "a.md").read_text() == "hello"
     assert (session / "input" / "b.md").read_text() == "world"
+    # Empty subdirs are not recreated (rglob skips them because is_file() is false).
     assert not (session / "input" / "subdir").exists()
+
+
+def test_copy_input_files_includes_non_md_and_subdirs(tmp_path):
+    """Regression: non-md files (PDFs, DOCX, …) must reach the session so the
+    optional preprocess step can convert them via MinerU. Earlier behavior
+    filtered to *.md and silently dropped everything else."""
+    from mykg.cli import _copy_input_files
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "notes.md").write_text("# notes")
+    (src / "paper.pdf").write_bytes(b"%PDF-1.4 fake")
+    nested = src / "dir1"
+    nested.mkdir()
+    (nested / "deep.pdf").write_bytes(b"%PDF-1.4 fake nested")
+    (nested / "deep.md").write_text("# deep")
+
+    session = tmp_path / "sess"
+    _copy_input_files(src, session)
+
+    assert (session / "input" / "notes.md").read_text() == "# notes"
+    assert (session / "input" / "paper.pdf").read_bytes() == b"%PDF-1.4 fake"
+    assert (session / "input" / "dir1" / "deep.pdf").read_bytes() == b"%PDF-1.4 fake nested"
+    assert (session / "input" / "dir1" / "deep.md").read_text() == "# deep"
 
 
 # ---------------------------------------------------------------------------
