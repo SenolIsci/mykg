@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="14 14 88 88" width="256" height="256">
+  <defs>
+    <linearGradient id="nodeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1"/>
+      <stop offset="100%" style="stop-color:#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#06b6d4"/>
+      <stop offset="100%" style="stop-color:#6366f1"/>
+    </linearGradient>
+  </defs>
+
+  <line x1="28" y1="55" x2="58" y2="26" stroke="#6366f1" stroke-width="1.8" stroke-opacity="0.7"/>
+  <line x1="28" y1="55" x2="58" y2="84" stroke="#6366f1" stroke-width="1.8" stroke-opacity="0.7"/>
+  <line x1="58" y1="26" x2="88" y2="55" stroke="#06b6d4" stroke-width="1.8" stroke-opacity="0.7"/>
+  <line x1="58" y1="84" x2="88" y2="55" stroke="#06b6d4" stroke-width="1.8" stroke-opacity="0.7"/>
+  <line x1="58" y1="26" x2="58" y2="84" stroke="#8b5cf6" stroke-width="1.2" stroke-opacity="0.4" stroke-dasharray="3,3"/>
+
+  <circle cx="28" cy="55" r="9" fill="url(#nodeGrad)"/>
+  <circle cx="58" cy="26" r="7" fill="url(#accentGrad)"/>
+  <circle cx="58" cy="84" r="7" fill="url(#accentGrad)"/>
+  <circle cx="88" cy="55" r="9" fill="url(#nodeGrad)"/>
+</svg>
