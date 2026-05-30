@@ -650,8 +650,9 @@ def _resolve_mineru() -> str | None:
 def parse_docs(input_path: Path, output_path: Path, extra_args: tuple[str, ...]) -> None:
     """Convert non-Markdown documents (PDF, DOCX, images, etc.) to Markdown using MinerU.
 
-    Wraps `mineru -p -i INPUT -o OUTPUT`. Requires `pip install "mykg[mineru]"`.
-    Extra arguments are passed through to mineru.
+    Wraps `mineru -p INPUT -o OUTPUT` (mineru's `-p` / `--path` is the input).
+    Requires `pip install "mykg[mineru]"`. Extra arguments are passed through
+    to mineru.
     """
     mineru = _resolve_mineru()
     if mineru is None:
@@ -661,7 +662,7 @@ def parse_docs(input_path: Path, output_path: Path, extra_args: tuple[str, ...])
 
     output_path.mkdir(parents=True, exist_ok=True)
 
-    cmd = [mineru, "-p", "-i", str(input_path), "-o", str(output_path)] + list(extra_args)
+    cmd = [mineru, "-p", str(input_path), "-o", str(output_path)] + list(extra_args)
     click.echo(f"Running: {' '.join(cmd)}")
 
     proc = subprocess.run(cmd, check=False)

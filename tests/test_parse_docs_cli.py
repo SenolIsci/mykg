@@ -49,11 +49,8 @@ def test_parse_docs_builds_command(tmp_path: Path) -> None:
             ["parse-docs", "--input", str(input_dir), "--output", str(output_dir)],
         )
     assert result.exit_code == 0, _output(result)
-    assert captured["cmd"][0] == "/usr/bin/mineru"
-    assert captured["cmd"][1] == "-p"
-    assert "-i" in captured["cmd"]
-    assert "-o" in captured["cmd"]
-    assert str(input_dir) in captured["cmd"]
+    # mineru's `-p` / `--path` IS the input path argument (not a separate -i).
+    assert captured["cmd"][:4] == ["/usr/bin/mineru", "-p", str(input_dir), "-o"]
     assert str(output_dir) in captured["cmd"]
     assert output_dir.exists()
 
