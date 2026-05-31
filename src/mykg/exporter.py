@@ -32,6 +32,7 @@ from __future__ import annotations
 import html as _html
 import json
 import re
+import warnings
 from collections import defaultdict
 from pathlib import Path
 
@@ -657,7 +658,16 @@ def export_networkx(nodes: list[dict], edge_metadata: dict, output_dir: Path) ->
     nx.write_gexf(G, str(nx_dir / "knowledge_graph.gexf"))
     written.append("knowledge_graph.gexf")
 
-    nx.write_pajek(G, str(nx_dir / "knowledge_graph.net"))
+    # Pajek format drops non-string and empty attributes by design — silence the
+    # per-attribute UserWarnings that networkx.readwrite.pajek emits for each one.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"(Node|Edge) attribute .* is not processed\..*",
+            category=UserWarning,
+            module=r"networkx\.readwrite\.pajek",
+        )
+        nx.write_pajek(G, str(nx_dir / "knowledge_graph.net"))
     written.append("knowledge_graph.net")
 
     with open(nx_dir / "knowledge_graph.json", "w") as f:
