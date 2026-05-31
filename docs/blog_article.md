@@ -61,7 +61,7 @@ Between and around those two passes are ten more steps that handle preprocessing
 
 **Orphan reconnection.** Nodes with zero edges after Pass 2 are often legitimate but sometimes just missed. **myKG** runs a two-stage orphan pass: a co-occurrence heuristic finds candidates from the source chunks, then an LLM call confirms or rejects each one. Recovered edges are marked `"method": "orphan_inferred"` so you can tell them apart from Pass 2 extractions.
 
-**Provider-agnostic.** Anthropic Claude, OpenAI, Ollama (local, no API key), OpenRouter, or the `claude` CLI subprocess (no API key needed beyond your Claude Pro/Max plan). Switching providers is a one-line config change.
+**Provider-agnostic.** Anthropic Claude, OpenAI, Ollama (local, no API key), OpenRouter, or the `claude` CLI subprocess. Switching providers is a one-line config change.
 
 ## Four Output Families
 

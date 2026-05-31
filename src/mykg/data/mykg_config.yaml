@@ -150,6 +150,139 @@ profiles:
         orphan_pass_max_restarts: 1     # max schema-gap restart loops during merge orphan pass (0 = disabled)
 
   # ---------------------------------------------------------------------------
+  anthropic-claude:
+  # Anthropic Claude — direct API, requires ANTHROPIC_API_KEY in env / .env.mykg
+  # (ANTHROPIC_AUTH_TOKEN is also accepted). Recommended for quality.
+  # Optional: set llm.base_url for Anthropic-compatible endpoints (e.g. Bedrock proxies).
+  #
+  # Token budget chain (use context-calculator to recompute when switching models):
+  #   ① context_window    = 200000
+  #   ② max_output_tokens = 8192
+  #   ③ input_headroom    = ① − ② = 191808
+  #      batch_token_target = ③ × 0.95 ≈ 182000 (5% safety margin)
+  #      window_tokens      = batch_token_target / 4 ≈ 45000 (~25% of batch_token_target)
+  #      overlap_tokens     = window_tokens × 0.10 = 4500
+  # ---------------------------------------------------------------------------
+    provider: anthropic
+    llm_retry:
+      max_retries: 2        # retries on empty/blank response; set to 0 to disable
+    llm:
+      context_window: 200000      # ① model's total context limit
+      max_output_tokens: 8192     # ② output cap — Sonnet/Opus default max
+      model: claude-sonnet-4-5
+      timeout: 300                # seconds per LLM call before raising a timeout error
+      retry_429_max: 5            # max retries on HTTP 429 rate-limit before giving up
+      retry_429_base_delay: 2.0   # initial backoff seconds; doubles on each retry (exponential)
+      # base_url:                 # optional: override for Anthropic-compatible endpoint
+      # api_key:                  # optional: override ANTHROPIC_API_KEY env var
+    pipeline:
+      # --- Ingestion & chunking -----------------------------------------------
+      ingest:
+        max_workers: 8
+      # --- Preprocess (optional non-md document conversion via MinerU) ----------
+      # MinerU runs inside an ephemeral uv-managed venv created per parse-docs
+      # call and deleted on exit; nothing is installed into mykg's interpreter.
+      preprocess:
+        enabled: false                # set true to convert non-md files (PDF/DOCX/images) via MinerU before ingest
+        subdir: _preprocessed         # converted .md files land in <session>/input/<subdir>/
+        extra_args: []                # extra arguments passed through to mineru (e.g. ["--backend", "pipeline"])
+        timeout_seconds: 1800         # mineru run-phase timeout (30 min)
+        uv_path: uv                   # path or PATH name of the uv CLI (uv is a core mykg dependency)
+        uv_python_version: "3.12"    # interpreter version uv pins the ephemeral venv to
+        mineru_spec: mineru[all]      # package spec installed via `uv pip install -U <spec>`
+        install_timeout_seconds: 1800 # install-phase timeout (30 min); first-run downloads PyTorch/Ray
+        extensions:                   # suffixes the preprocess step may convert (.md is native and never listed). Backend per suffix is hardcoded: HTML → markdownify in-process, everything else → MinerU. Remove a line to skip that suffix.
+          - .pdf
+          - .docx
+          - .doc
+          - .pptx
+          - .png
+          - .jpg
+          - .jpeg
+          - .html
+          - .htm
+      chunking:
+        window_tokens: 45000    # ≈ batch_token_target / 4
+        overlap_tokens: 4500    # = window_tokens × 0.10
+        tiktoken_encoding: cl100k_base
+      # --- Pass 1: schema induction -------------------------------------------
+      pass1:
+        batch_token_target: 182000  # ≈ input_headroom × 0.95
+        max_workers: 8
+        per_file_batching: false
+      # --- Pass 2: instance extraction ----------------------------------------
+      pass2:
+        max_workers: 8
+        stateful_chunks: true
+        prep_mode: per_file                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
+        concat_batch_token_target: 182000  # target token budget per virtual batch (≤ batch_token_target); used when prep_mode=concat
+        batch_token_target: 182000         # token budget per chunk batch (≤ batch_token_target); used when prep_mode=batch_chunks
+        batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
+        batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
+      normalize_names:
+        enabled: true
+        max_names_per_type: 2000
+      # --- Orphan recovery -----------------------------------------------------
+      orphan_pass:
+        enabled: true
+        min_cooccurrence: 1
+        top_k_per_orphan: 5
+        confidence_base: 0.5
+        confidence_weight: 0.5
+        max_workers: 8
+        schema_max_restarts: 0
+        excerpt_window: 4000
+        excerpt_context: 1500
+        excerpt_max_total: 16000
+        blank_recovery_enabled: true
+        connected_sample_size: 200
+      # --- Assembly & deduplication -------------------------------------------
+      assembly:
+        confidence_agg: mean
+        edge_id_prefix: "edge-"
+        edge_id_hex_length: 6
+        edge_dedup_separator: "|"
+        confidence_fallback: 0.0
+        confidence_scalar_omitted: 0.5
+      # --- Export --------------------------------------------------------------
+      export:
+        schema_namespace: "http://mykg.local/schema/"
+        data_namespace: "http://mykg.local/data/"
+        rdf_namespace: "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+        rdfs_namespace: "http://www.w3.org/2000/01/rdf-schema#"
+        schema_prefix_label: ex
+        data_prefix_label: data
+        comment_width: 42
+        skos_namespace: "http://www.w3.org/2004/02/skos/core#"
+        networkx_enabled: true
+        obsidian_enabled: true
+        obsidian_vault_dir: obsidian_vault
+      # --- Pipeline infrastructure --------------------------------------------
+      error_gate:
+        enabled: false
+        threshold: 3
+      feedback:
+        max_file_chars: 224640
+      paths:
+        output_dir: output
+        intermediate_dir: intermediate
+        sessions_dir: sessions
+      output:
+        json_indent: 2
+      logging:
+        max_bytes: 10485760
+        backup_count: 3
+        capture_prompts: true
+        error_output_max_chars: 500
+      report:
+        enabled: true           # generate walkthrough.md after each extract run; set false to skip
+      merge_graphs:
+        reextraction_strategy: surgical  # none | surgical | full — controls re-extraction when merged schema has new properties absent from a source session
+        surgical_top_k_chunks_per_property: 5  # 0 = no cap; >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
+        human_review: false             # pause for human review of merged schema; overridden by --human-review CLI flag
+        orphan_pass_max_restarts: 1     # max schema-gap restart loops during merge orphan pass (0 = disabled)
+
+  # ---------------------------------------------------------------------------
   claude-cli:
   # Claude Code CLI — uses locally-installed `claude -p` subprocess.
   # No ANTHROPIC_API_KEY needed — billing is via your Claude Pro/Max plan.

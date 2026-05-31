@@ -26,7 +26,7 @@ mykg extract-graph my_notes/        # any directory: .md, .pdf, .docx, .html, im
 ```
 It uses a **two-pass LLM pipeline**: Pass 1 induces a global RDFS/OWL schema from your document corpus; Pass 2 extracts typed entity and relationship instances per file against that schema. Non-Markdown inputs (`.pdf .docx .doc .pptx .png .jpg .jpeg .html .htm`) are converted to Markdown automatically before extraction. The result is exported to multiple formats: JSONL for property-graph consumers such as Neo4j, Turtle RDF for OWL toolchains, seven NetworkX formats for graph analysis and visualization, and an Obsidian vault — a second brain of wikilinked Markdown notes your AI coding assistant (Claude Code, Cursor, Copilot) can read and reason over directly.
 <p align="center">
-  <img src="https://gcore.jsdelivr.net/gh/SenolIsci/mykg@main/docs/diagrams/architecture-sketch.png" width="80%" style="vertical-align:middle;">
+  <img src="https://gcore.jsdelivr.net/gh/SenolIsci/mykg@main/docs/diagrams/architecture-sketch.png" width="95%" style="vertical-align:middle;">
 </p>
 
 ## Contents
@@ -83,7 +83,7 @@ It uses a **two-pass LLM pipeline**: Pass 1 induces a global RDFS/OWL schema fro
 
 ### Graph & Output
 
-- **Provider-agnostic** — works with Anthropic (Claude), OpenAI (GPT), Ollama (local), OpenRouter, or the `claude` CLI with no API key
+- **Provider-agnostic** — works with Anthropic (Claude), OpenAI (GPT), Ollama (local), OpenRouter, or the `claude` CLI
 - **Four output families** — JSONL for Neo4j/NetworkX/RAG, Turtle RDF for OWL toolchains, NetworkX multi-format for graph analysis, and Obsidian vault for linked personal knowledge management
 - **Obsidian vault — second brain for AI coding assistants** — every extracted entity becomes a wikilinked Markdown note in `output/obsidian_vault/`; open it in [Obsidian](https://obsidian.md) to navigate the graph with backlinks and Graph View, or point your AI coding assistant (Claude Code, Cursor, Copilot) at the vault folder so it can answer questions, trace relationships, and reason over your knowledge base in natural language
 - **Interactive HTML graph** — node/edge filtering, search, hover popups; opens directly in a browser
@@ -129,13 +129,13 @@ mykg init
 mykg extract-graph my_notes/
 ```
 
-## Using with Claude Code
+## Claude Code as backend
 
-myKG ships with a `claude-cli` profile that runs extractions through the locally-installed `claude` CLI — no API key or billing setup needed beyond your existing Claude Pro/Max plan.
+myKG ships with a `claude-cli` profile that runs extractions through the locally-installed `claude` CLI.
 
 ### Setup
 
-Install the `claude` CLI, then install mykg and run the setup wizard — select **[5] Claude CLI** when prompted (no API key needed).
+Install the `claude` CLI, then install mykg and run the setup wizard — select **[5] Claude CLI** when prompted.
 
 ```bash
 npm install -g @anthropic-ai/claude-code
@@ -149,10 +149,9 @@ The `claude-cli` provider calls `claude -p` as a subprocess for every LLM step (
 
 **Key constraints of the `claude-cli` profile:**
 - `max_workers` must be `1` — the `claude` CLI is serial by design; parallel workers will queue
-- No API key required — billing goes through your Claude Pro/Max subscription
 - The `effort` and `model` fields in `mykg_config.yaml` map directly to `--effort` and `--model` flags passed to `claude -p`
 
-### Using myKG from inside Claude Code
+### Using myKG from inside Claude Code Session
 
 You can run myKG extractions as a tool call from within a Claude Code session. This is useful for building knowledge graphs from notes or documentation while you work:
 
@@ -201,7 +200,7 @@ The wizard walks you through three prompts:
 
 1. **Profile** — choose your LLM provider (OpenRouter, Anthropic, OpenAI, Ollama, Claude CLI)
 2. **Model** — accept the default or type any model slug for that provider
-3. **API key** — paste your key (skipped for Ollama and Claude CLI)
+3. **API key** — paste your key (skipped for Ollama)
 
 ### LLM Providers
 
@@ -211,7 +210,7 @@ The wizard walks you through three prompts:
 | OpenAI | `openai` | `OPENAI_API_KEY` | |
 | Ollama | `ollama-local` | — | Local inference, no key needed |
 | OpenRouter | `openrouter-free` | `OPENROUTER_API_KEY` | Access many models via one key |
-| Claude CLI | `claude-cli` | — | Uses `claude -p` subprocess; billing via Claude Pro/Max; serial only |
+| Claude CLI | `claude-cli` | — | Uses `claude -p` subprocess; serial only |
 
 Switch provider by setting `profile:` at the top of [`mykg_config.yaml`](mykg_config.yaml).
 
