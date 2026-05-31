@@ -38,7 +38,7 @@ This document explains how **myKG** works at a conceptual level: the pipelines, 
 Both pipelines run as a sequence of named steps. All intermediate state is written to disk after every step, so any step can be re-entered without repeating upstream work.
 
 <p align="center">
-  <img src="diagrams/system-overview.png" width="900px" style="vertical-align:middle;">
+  <img src="diagrams/system-overview.png" width="80%" style="vertical-align:middle;">
 </p>
 
 *Mixed input enters at the top; preprocessing routes non-Markdown files to MinerU or markdownify; Pass 1 induces a schema, Pass 2 extracts instances against it; the assembly stage deduplicates and writes the edge metadata sidecar; the orphan-connection pass reconnects isolated nodes and can escalate to a surgical Pass 2 restart when the schema is incomplete (dashed loop on the right); five output families are written from the same in-memory data.*
@@ -171,7 +171,7 @@ All merge decisions are logged to `intermediate/merge_log.json` for review and a
 After assembly, some nodes may have no edges — they were extracted but left isolated. The orphan-connection pass attempts to reconnect them in two stages.
 
 <p align="center">
-  <img src="diagrams/orphan-pass.png" width="900px" style="vertical-align:middle;">
+  <img src="diagrams/orphan-pass.png" width="80%" style="vertical-align:middle;">
 </p>
 
 *Stage 1 deterministically maps each orphan to its source chunk via `chunk_node_index.json`, producing one candidate group per chunk. Stage 2 makes a single LLM call per group with the full chunk text; the result splits three ways — confirmed edges are merged into the sidecar tagged `orphan_inferred`, dead-end orphans are logged as advisory `unconnectable` events, and orphans the LLM thinks should connect but cannot under the current schema escalate to a surgical Pass 2 restart with new properties.*
