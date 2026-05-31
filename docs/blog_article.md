@@ -27,7 +27,7 @@ I built **myKG** because I was frustrated with the existing tools — I wanted s
 
 ## The Problem It Solves
 
-Most knowledge lives as unstructured prose scattered across formats: a PDF white paper here, a Word doc there, a Confluence export, a folder of meeting notes, a few hundred Markdown files in a personal vault. Search helps you find a document. It doesn't help you answer questions like *"who works at which company, on what project, since when, and who reports to whom?"* — the kind of questions a graph answers naturally and prose answers badly.
+Most knowledge lives as unstructured prose scattered across formats: a PDF white paper here, a Word doc there, a Confluence export, a folder of meeting notes, a few hundred Markdown files in a personal vault. Search helps you find a document. It doesn't help you answer questions like *"who works at which company, on what project, since when, and who reports to whom?"* — the kind of questions a graph answers naturally.
 
 Building a knowledge graph by hand is brutal: you need an ontology, an entity extractor, a relationship extractor, a deduplicator, a name normalizer, an exporter, and the patience to keep all of those consistent as your corpus grows.
 
@@ -59,7 +59,7 @@ Between and around those two passes are ten more steps that handle preprocessing
 
 **Name normalization.** "Acme Corp", "ACME", and "Acme Corporation" are resolved to a single canonical node with aliases, not three ghosts of the same entity.
 
-**Orphan reconnection.** Nodes with zero edges after Pass 2 are often legitimate but sometimes just missed. **myKG** runs a two-stage orphan pass: a co-occurrence heuristic finds candidates from the source chunks, then an LLM call confirms or rejects each one. Recovered edges are marked `"method": "orphan_inferred"` so you can tell them apart from Pass 2 extractions.
+**Orphan reconnection.** Nodes with zero links after Pass 2 are often legitimate but sometimes just missed. **myKG** runs a two-stage orphan pass: a co-occurrence heuristic finds candidates from the source chunks, then an LLM call confirms or rejects each one. Recovered links are marked `"method": "orphan_inferred"` so you can tell them apart from Pass 2 extractions.
 
 **Provider-agnostic.** Anthropic Claude, OpenAI, Ollama (local, no API key), OpenRouter, or the `claude` CLI subprocess. Switching providers is a one-line config change.
 

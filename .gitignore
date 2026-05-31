@@ -20,6 +20,7 @@ dist/
 input_files/
 _input_files/
 _input_files2/
+_input_files3/
 output/
 intermediate/
 .old/
@@ -27,3 +28,7 @@ sessions/
 .coverage
 htmlcov
 CLAUDE.md
+
+# Profiler dumps
+profile.out
+*.prof
