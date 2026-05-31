@@ -5,7 +5,7 @@ If you've ever stared at a folder full of PDFs, meeting notes, design docs, and 
 **myKG** is an open-source command-line tool that turns a directory of mixed documents into a confidence-scored, ontology-grounded knowledge graph. You point it at `my_notes/`, and it gives you back typed entities, typed relationships, an inferred RDFS/OWL schema, an interactive HTML graph, and an Obsidian vault your AI coding assistant can read directly.
 
 <p align="center">
-  <img src="diagrams/architecture-sketch.png" width="900px" style="vertical-align:middle;">
+  <img src="diagrams/architecture-sketch.png" width="600" style="vertical-align:middle;">
 </p>
 
 *The argument in one picture: heterogeneous documents in, one typed knowledge graph out. The left side is what you have today — a folder of unrelated files in five formats with no structure linking them. The right side is what **myKG** produces — typed entities (`Person: Alice`, `Organization: Acme Corp`, `Project: Orion`) connected by typed, confidence-scored relationships (`works_at`, `leads`, `sponsors`). The two LLM passes in the middle do the work.*
@@ -21,6 +21,9 @@ That's the whole onboarding. Three commands and you have a graph.
 
 The repo is [here](github.com/SenolIsci/mykg).
 
+## Why I Built It
+
+I built **myKG** because I was frustrated with the existing tools — I wanted something versatile enough to handle mixed real-world documents, grounded in a real ontology rather than a tag cloud, and tested and trustworthy enough that I could actually rely on its output instead of second-guessing every extraction.
 
 ## The Problem It Solves
 
@@ -30,9 +33,6 @@ Building a knowledge graph by hand is brutal: you need an ontology, an entity ex
 
 myKG does the whole pipeline for you, end to end, with an LLM doing the cognitive work and a deterministic Python pipeline doing the bookkeeping.
 
-## Why I Built It
-
-I built **myKG** because I was frustrated with the existing tools — I wanted something versatile enough to handle mixed real-world documents, grounded in a real ontology rather than a tag cloud, and tested and trustworthy enough that I could actually rely on its output instead of second-guessing every extraction.
 
 ## How It Works: Two Passes, Twelve Steps
 
