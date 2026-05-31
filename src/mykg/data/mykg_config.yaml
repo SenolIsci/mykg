@@ -183,7 +183,7 @@ profiles:
       # MinerU runs inside an ephemeral uv-managed venv created per parse-docs
       # call and deleted on exit; nothing is installed into mykg's interpreter.
       preprocess:
-        enabled: false                # set true to convert non-md files (PDF/DOCX/images) via MinerU before ingest
+        enabled: true                # set true to convert non-md files (PDF/DOCX/images) via MinerU before ingest
         subdir: _preprocessed         # converted .md files land in <session>/input/<subdir>/
         extra_args: []                # extra arguments passed through to mineru (e.g. ["--backend", "pipeline"])
         timeout_seconds: 1800         # mineru run-phase timeout (30 min)
@@ -315,7 +315,7 @@ profiles:
       # MinerU runs inside an ephemeral uv-managed venv created per parse-docs
       # call and deleted on exit; nothing is installed into mykg's interpreter.
       preprocess:
-        enabled: false                # set true to convert non-md files (PDF/DOCX/images) via MinerU before ingest
+        enabled: true                # set true to convert non-md files (PDF/DOCX/images) via MinerU before ingest
         subdir: _preprocessed         # converted .md files land in <session>/input/<subdir>/
         extra_args: []                # extra arguments passed through to mineru (e.g. ["--backend", "pipeline"])
         timeout_seconds: 1800         # mineru run-phase timeout (30 min)
@@ -445,7 +445,7 @@ profiles:
       # MinerU runs inside an ephemeral uv-managed venv created per parse-docs
       # call and deleted on exit; nothing is installed into mykg's interpreter.
       preprocess:
-        enabled: false                # set true to convert non-md files (PDF/DOCX/images) via MinerU before ingest
+        enabled: true                # set true to convert non-md files (PDF/DOCX/images) via MinerU before ingest
         subdir: _preprocessed         # converted .md files land in <session>/input/<subdir>/
         extra_args: []                # extra arguments passed through to mineru (e.g. ["--backend", "pipeline"])
         timeout_seconds: 1800         # mineru run-phase timeout (30 min)
@@ -578,7 +578,7 @@ profiles:
       # MinerU runs inside an ephemeral uv-managed venv created per parse-docs
       # call and deleted on exit; nothing is installed into mykg's interpreter.
       preprocess:
-        enabled: false                # set true to convert non-md files (PDF/DOCX/images) via MinerU before ingest
+        enabled: true                # set true to convert non-md files (PDF/DOCX/images) via MinerU before ingest
         subdir: _preprocessed         # converted .md files land in <session>/input/<subdir>/
         extra_args: []                # extra arguments passed through to mineru (e.g. ["--backend", "pipeline"])
         timeout_seconds: 1800         # mineru run-phase timeout (30 min)
