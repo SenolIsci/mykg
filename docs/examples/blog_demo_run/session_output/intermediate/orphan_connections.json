@@ -1,0 +1,291 @@
+{
+  "edge-cfc8e2": {
+    "type": "uses_technology",
+    "from": "project-rag-pipeline",
+    "to": "technology-qdrant",
+    "confidence": 0.85,
+    "method": "orphan_inferred",
+    "attributes": {
+      "purpose": {
+        "value": null,
+        "confidence": 0.0
+      }
+    },
+    "source_files": [
+      "technologies.md"
+    ],
+    "id": "edge-cfc8e2"
+  },
+  "edge-10f2f3": {
+    "type": "uses_technology",
+    "from": "project-rag-pipeline",
+    "to": "technology-weaviate",
+    "confidence": 0.85,
+    "method": "orphan_inferred",
+    "attributes": {
+      "purpose": {
+        "value": null,
+        "confidence": 0.0
+      }
+    },
+    "source_files": [
+      "technologies.md"
+    ],
+    "id": "edge-10f2f3"
+  },
+  "edge-2a9123": {
+    "type": "uses_technology",
+    "from": "team-ai-research-team",
+    "to": "technology-qdrant",
+    "confidence": 0.75,
+    "method": "orphan_inferred",
+    "attributes": {
+      "purpose": {
+        "value": null,
+        "confidence": 0.0
+      }
+    },
+    "source_files": [
+      "technologies.md"
+    ],
+    "id": "edge-2a9123"
+  },
+  "edge-a9660b": {
+    "type": "uses_technology",
+    "from": "team-ai-research-team",
+    "to": "technology-weaviate",
+    "confidence": 0.75,
+    "method": "orphan_inferred",
+    "attributes": {
+      "purpose": {
+        "value": null,
+        "confidence": 0.0
+      }
+    },
+    "source_files": [
+      "technologies.md"
+    ],
+    "id": "edge-a9660b"
+  },
+  "edge-88cb24": {
+    "type": "works_at",
+    "from": "employee-alice-chen",
+    "to": "organization-acme-corp",
+    "confidence": 1.0,
+    "method": "orphan_inferred",
+    "attributes": {
+      "role": {
+        "value": null,
+        "confidence": 0.0
+      },
+      "start_date": {
+        "value": null,
+        "confidence": 0.0
+      },
+      "end_date": {
+        "value": null,
+        "confidence": 0.0
+      }
+    },
+    "source_files": [
+      "team.md"
+    ],
+    "id": "edge-88cb24"
+  },
+  "edge-2d3f24": {
+    "type": "works_at",
+    "from": "employee-bob-martinez",
+    "to": "organization-acme-corp",
+    "confidence": 1.0,
+    "method": "orphan_inferred",
+    "attributes": {
+      "role": {
+        "value": null,
+        "confidence": 0.0
+      },
+      "start_date": {
+        "value": null,
+        "confidence": 0.0
+      },
+      "end_date": {
+        "value": null,
+        "confidence": 0.0
+      }
+    },
+    "source_files": [
+      "team.md"
+    ],
+    "id": "edge-2d3f24"
+  },
+  "edge-c64595": {
+    "type": "manages",
+    "from": "employee-bob-martinez",
+    "to": "team-infrastructure-team",
+    "confidence": 1.0,
+    "method": "orphan_inferred",
+    "attributes": {},
+    "source_files": [
+      "team.md"
+    ],
+    "id": "edge-c64595"
+  },
+  "edge-d91709": {
+    "type": "manages",
+    "from": "employee-bob-martinez",
+    "to": "team-product-team",
+    "confidence": 1.0,
+    "method": "orphan_inferred",
+    "attributes": {},
+    "source_files": [
+      "team.md"
+    ],
+    "id": "edge-d91709"
+  },
+  "edge-dd4d62": {
+    "type": "reports_to",
+    "from": "employee-bob-martinez",
+    "to": "employee-sandra-kim",
+    "confidence": 1.0,
+    "method": "orphan_inferred",
+    "attributes": {},
+    "source_files": [
+      "team.md"
+    ],
+    "id": "edge-dd4d62"
+  },
+  "edge-91d97c": {
+    "type": "works_at",
+    "from": "employee-carol-okafor",
+    "to": "organization-acme-corp",
+    "confidence": 1.0,
+    "method": "orphan_inferred",
+    "attributes": {
+      "role": {
+        "value": null,
+        "confidence": 0.0
+      },
+      "start_date": {
+        "value": null,
+        "confidence": 0.0
+      },
+      "end_date": {
+        "value": null,
+        "confidence": 0.0
+      }
+    },
+    "source_files": [
+      "team.md"
+    ],
+    "id": "edge-91d97c"
+  },
+  "edge-e59ad9": {
+    "type": "member_of",
+    "from": "employee-carol-okafor",
+    "to": "team-infrastructure-team",
+    "confidence": 1.0,
+    "method": "orphan_inferred",
+    "attributes": {},
+    "source_files": [
+      "team.md"
+    ],
+    "id": "edge-e59ad9"
+  },
+  "edge-49e18d": {
+    "type": "leads",
+    "from": "employee-sandra-kim",
+    "to": "organization-acme-corp",
+    "confidence": 1.0,
+    "method": "orphan_inferred",
+    "attributes": {},
+    "source_files": [
+      "team.md"
+    ],
+    "id": "edge-49e18d"
+  },
+  "edge-c763a6": {
+    "type": "works_at",
+    "from": "employee-james-whitfield",
+    "to": "organization-acme-corp",
+    "confidence": 1.0,
+    "method": "orphan_inferred",
+    "attributes": {
+      "role": {
+        "value": null,
+        "confidence": 0.0
+      },
+      "start_date": {
+        "value": null,
+        "confidence": 0.0
+      },
+      "end_date": {
+        "value": null,
+        "confidence": 0.0
+      }
+    },
+    "source_files": [
+      "team.md"
+    ],
+    "id": "edge-c763a6"
+  },
+  "edge-0d344b": {
+    "type": "manages",
+    "from": "employee-james-whitfield",
+    "to": "team-platform-team",
+    "confidence": 1.0,
+    "method": "orphan_inferred",
+    "attributes": {},
+    "source_files": [
+      "team.md"
+    ],
+    "id": "edge-0d344b"
+  },
+  "edge-cd3575": {
+    "type": "manages",
+    "from": "employee-james-whitfield",
+    "to": "team-ai-research-team",
+    "confidence": 1.0,
+    "method": "orphan_inferred",
+    "attributes": {},
+    "source_files": [
+      "team.md"
+    ],
+    "id": "edge-cd3575"
+  },
+  "edge-7f50a8": {
+    "type": "works_at",
+    "from": "employee-dr-yuna-park",
+    "to": "organization-acme-corp",
+    "confidence": 1.0,
+    "method": "orphan_inferred",
+    "attributes": {
+      "role": {
+        "value": null,
+        "confidence": 0.0
+      },
+      "start_date": {
+        "value": null,
+        "confidence": 0.0
+      },
+      "end_date": {
+        "value": null,
+        "confidence": 0.0
+      }
+    },
+    "source_files": [
+      "team.md"
+    ],
+    "id": "edge-7f50a8"
+  },
+  "edge-abfe59": {
+    "type": "manages",
+    "from": "employee-dr-yuna-park",
+    "to": "team-ai-research-team",
+    "confidence": 1.0,
+    "method": "orphan_inferred",
+    "attributes": {},
+    "source_files": [
+      "team.md"
+    ],
+    "id": "edge-abfe59"
+  }
+}

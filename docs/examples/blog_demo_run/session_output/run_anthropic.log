@@ -1,0 +1,82 @@
+22:46:31 [INFO] mykg.cli — Command: /Library/Frameworks/Python.framework/Versions/3.14/bin/mykg extract-graph blog_demo_input --obsidian-vault --log-file run_anthropic.log
+22:46:31 [INFO] mykg.cli — LLM endpoint: anthropic / claude-sonnet-4-5 @ https://api.anthropic.com
+22:46:31 [INFO] mykg.orchestrator — RUN  preprocess
+22:46:31 [INFO] mykg.steps.preprocess — Step 0 — no eligible non-md files to preprocess; skipping
+22:46:31 [INFO] mykg.orchestrator — DONE preprocess
+22:46:31 [INFO] mykg.orchestrator — RUN  ingest
+22:46:31 [INFO] mykg.steps.ingest — Step 1 — found 4 input file(s): ['partners.md', 'projects.md', 'team.md', 'technologies.md']
+22:46:31 [INFO] mykg.steps.ingest — Step 1 — 4 total chunk(s) ready for Pass 1
+22:46:31 [INFO] mykg.orchestrator — DONE ingest
+22:46:31 [INFO] mykg.orchestrator — RUN  pass1
+22:46:31 [INFO] mykg.steps.pass1 — Step 2 — running Pass 1 (schema induction) …
+22:46:31 [INFO] mykg.pass1 — Pass 1 — 1 batch(es) to process (max_workers=8)
+22:46:31 [INFO] mykg.pass1 —   batch 1/1 — 4 chunk(s), ~1248 tokens
+22:46:44 [INFO] mykg.steps.pass1 — Step 2 — received 1 schema proposal(s)
+22:46:44 [INFO] mykg.steps.pass1 — Step 3 — merging schema proposals …
+22:46:44 [INFO] mykg.steps.pass1 — Step 3 — schema: 10 concept(s), 16 property(ies)
+22:46:44 [INFO] mykg.steps.pass1 — Step 3 — harmonizing schema (semantic near-duplicate collapse) …
+22:46:55 [INFO] mykg.steps.pass1 — Step 3 — schema after harmonization: 10 concept(s), 18 property(ies)
+22:46:55 [INFO] mykg.steps.pass1 — Step 3 — reviewing schema quality …
+22:47:06 [INFO] mykg.steps.pass1 — Step 3 — schema after quality review: 10 concept(s), 17 property(ies)
+22:47:06 [INFO] mykg.orchestrator — DONE pass1
+22:47:06 [INFO] mykg.orchestrator — RUN  schema_validate
+22:47:06 [INFO] mykg.steps.schema — Step 3b — schema.ttl valid
+22:47:06 [INFO] mykg.orchestrator — DONE schema_validate
+22:47:06 [INFO] mykg.orchestrator — RUN  human_review
+22:47:06 [INFO] mykg.steps.schema — Step 4 — review gate skipped (--review not set)
+22:47:06 [INFO] mykg.orchestrator — DONE human_review
+22:47:06 [INFO] mykg.orchestrator — RUN  schema_flatten
+22:47:06 [INFO] mykg.steps.pass2 — Step 5 — flattened 10 concept(s)
+22:47:06 [INFO] mykg.orchestrator — DONE schema_flatten
+22:47:06 [INFO] mykg.orchestrator — RUN  pass2
+22:47:06 [INFO] mykg.steps.pass2 — Step 6 — 0 file(s) already done, 4 remaining
+22:47:06 [INFO] mykg.pass2 —   partners.md — 1 chunk(s)
+22:47:06 [INFO] mykg.pass2 —     chunk 1/1 …
+22:47:06 [INFO] mykg.pass2 —   projects.md — 1 chunk(s)
+22:47:06 [INFO] mykg.pass2 —   technologies.md — 1 chunk(s)
+22:47:06 [INFO] mykg.pass2 —     chunk 1/1 …
+22:47:06 [INFO] mykg.pass2 —   team.md — 1 chunk(s)
+22:47:06 [INFO] mykg.pass2 —     chunk 1/1 …
+22:47:06 [INFO] mykg.pass2 —     chunk 1/1 …
+22:47:42 [INFO] mykg.pass2 —   team.md — total: 16 node(s), 17 edge(s)
+22:47:42 [INFO] mykg.pass2 — Pass 2 progress — 1/4 files, 1/4 chunks (25.0%) — elapsed 0m 36s — ETA ~0h 01m
+22:47:44 [INFO] mykg.pass2 —   partners.md — total: 19 node(s), 18 edge(s)
+22:47:44 [INFO] mykg.pass2 — Pass 2 progress — 2/4 files, 2/4 chunks (50.0%) — elapsed 0m 38s — ETA ~0h 00m
+22:47:45 [INFO] mykg.pass2 —   projects.md — total: 18 node(s), 21 edge(s)
+22:47:45 [INFO] mykg.pass2 — Pass 2 progress — 3/4 files, 3/4 chunks (75.0%) — elapsed 0m 39s — ETA ~0h 00m
+22:48:04 [INFO] mykg.pass2 —   technologies.md — total: 31 node(s), 30 edge(s)
+22:48:04 [INFO] mykg.pass2 — Pass 2 progress — 4/4 files, 4/4 chunks (100.0%) — elapsed 0m 58s — ETA ~0h 00m
+22:48:04 [INFO] mykg.steps.pass2 — Step 6 — extracted 84 node(s), 86 edge(s) (raw, total)
+22:48:04 [INFO] mykg.orchestrator — DONE pass2
+22:48:04 [INFO] mykg.orchestrator — RUN  normalize_names
+22:48:04 [INFO] mykg.steps.normalize — Step 6b — normalizing names across 10 type(s), 65 total names
+22:48:04 [INFO] anthropic._base_client — Retrying request to /v1/messages in 37.000000 seconds
+22:48:44 [INFO] mykg.steps.normalize — Step 6b — 9 alias(es) mapped; name_normalization.json written
+22:48:44 [INFO] mykg.steps.normalize — Step 6b — raw_extractions.json rewritten with canonical names
+22:48:44 [INFO] mykg.steps.normalize — Step 6b — chunk_node_index.json IDs remapped (8 ID(s) changed)
+22:48:44 [INFO] mykg.orchestrator — DONE normalize_names
+22:48:44 [INFO] mykg.orchestrator — RUN  assemble
+22:48:44 [INFO] mykg.steps.assemble — Steps 7–9 — assigning stable IDs and deduplicating …
+22:48:44 [INFO] mykg.steps.assemble — Steps 7–9 — 56 unique node(s), 69 unique edge(s)
+22:48:44 [INFO] mykg.steps.assemble — Steps 7–9 — merge_log.json written (36 entries)
+22:48:44 [INFO] mykg.orchestrator — DONE assemble
+22:48:44 [INFO] mykg.orchestrator — RUN  orphan_score
+22:48:44 [INFO] mykg.orphan_connector — Stage 1 — 12 orphan node(s) identified
+22:48:44 [INFO] mykg.orphan_connector — Stage 1 — 2 chunk group(s) produced (12 orphan(s) total)
+22:48:44 [INFO] mykg.steps.orphan_score — Step orphan_score — 12 orphan(s) in 2 group(s) (0 blank-response group(s)), 0 unresolvable orphan(s) logged as advisory
+22:48:44 [INFO] mykg.orchestrator — DONE orphan_score
+22:48:44 [INFO] mykg.orchestrator — RUN  orphan_connect
+22:48:56 [INFO] mykg.orphan_connector — chunk_recovery — 17 edge(s) confirmed across 2 group(s)
+22:48:56 [INFO] mykg.steps.orphan_connect — Step orphan_connect — 17 edge(s) added to edge_metadata.json (0 skipped as duplicates)
+22:48:56 [INFO] mykg.steps.orphan_connect — Step orphan_connect — organization-datasystems-inc: no edges confirmed; promoted to schema-gap orphan
+22:48:56 [INFO] mykg.steps.orphan_connect — Step orphan_connect — organization-deepmind: no edges confirmed; promoted to schema-gap orphan
+22:48:56 [INFO] mykg.steps.orphan_connect — Step orphan_connect — organization-novatech-inc: no edges confirmed; promoted to schema-gap orphan
+22:48:56 [INFO] mykg.steps.orphan_connect — Step orphan_connect — organization-google: no edges confirmed; promoted to schema-gap orphan
+22:48:56 [INFO] mykg.orchestrator — DONE orphan_connect
+22:48:56 [INFO] mykg.orchestrator — RUN  validate_graph
+22:48:56 [INFO] mykg.steps.validate_graph — Steps 10–12 — validating and writing graph outputs …
+22:48:56 [INFO] mykg.steps.validate_graph — Step 12c — NetworkX export: knowledge_graph.gml, knowledge_graph.graphml, knowledge_graph.gexf, knowledge_graph.net, knowledge_graph.json, knowledge_graph.html, edges_nx.txt, adjacency.txt
+22:48:56 [INFO] mykg.steps.validate_graph — Step 12d — Obsidian vault export: 57 notes written
+22:48:56 [INFO] mykg.steps.validate_graph — Step 12b — knowledge_graph.ttl valid
+22:48:56 [INFO] mykg.orchestrator — DONE validate_graph
+22:48:56 [INFO] mykg.steps.step_walkthrough — Walkthrough report written to sessions/2026-06-01T21-46-31/walkthrough.md

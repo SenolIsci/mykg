@@ -1,0 +1,26 @@
+{
+  "_fname": "partners.md",
+  "data": {
+    "1": [
+      "company-datasystems-inc",
+      "company-acme-corp",
+      "partnership-acme-corp-datasystems-inc-strategic-partnership",
+      "person-carol-okafor",
+      "person-dr-priya-nair",
+      "project-rag-pipeline",
+      "project-db-migration",
+      "company-novatech-inc",
+      "person-sandra-kim",
+      "company-hashicorp",
+      "product-vault",
+      "team-platform-team",
+      "project-platform-secrets-service",
+      "contract-vault-enterprise-licence",
+      "person-marcus-tan",
+      "company-amazon-web-services",
+      "project-db-migration",
+      "product-aws-aurora",
+      "person-lisa-huang"
+    ]
+  }
+}

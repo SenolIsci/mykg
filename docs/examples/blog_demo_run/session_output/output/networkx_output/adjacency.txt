@@ -1,0 +1,59 @@
+#/Library/Frameworks/Python.framework/Versions/3.14/bin/mykg extract-graph blog_demo_input --obsidian-vault --log-file run_anthropic.log
+# GMT Mon Jun  1 21:48:56 2026
+# mykg knowledge graph
+organization-acme-corp project-db-migration project-rag-pipeline project-platform-secrets-service
+employee-alice-chen organization-acme-corp
+employee-bob-martinez organization-acme-corp team-infrastructure-team team-product-team employee-sandra-kim
+employee-carol-okafor organization-acme-corp team-infrastructure-team
+employee-sandra-kim organization-acme-corp
+employee-james-whitfield organization-acme-corp team-platform-team team-ai-research-team
+employee-dr-yuna-park organization-acme-corp team-ai-research-team
+team-infrastructure-team project-db-migration technology-aws technology-github-actions technology-kubernetes
+team-product-team
+team-platform-team product-vault project-platform-secrets-service
+team-ai-research-team technology-python technology-pytorch technology-hugging-face-transformers technology-aws-sagemaker technology-qdrant technology-weaviate
+team-backend-engineering-guild technology-python technology-fastapi technology-go technology-react technology-typescript
+organization-google
+organization-datasystems-inc
+organization-novatech-inc
+organization-deepmind
+company-datasystems-inc product-document-processing-pipeline
+company-acme-corp contract-vault-enterprise-licence
+partnership-acme-corp-datasystems-inc-strategic-partnership company-acme-corp company-datasystems-inc project-rag-pipeline project-db-migration
+person-carol-okafor organization-acme-corp team-infrastructure-team company-datasystems-inc company-acme-corp person-dr-priya-nair project-db-migration
+person-dr-priya-nair company-datasystems-inc
+project-rag-pipeline technology-pinecone technology-python technology-qdrant technology-weaviate
+project-db-migration project-platform-secrets-service technology-postgresql technology-aws-aurora
+company-novatech-inc
+person-sandra-kim organization-acme-corp company-novatech-inc company-acme-corp
+company-hashicorp product-vault person-marcus-tan
+product-vault
+project-platform-secrets-service technology-hashicorp-vault
+contract-vault-enterprise-licence
+person-marcus-tan company-hashicorp
+company-amazon-web-services product-aws-aurora person-lisa-huang
+product-aws-aurora
+person-lisa-huang company-amazon-web-services
+person-bob-martinez organization-acme-corp team-infrastructure-team team-product-team person-sandra-kim project-db-migration
+person-alice-chen organization-acme-corp team-backend-engineering-guild project-db-migration project-rag-pipeline
+person-james-whitfield organization-acme-corp team-platform-team team-ai-research-team project-platform-secrets-service
+person-dr-yuna-park organization-acme-corp team-ai-research-team project-rag-pipeline
+technology-postgresql
+technology-aws-aurora
+technology-pinecone
+technology-hashicorp-vault
+partnership-datasystems-inc-rag-pipeline-partnership company-datasystems-inc project-rag-pipeline
+technology-weaviate
+technology-qdrant
+technology-aws
+technology-github-actions
+technology-kubernetes
+technology-python
+technology-pytorch
+technology-hugging-face-transformers
+technology-aws-sagemaker
+product-document-processing-pipeline
+technology-fastapi
+technology-go
+technology-react
+technology-typescript

@@ -1,0 +1,11 @@
+{
+  "seq": 2,
+  "trigger": "schema_harmonize",
+  "timestamp": "2026-06-01T21:46:55Z",
+  "concepts_added": [],
+  "concepts_removed": [],
+  "properties_added": [],
+  "properties_removed": [],
+  "concepts_total": 10,
+  "properties_total": 16
+}

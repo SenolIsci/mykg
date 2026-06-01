@@ -1,0 +1,1726 @@
+<?xml version='1.0' encoding='utf-8'?>
+<gexf xmlns="http://www.gexf.net/1.2draft" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.gexf.net/1.2draft http://www.gexf.net/1.2draft/gexf.xsd" version="1.2">
+  <meta lastmodifieddate="2026-06-01">
+    <creator>NetworkX 3.6.1</creator>
+  </meta>
+  <graph defaultedgetype="directed" mode="static" name="mykg knowledge graph">
+    <attributes mode="static" class="edge">
+      <attribute id="46" title="edge_type" type="string" />
+      <attribute id="47" title="confidence" type="double" />
+      <attribute id="48" title="source_files" type="string" />
+      <attribute id="49" title="attr_role_value" type="string" />
+      <attribute id="50" title="attr_role_confidence" type="double" />
+      <attribute id="51" title="attr_start_date_value" type="string" />
+      <attribute id="52" title="attr_start_date_confidence" type="double" />
+      <attribute id="53" title="attr_end_date_value" type="string" />
+      <attribute id="54" title="attr_end_date_confidence" type="double" />
+      <attribute id="55" title="attr_purpose_value" type="string" />
+      <attribute id="56" title="attr_purpose_confidence" type="double" />
+      <attribute id="57" title="attr_contribution_type_value" type="string" />
+      <attribute id="58" title="attr_contribution_type_confidence" type="double" />
+      <attribute id="59" title="attr_contact_type_value" type="string" />
+      <attribute id="60" title="attr_contact_type_confidence" type="double" />
+    </attributes>
+    <attributes mode="static" class="node">
+      <attribute id="0" title="node_type" type="string" />
+      <attribute id="1" title="confidence" type="double" />
+      <attribute id="2" title="source_files" type="string" />
+      <attribute id="3" title="aliases" type="string" />
+      <attribute id="4" title="attr_name_value" type="string" />
+      <attribute id="5" title="attr_name_confidence" type="double" />
+      <attribute id="6" title="attr_description_value" type="string" />
+      <attribute id="7" title="attr_description_confidence" type="double" />
+      <attribute id="8" title="attr_headquarters_location_value" type="string" />
+      <attribute id="9" title="attr_headquarters_location_confidence" type="double" />
+      <attribute id="10" title="attr_type_value" type="string" />
+      <attribute id="11" title="attr_type_confidence" type="double" />
+      <attribute id="12" title="attr_email_value" type="string" />
+      <attribute id="13" title="attr_email_confidence" type="double" />
+      <attribute id="14" title="attr_education_value" type="string" />
+      <attribute id="15" title="attr_education_confidence" type="double" />
+      <attribute id="16" title="attr_title_value" type="string" />
+      <attribute id="17" title="attr_title_confidence" type="double" />
+      <attribute id="18" title="attr_join_date_value" type="string" />
+      <attribute id="19" title="attr_join_date_confidence" type="double" />
+      <attribute id="20" title="attr_focus_area_value" type="string" />
+      <attribute id="21" title="attr_focus_area_confidence" type="double" />
+      <attribute id="22" title="attr_member_count_value" type="long" />
+      <attribute id="23" title="attr_member_count_confidence" type="double" />
+      <attribute id="24" title="attr_founding_year_value" type="string" />
+      <attribute id="25" title="attr_founding_year_confidence" type="double" />
+      <attribute id="26" title="attr_annual_revenue_value" type="string" />
+      <attribute id="27" title="attr_annual_revenue_confidence" type="double" />
+      <attribute id="28" title="attr_start_date_value" type="string" />
+      <attribute id="29" title="attr_start_date_confidence" type="double" />
+      <attribute id="30" title="attr_scope_value" type="string" />
+      <attribute id="31" title="attr_scope_confidence" type="double" />
+      <attribute id="32" title="attr_status_value" type="string" />
+      <attribute id="33" title="attr_status_confidence" type="double" />
+      <attribute id="34" title="attr_budget_value" type="string" />
+      <attribute id="35" title="attr_budget_confidence" type="double" />
+      <attribute id="36" title="attr_category_value" type="string" />
+      <attribute id="37" title="attr_category_confidence" type="double" />
+      <attribute id="38" title="attr_version_value" type="string" />
+      <attribute id="39" title="attr_version_confidence" type="double" />
+      <attribute id="40" title="attr_vendor_value" type="string" />
+      <attribute id="41" title="attr_vendor_confidence" type="double" />
+      <attribute id="42" title="attr_signed_date_value" type="string" />
+      <attribute id="43" title="attr_signed_date_confidence" type="double" />
+      <attribute id="44" title="attr_value_value" type="string" />
+      <attribute id="45" title="attr_value_confidence" type="double" />
+    </attributes>
+    <nodes>
+      <node id="organization-acme-corp" label="organization-acme-corp">
+        <attvalues>
+          <attvalue for="0" value="Organization" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="team.md|projects.md|technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Acme Corp" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="6" value="Organization undertaking database migration, RAG pipeline, and platform secrets service projects" />
+          <attvalue for="7" value="0.9" />
+          <attvalue for="8" value="" />
+          <attvalue for="9" value="0.0" />
+          <attvalue for="10" value="Company" />
+          <attvalue for="11" value="0.9" />
+        </attvalues>
+      </node>
+      <node id="employee-alice-chen" label="employee-alice-chen">
+        <attvalues>
+          <attvalue for="0" value="Employee" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="team.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Alice Chen" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="12" value="alice.chen@acme.com" />
+          <attvalue for="13" value="1.0" />
+          <attvalue for="14" value="BSc in Computer Science from MIT" />
+          <attvalue for="15" value="1.0" />
+          <attvalue for="16" value="Senior Software Engineer" />
+          <attvalue for="17" value="1.0" />
+          <attvalue for="18" value="March 2021" />
+          <attvalue for="19" value="1.0" />
+        </attvalues>
+      </node>
+      <node id="employee-bob-martinez" label="employee-bob-martinez">
+        <attvalues>
+          <attvalue for="0" value="Employee" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="team.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Bob Martinez" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="12" value="" />
+          <attvalue for="13" value="0.0" />
+          <attvalue for="14" value="" />
+          <attvalue for="15" value="0.0" />
+          <attvalue for="16" value="Director of Engineering" />
+          <attvalue for="17" value="1.0" />
+          <attvalue for="18" value="2018" />
+          <attvalue for="19" value="1.0" />
+        </attvalues>
+      </node>
+      <node id="employee-carol-okafor" label="employee-carol-okafor">
+        <attvalues>
+          <attvalue for="0" value="Employee" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="team.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Carol Okafor" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="12" value="" />
+          <attvalue for="13" value="0.0" />
+          <attvalue for="14" value="" />
+          <attvalue for="15" value="0.0" />
+          <attvalue for="16" value="Site Reliability Engineer" />
+          <attvalue for="17" value="1.0" />
+          <attvalue for="18" value="January 2023" />
+          <attvalue for="19" value="1.0" />
+        </attvalues>
+      </node>
+      <node id="employee-sandra-kim" label="employee-sandra-kim">
+        <attvalues>
+          <attvalue for="0" value="Employee" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="team.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Sandra Kim" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="12" value="" />
+          <attvalue for="13" value="0.0" />
+          <attvalue for="14" value="" />
+          <attvalue for="15" value="0.0" />
+          <attvalue for="16" value="CEO" />
+          <attvalue for="17" value="1.0" />
+          <attvalue for="18" value="2015" />
+          <attvalue for="19" value="0.9" />
+        </attvalues>
+      </node>
+      <node id="employee-james-whitfield" label="employee-james-whitfield">
+        <attvalues>
+          <attvalue for="0" value="Employee" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="team.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="James Whitfield" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="12" value="" />
+          <attvalue for="13" value="0.0" />
+          <attvalue for="14" value="PhD in Computer Science from Stanford" />
+          <attvalue for="15" value="1.0" />
+          <attvalue for="16" value="CTO" />
+          <attvalue for="17" value="1.0" />
+          <attvalue for="18" value="2015" />
+          <attvalue for="19" value="0.9" />
+        </attvalues>
+      </node>
+      <node id="employee-dr-yuna-park" label="employee-dr-yuna-park">
+        <attvalues>
+          <attvalue for="0" value="Employee" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="team.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Dr. Yuna Park" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="12" value="" />
+          <attvalue for="13" value="0.0" />
+          <attvalue for="14" value="" />
+          <attvalue for="15" value="0.0" />
+          <attvalue for="16" value="Principal Researcher" />
+          <attvalue for="17" value="1.0" />
+          <attvalue for="18" value="" />
+          <attvalue for="19" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="team-infrastructure-team" label="team-infrastructure-team">
+        <attvalues>
+          <attvalue for="0" value="Team" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="team.md|projects.md|technologies.md" />
+          <attvalue for="3" value="infrastructure team" />
+          <attvalue for="4" value="Infrastructure Team" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="6" value="Responsible for cloud operations, CI/CD pipelines, and on-call rotations" />
+          <attvalue for="7" value="1.0" />
+          <attvalue for="8" value="" />
+          <attvalue for="9" value="0.0" />
+          <attvalue for="10" value="Engineering Team" />
+          <attvalue for="11" value="0.9" />
+          <attvalue for="20" value="cloud operations, CI/CD pipelines, and on-call rotations; Infrastructure; Infrastructure and DevOps" />
+          <attvalue for="21" value="1.0" />
+          <attvalue for="22" value="5" />
+          <attvalue for="23" value="1.0" />
+        </attvalues>
+      </node>
+      <node id="team-product-team" label="team-product-team">
+        <attvalues>
+          <attvalue for="0" value="Team" />
+          <attvalue for="1" value="0.9" />
+          <attvalue for="2" value="team.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="product team" />
+          <attvalue for="5" value="0.9" />
+          <attvalue for="6" value="Product development team managed by Bob Martinez" />
+          <attvalue for="7" value="0.8" />
+          <attvalue for="8" value="" />
+          <attvalue for="9" value="0.0" />
+          <attvalue for="10" value="Product Team" />
+          <attvalue for="11" value="0.85" />
+          <attvalue for="20" value="" />
+          <attvalue for="21" value="0.0" />
+          <attvalue for="22" value="" />
+          <attvalue for="23" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="team-platform-team" label="team-platform-team">
+        <attvalues>
+          <attvalue for="0" value="Team" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="team.md|partners.md|projects.md" />
+          <attvalue for="3" value="Platform team" />
+          <attvalue for="4" value="Platform Team" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="6" value="Team building centralised secrets management service" />
+          <attvalue for="7" value="0.95" />
+          <attvalue for="8" value="" />
+          <attvalue for="9" value="0.0" />
+          <attvalue for="10" value="Engineering Team" />
+          <attvalue for="11" value="0.85" />
+          <attvalue for="20" value="Platform Infrastructure" />
+          <attvalue for="21" value="0.9" />
+          <attvalue for="22" value="" />
+          <attvalue for="23" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="team-ai-research-team" label="team-ai-research-team">
+        <attvalues>
+          <attvalue for="0" value="Team" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="team.md|projects.md|technologies.md" />
+          <attvalue for="3" value="AI Research team" />
+          <attvalue for="4" value="AI Research Team" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="6" value="Research team focused on retrieval-augmented generation (RAG) and knowledge graph applications" />
+          <attvalue for="7" value="1.0" />
+          <attvalue for="8" value="" />
+          <attvalue for="9" value="0.0" />
+          <attvalue for="10" value="Research Team" />
+          <attvalue for="11" value="0.95" />
+          <attvalue for="20" value="retrieval-augmented generation (RAG) and knowledge graph applications; AI Research; AI and ML" />
+          <attvalue for="21" value="1.0" />
+          <attvalue for="22" value="" />
+          <attvalue for="23" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="team-backend-engineering-guild" label="team-backend-engineering-guild">
+        <attvalues>
+          <attvalue for="0" value="Team" />
+          <attvalue for="1" value="0.925" />
+          <attvalue for="2" value="team.md|technologies.md" />
+          <attvalue for="3" value="backend guild" />
+          <attvalue for="4" value="Backend Engineering Guild" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="6" value="Team standardising on Python (FastAPI) for services and Go for performance-critical components" />
+          <attvalue for="7" value="0.95" />
+          <attvalue for="8" value="" />
+          <attvalue for="9" value="0.0" />
+          <attvalue for="10" value="Engineering Guild" />
+          <attvalue for="11" value="0.95" />
+          <attvalue for="20" value="Backend Engineering" />
+          <attvalue for="21" value="1.0" />
+          <attvalue for="22" value="" />
+          <attvalue for="23" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="organization-google" label="organization-google">
+        <attvalues>
+          <attvalue for="0" value="Organization" />
+          <attvalue for="1" value="0.9" />
+          <attvalue for="2" value="team.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Google" />
+          <attvalue for="5" value="0.9" />
+          <attvalue for="6" value="Former employer of Bob Martinez" />
+          <attvalue for="7" value="0.7" />
+          <attvalue for="8" value="" />
+          <attvalue for="9" value="0.0" />
+          <attvalue for="10" value="Technology Company" />
+          <attvalue for="11" value="0.8" />
+        </attvalues>
+      </node>
+      <node id="organization-datasystems-inc" label="organization-datasystems-inc">
+        <attvalues>
+          <attvalue for="0" value="Organization" />
+          <attvalue for="1" value="0.9" />
+          <attvalue for="2" value="team.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="DataSystems Inc" />
+          <attvalue for="5" value="0.9" />
+          <attvalue for="6" value="Former employer of Carol Okafor" />
+          <attvalue for="7" value="0.7" />
+          <attvalue for="8" value="" />
+          <attvalue for="9" value="0.0" />
+          <attvalue for="10" value="Technology Company" />
+          <attvalue for="11" value="0.75" />
+        </attvalues>
+      </node>
+      <node id="organization-novatech-inc" label="organization-novatech-inc">
+        <attvalues>
+          <attvalue for="0" value="Organization" />
+          <attvalue for="1" value="0.9" />
+          <attvalue for="2" value="team.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="NovaTech Inc" />
+          <attvalue for="5" value="0.9" />
+          <attvalue for="6" value="Former employer of Sandra Kim" />
+          <attvalue for="7" value="0.7" />
+          <attvalue for="8" value="" />
+          <attvalue for="9" value="0.0" />
+          <attvalue for="10" value="Technology Company" />
+          <attvalue for="11" value="0.75" />
+        </attvalues>
+      </node>
+      <node id="organization-deepmind" label="organization-deepmind">
+        <attvalues>
+          <attvalue for="0" value="Organization" />
+          <attvalue for="1" value="0.9" />
+          <attvalue for="2" value="team.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="DeepMind" />
+          <attvalue for="5" value="0.9" />
+          <attvalue for="6" value="Former employer of Dr. Yuna Park" />
+          <attvalue for="7" value="0.7" />
+          <attvalue for="8" value="" />
+          <attvalue for="9" value="0.0" />
+          <attvalue for="10" value="AI Research Organization" />
+          <attvalue for="11" value="0.85" />
+        </attvalues>
+      </node>
+      <node id="company-datasystems-inc" label="company-datasystems-inc">
+        <attvalues>
+          <attvalue for="0" value="Company" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="partners.md|projects.md|technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="DataSystems Inc" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="6" value="data infrastructure company" />
+          <attvalue for="7" value="1.0" />
+          <attvalue for="8" value="San Francisco" />
+          <attvalue for="9" value="1.0" />
+          <attvalue for="10" value="data infrastructure company" />
+          <attvalue for="11" value="1.0" />
+          <attvalue for="24" value="" />
+          <attvalue for="25" value="0.0" />
+          <attvalue for="26" value="" />
+          <attvalue for="27" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="company-acme-corp" label="company-acme-corp">
+        <attvalues>
+          <attvalue for="0" value="Company" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="partners.md|technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Acme Corp" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="6" value="Company running technology infrastructure and AI/ML projects" />
+          <attvalue for="7" value="0.9" />
+          <attvalue for="8" value="" />
+          <attvalue for="9" value="0.0" />
+          <attvalue for="10" value="Technology Company" />
+          <attvalue for="11" value="0.8" />
+          <attvalue for="24" value="2015" />
+          <attvalue for="25" value="1.0" />
+          <attvalue for="26" value="" />
+          <attvalue for="27" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="partnership-acme-corp-datasystems-inc-strategic-partnership" label="partnership-acme-corp-datasystems-inc-strategic-partnership">
+        <attvalues>
+          <attvalue for="0" value="Partnership" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="partners.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Acme Corp - DataSystems Inc Strategic Partnership" />
+          <attvalue for="5" value="0.9" />
+          <attvalue for="10" value="strategic partnership" />
+          <attvalue for="11" value="1.0" />
+          <attvalue for="28" value="September 2025" />
+          <attvalue for="29" value="1.0" />
+          <attvalue for="30" value="co-develop document indexing and search infrastructure" />
+          <attvalue for="31" value="1.0" />
+        </attvalues>
+      </node>
+      <node id="person-carol-okafor" label="person-carol-okafor">
+        <attvalues>
+          <attvalue for="0" value="Person" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="partners.md|projects.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Carol Okafor" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="12" value="" />
+          <attvalue for="13" value="0.0" />
+          <attvalue for="14" value="" />
+          <attvalue for="15" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="person-dr-priya-nair" label="person-dr-priya-nair">
+        <attvalues>
+          <attvalue for="0" value="Person" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="partners.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Dr. Priya Nair" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="12" value="" />
+          <attvalue for="13" value="0.0" />
+          <attvalue for="14" value="" />
+          <attvalue for="15" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="project-rag-pipeline" label="project-rag-pipeline">
+        <attvalues>
+          <attvalue for="0" value="Project" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="partners.md|projects.md|technologies.md" />
+          <attvalue for="3" value="RAG Pipeline Project" />
+          <attvalue for="4" value="RAG Pipeline" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="6" value="document indexing; Internal RAG (Retrieval-Augmented Generation) pipeline to allow employees to query company's internal documentation using natural language" />
+          <attvalue for="7" value="1.0" />
+          <attvalue for="32" value="active; design phase" />
+          <attvalue for="33" value="1.0" />
+          <attvalue for="34" value="" />
+          <attvalue for="35" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="project-db-migration" label="project-db-migration">
+        <attvalues>
+          <attvalue for="0" value="Project" />
+          <attvalue for="1" value="0.975" />
+          <attvalue for="2" value="partners.md|partners.md|projects.md|technologies.md" />
+          <attvalue for="3" value="DB Migration Project|DB Migration project|data lake migration" />
+          <attvalue for="4" value="DB Migration" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="6" value="targets AWS Aurora; Database migration project to move Acme Corp's production PostgreSQL clusters from on-premise hardware to AWS Aurora; Moving PostgreSQL clusters to AWS Aurora" />
+          <attvalue for="7" value="1.0" />
+          <attvalue for="32" value="planned; in progress" />
+          <attvalue for="33" value="1.0" />
+          <attvalue for="34" value="$120,000" />
+          <attvalue for="35" value="1.0" />
+        </attvalues>
+      </node>
+      <node id="company-novatech-inc" label="company-novatech-inc">
+        <attvalues>
+          <attvalue for="0" value="Company" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="partners.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="NovaTech Inc" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="6" value="SaaS company focused on developer tooling" />
+          <attvalue for="7" value="1.0" />
+          <attvalue for="8" value="" />
+          <attvalue for="9" value="0.0" />
+          <attvalue for="10" value="SaaS company" />
+          <attvalue for="11" value="1.0" />
+          <attvalue for="24" value="" />
+          <attvalue for="25" value="0.0" />
+          <attvalue for="26" value="" />
+          <attvalue for="27" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="person-sandra-kim" label="person-sandra-kim">
+        <attvalues>
+          <attvalue for="0" value="Person" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="partners.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Sandra Kim" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="12" value="" />
+          <attvalue for="13" value="0.0" />
+          <attvalue for="14" value="" />
+          <attvalue for="15" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="company-hashicorp" label="company-hashicorp">
+        <attvalues>
+          <attvalue for="0" value="Company" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="partners.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="HashiCorp" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="6" value="" />
+          <attvalue for="7" value="0.0" />
+          <attvalue for="8" value="" />
+          <attvalue for="9" value="0.0" />
+          <attvalue for="10" value="" />
+          <attvalue for="11" value="0.0" />
+          <attvalue for="24" value="" />
+          <attvalue for="25" value="0.0" />
+          <attvalue for="26" value="" />
+          <attvalue for="27" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="product-vault" label="product-vault">
+        <attvalues>
+          <attvalue for="0" value="Product" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="partners.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Vault" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="36" value="" />
+          <attvalue for="37" value="0.0" />
+          <attvalue for="38" value="" />
+          <attvalue for="39" value="0.0" />
+          <attvalue for="40" value="HashiCorp" />
+          <attvalue for="41" value="1.0" />
+        </attvalues>
+      </node>
+      <node id="project-platform-secrets-service" label="project-platform-secrets-service">
+        <attvalues>
+          <attvalue for="0" value="Project" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="partners.md|projects.md|technologies.md" />
+          <attvalue for="3" value="Secrets Service project" />
+          <attvalue for="4" value="Platform Secrets Service" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="6" value="Centralised secrets management service to replace ad-hoc use of environment variables; Adopting HashiCorp Vault for secrets management" />
+          <attvalue for="7" value="1.0" />
+          <attvalue for="32" value="in progress" />
+          <attvalue for="33" value="0.8" />
+          <attvalue for="34" value="" />
+          <attvalue for="35" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="contract-vault-enterprise-licence" label="contract-vault-enterprise-licence">
+        <attvalues>
+          <attvalue for="0" value="Contract" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="partners.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Vault enterprise licence" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="10" value="enterprise licence" />
+          <attvalue for="11" value="1.0" />
+          <attvalue for="42" value="Q1 2026" />
+          <attvalue for="43" value="1.0" />
+          <attvalue for="44" value="" />
+          <attvalue for="45" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="person-marcus-tan" label="person-marcus-tan">
+        <attvalues>
+          <attvalue for="0" value="Person" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="partners.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Marcus Tan" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="12" value="" />
+          <attvalue for="13" value="0.0" />
+          <attvalue for="14" value="" />
+          <attvalue for="15" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="company-amazon-web-services" label="company-amazon-web-services">
+        <attvalues>
+          <attvalue for="0" value="Company" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="partners.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Amazon Web Services" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="6" value="cloud provider" />
+          <attvalue for="7" value="1.0" />
+          <attvalue for="8" value="" />
+          <attvalue for="9" value="0.0" />
+          <attvalue for="10" value="cloud provider" />
+          <attvalue for="11" value="1.0" />
+          <attvalue for="24" value="" />
+          <attvalue for="25" value="0.0" />
+          <attvalue for="26" value="" />
+          <attvalue for="27" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="product-aws-aurora" label="product-aws-aurora">
+        <attvalues>
+          <attvalue for="0" value="Product" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="partners.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="AWS Aurora" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="36" value="" />
+          <attvalue for="37" value="0.0" />
+          <attvalue for="38" value="" />
+          <attvalue for="39" value="0.0" />
+          <attvalue for="40" value="Amazon Web Services" />
+          <attvalue for="41" value="1.0" />
+        </attvalues>
+      </node>
+      <node id="person-lisa-huang" label="person-lisa-huang">
+        <attvalues>
+          <attvalue for="0" value="Person" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="partners.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Lisa Huang" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="12" value="" />
+          <attvalue for="13" value="0.0" />
+          <attvalue for="14" value="" />
+          <attvalue for="15" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="person-bob-martinez" label="person-bob-martinez">
+        <attvalues>
+          <attvalue for="0" value="Person" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="projects.md|technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Bob Martinez" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="12" value="" />
+          <attvalue for="13" value="0.0" />
+          <attvalue for="14" value="" />
+          <attvalue for="15" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="person-alice-chen" label="person-alice-chen">
+        <attvalues>
+          <attvalue for="0" value="Person" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="projects.md|technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Alice Chen" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="12" value="" />
+          <attvalue for="13" value="0.0" />
+          <attvalue for="14" value="" />
+          <attvalue for="15" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="person-james-whitfield" label="person-james-whitfield">
+        <attvalues>
+          <attvalue for="0" value="Person" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="projects.md|technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="James Whitfield" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="12" value="" />
+          <attvalue for="13" value="0.0" />
+          <attvalue for="14" value="" />
+          <attvalue for="15" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="person-dr-yuna-park" label="person-dr-yuna-park">
+        <attvalues>
+          <attvalue for="0" value="Person" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="projects.md|technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Dr. Yuna Park" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="12" value="" />
+          <attvalue for="13" value="0.0" />
+          <attvalue for="14" value="Doctorate" />
+          <attvalue for="15" value="0.9" />
+        </attvalues>
+      </node>
+      <node id="technology-postgresql" label="technology-postgresql">
+        <attvalues>
+          <attvalue for="0" value="Technology" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="projects.md|technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="PostgreSQL" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="36" value="Database" />
+          <attvalue for="37" value="1.0" />
+          <attvalue for="38" value="15" />
+          <attvalue for="39" value="1.0" />
+        </attvalues>
+      </node>
+      <node id="technology-aws-aurora" label="technology-aws-aurora">
+        <attvalues>
+          <attvalue for="0" value="Technology" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="projects.md|technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="AWS Aurora" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="36" value="Database" />
+          <attvalue for="37" value="1.0" />
+          <attvalue for="38" value="PostgreSQL-compatible" />
+          <attvalue for="39" value="0.9" />
+        </attvalues>
+      </node>
+      <node id="technology-pinecone" label="technology-pinecone">
+        <attvalues>
+          <attvalue for="0" value="Technology" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="projects.md|technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Pinecone" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="36" value="Vector Database" />
+          <attvalue for="37" value="1.0" />
+          <attvalue for="38" value="" />
+          <attvalue for="39" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="technology-hashicorp-vault" label="technology-hashicorp-vault">
+        <attvalues>
+          <attvalue for="0" value="Technology" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="projects.md|technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="HashiCorp Vault" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="36" value="Secrets Management" />
+          <attvalue for="37" value="1.0" />
+          <attvalue for="38" value="" />
+          <attvalue for="39" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="partnership-datasystems-inc-rag-pipeline-partnership" label="partnership-datasystems-inc-rag-pipeline-partnership">
+        <attvalues>
+          <attvalue for="0" value="Partnership" />
+          <attvalue for="1" value="0.95" />
+          <attvalue for="2" value="projects.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="DataSystems Inc - RAG Pipeline Partnership" />
+          <attvalue for="5" value="0.9" />
+          <attvalue for="10" value="Infrastructure Partnership" />
+          <attvalue for="11" value="0.8" />
+          <attvalue for="28" value="" />
+          <attvalue for="29" value="0.0" />
+          <attvalue for="30" value="Document indexing infrastructure for RAG pipeline project" />
+          <attvalue for="31" value="0.95" />
+        </attvalues>
+      </node>
+      <node id="technology-weaviate" label="technology-weaviate">
+        <attvalues>
+          <attvalue for="0" value="Technology" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Weaviate" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="36" value="Vector Database" />
+          <attvalue for="37" value="1.0" />
+          <attvalue for="38" value="" />
+          <attvalue for="39" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="technology-qdrant" label="technology-qdrant">
+        <attvalues>
+          <attvalue for="0" value="Technology" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Qdrant" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="36" value="Vector Database" />
+          <attvalue for="37" value="1.0" />
+          <attvalue for="38" value="" />
+          <attvalue for="39" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="technology-aws" label="technology-aws">
+        <attvalues>
+          <attvalue for="0" value="Technology" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="AWS" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="36" value="Cloud Infrastructure" />
+          <attvalue for="37" value="1.0" />
+          <attvalue for="38" value="" />
+          <attvalue for="39" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="technology-github-actions" label="technology-github-actions">
+        <attvalues>
+          <attvalue for="0" value="Technology" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="GitHub Actions" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="36" value="CI/CD" />
+          <attvalue for="37" value="1.0" />
+          <attvalue for="38" value="" />
+          <attvalue for="39" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="technology-kubernetes" label="technology-kubernetes">
+        <attvalues>
+          <attvalue for="0" value="Technology" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Kubernetes" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="36" value="Container Orchestration" />
+          <attvalue for="37" value="1.0" />
+          <attvalue for="38" value="EKS" />
+          <attvalue for="39" value="0.9" />
+        </attvalues>
+      </node>
+      <node id="technology-python" label="technology-python">
+        <attvalues>
+          <attvalue for="0" value="Technology" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Python" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="36" value="Programming Language" />
+          <attvalue for="37" value="1.0" />
+          <attvalue for="38" value="" />
+          <attvalue for="39" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="technology-pytorch" label="technology-pytorch">
+        <attvalues>
+          <attvalue for="0" value="Technology" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="PyTorch" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="36" value="ML Framework" />
+          <attvalue for="37" value="1.0" />
+          <attvalue for="38" value="" />
+          <attvalue for="39" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="technology-hugging-face-transformers" label="technology-hugging-face-transformers">
+        <attvalues>
+          <attvalue for="0" value="Technology" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Hugging Face Transformers" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="36" value="ML Library" />
+          <attvalue for="37" value="1.0" />
+          <attvalue for="38" value="" />
+          <attvalue for="39" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="technology-aws-sagemaker" label="technology-aws-sagemaker">
+        <attvalues>
+          <attvalue for="0" value="Technology" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="AWS SageMaker" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="36" value="ML Platform" />
+          <attvalue for="37" value="1.0" />
+          <attvalue for="38" value="" />
+          <attvalue for="39" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="product-document-processing-pipeline" label="product-document-processing-pipeline">
+        <attvalues>
+          <attvalue for="0" value="Product" />
+          <attvalue for="1" value="0.95" />
+          <attvalue for="2" value="technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Document Processing Pipeline" />
+          <attvalue for="5" value="0.95" />
+          <attvalue for="36" value="Data Processing" />
+          <attvalue for="37" value="0.9" />
+          <attvalue for="38" value="" />
+          <attvalue for="39" value="0.0" />
+          <attvalue for="40" value="DataSystems Inc" />
+          <attvalue for="41" value="1.0" />
+        </attvalues>
+      </node>
+      <node id="technology-fastapi" label="technology-fastapi">
+        <attvalues>
+          <attvalue for="0" value="Technology" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="FastAPI" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="36" value="Web Framework" />
+          <attvalue for="37" value="1.0" />
+          <attvalue for="38" value="" />
+          <attvalue for="39" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="technology-go" label="technology-go">
+        <attvalues>
+          <attvalue for="0" value="Technology" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="Go" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="36" value="Programming Language" />
+          <attvalue for="37" value="1.0" />
+          <attvalue for="38" value="" />
+          <attvalue for="39" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="technology-react" label="technology-react">
+        <attvalues>
+          <attvalue for="0" value="Technology" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="React" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="36" value="Frontend Framework" />
+          <attvalue for="37" value="1.0" />
+          <attvalue for="38" value="" />
+          <attvalue for="39" value="0.0" />
+        </attvalues>
+      </node>
+      <node id="technology-typescript" label="technology-typescript">
+        <attvalues>
+          <attvalue for="0" value="Technology" />
+          <attvalue for="1" value="1.0" />
+          <attvalue for="2" value="technologies.md" />
+          <attvalue for="3" value="" />
+          <attvalue for="4" value="TypeScript" />
+          <attvalue for="5" value="1.0" />
+          <attvalue for="36" value="Programming Language" />
+          <attvalue for="37" value="1.0" />
+          <attvalue for="38" value="" />
+          <attvalue for="39" value="0.0" />
+        </attvalues>
+      </node>
+    </nodes>
+    <edges>
+      <edge source="organization-acme-corp" target="project-db-migration" id="0" label="edge-a0b90d">
+        <attvalues>
+          <attvalue for="46" value="owns" />
+          <attvalue for="47" value="0.95" />
+          <attvalue for="48" value="projects.md|technologies.md" />
+        </attvalues>
+      </edge>
+      <edge source="organization-acme-corp" target="project-rag-pipeline" id="1" label="edge-7eb87c">
+        <attvalues>
+          <attvalue for="46" value="owns" />
+          <attvalue for="47" value="0.95" />
+          <attvalue for="48" value="projects.md|technologies.md" />
+        </attvalues>
+      </edge>
+      <edge source="organization-acme-corp" target="project-platform-secrets-service" id="2" label="edge-291e7d">
+        <attvalues>
+          <attvalue for="46" value="owns" />
+          <attvalue for="47" value="0.95" />
+          <attvalue for="48" value="projects.md|technologies.md" />
+        </attvalues>
+      </edge>
+      <edge source="employee-alice-chen" target="organization-acme-corp" id="3" label="edge-88cb24">
+        <attvalues>
+          <attvalue for="46" value="works_at" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md" />
+          <attvalue for="49" value="" />
+          <attvalue for="50" value="0.0" />
+          <attvalue for="51" value="" />
+          <attvalue for="52" value="0.0" />
+          <attvalue for="53" value="" />
+          <attvalue for="54" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="employee-bob-martinez" target="organization-acme-corp" id="4" label="edge-2d3f24">
+        <attvalues>
+          <attvalue for="46" value="works_at" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md" />
+          <attvalue for="49" value="" />
+          <attvalue for="50" value="0.0" />
+          <attvalue for="51" value="" />
+          <attvalue for="52" value="0.0" />
+          <attvalue for="53" value="" />
+          <attvalue for="54" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="employee-bob-martinez" target="team-infrastructure-team" id="5" label="edge-c64595">
+        <attvalues>
+          <attvalue for="46" value="manages" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md" />
+        </attvalues>
+      </edge>
+      <edge source="employee-bob-martinez" target="team-product-team" id="6" label="edge-d91709">
+        <attvalues>
+          <attvalue for="46" value="manages" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md" />
+        </attvalues>
+      </edge>
+      <edge source="employee-bob-martinez" target="employee-sandra-kim" id="7" label="edge-dd4d62">
+        <attvalues>
+          <attvalue for="46" value="reports_to" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md" />
+        </attvalues>
+      </edge>
+      <edge source="employee-carol-okafor" target="organization-acme-corp" id="8" label="edge-91d97c">
+        <attvalues>
+          <attvalue for="46" value="works_at" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md" />
+          <attvalue for="49" value="" />
+          <attvalue for="50" value="0.0" />
+          <attvalue for="51" value="" />
+          <attvalue for="52" value="0.0" />
+          <attvalue for="53" value="" />
+          <attvalue for="54" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="employee-carol-okafor" target="team-infrastructure-team" id="9" label="edge-e59ad9">
+        <attvalues>
+          <attvalue for="46" value="member_of" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md" />
+        </attvalues>
+      </edge>
+      <edge source="employee-sandra-kim" target="organization-acme-corp" id="10" label="edge-49e18d">
+        <attvalues>
+          <attvalue for="46" value="leads" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md" />
+        </attvalues>
+      </edge>
+      <edge source="employee-james-whitfield" target="organization-acme-corp" id="11" label="edge-c763a6">
+        <attvalues>
+          <attvalue for="46" value="works_at" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md" />
+          <attvalue for="49" value="" />
+          <attvalue for="50" value="0.0" />
+          <attvalue for="51" value="" />
+          <attvalue for="52" value="0.0" />
+          <attvalue for="53" value="" />
+          <attvalue for="54" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="employee-james-whitfield" target="team-platform-team" id="12" label="edge-0d344b">
+        <attvalues>
+          <attvalue for="46" value="manages" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md" />
+        </attvalues>
+      </edge>
+      <edge source="employee-james-whitfield" target="team-ai-research-team" id="13" label="edge-cd3575">
+        <attvalues>
+          <attvalue for="46" value="manages" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md" />
+        </attvalues>
+      </edge>
+      <edge source="employee-dr-yuna-park" target="organization-acme-corp" id="14" label="edge-7f50a8">
+        <attvalues>
+          <attvalue for="46" value="works_at" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md" />
+          <attvalue for="49" value="" />
+          <attvalue for="50" value="0.0" />
+          <attvalue for="51" value="" />
+          <attvalue for="52" value="0.0" />
+          <attvalue for="53" value="" />
+          <attvalue for="54" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="employee-dr-yuna-park" target="team-ai-research-team" id="15" label="edge-abfe59">
+        <attvalues>
+          <attvalue for="46" value="manages" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md" />
+        </attvalues>
+      </edge>
+      <edge source="team-infrastructure-team" target="project-db-migration" id="16" label="edge-684e6a">
+        <attvalues>
+          <attvalue for="46" value="owns" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="projects.md" />
+        </attvalues>
+      </edge>
+      <edge source="team-infrastructure-team" target="technology-aws" id="17" label="edge-a5fa0b">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="technologies.md" />
+          <attvalue for="55" value="Cloud infrastructure hosting" />
+          <attvalue for="56" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="team-infrastructure-team" target="technology-github-actions" id="18" label="edge-250ef2">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="technologies.md" />
+          <attvalue for="55" value="CI/CD pipeline" />
+          <attvalue for="56" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="team-infrastructure-team" target="technology-kubernetes" id="19" label="edge-a2c9f9">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="technologies.md" />
+          <attvalue for="55" value="Container orchestration" />
+          <attvalue for="56" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="team-platform-team" target="product-vault" id="20" label="edge-4974af">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="0.9" />
+          <attvalue for="48" value="partners.md" />
+          <attvalue for="55" value="Secrets Service project" />
+          <attvalue for="56" value="0.9" />
+        </attvalues>
+      </edge>
+      <edge source="team-platform-team" target="project-platform-secrets-service" id="21" label="edge-32a3bc">
+        <attvalues>
+          <attvalue for="46" value="owns" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="projects.md" />
+        </attvalues>
+      </edge>
+      <edge source="team-ai-research-team" target="technology-python" id="22" label="edge-7909c4">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="technologies.md" />
+          <attvalue for="55" value="Primary programming language for AI/ML research" />
+          <attvalue for="56" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="team-ai-research-team" target="technology-pytorch" id="23" label="edge-272682">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="technologies.md" />
+          <attvalue for="55" value="Machine learning framework" />
+          <attvalue for="56" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="team-ai-research-team" target="technology-hugging-face-transformers" id="24" label="edge-0e75a3">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="technologies.md" />
+          <attvalue for="55" value="Transformer models and NLP" />
+          <attvalue for="56" value="0.95" />
+        </attvalues>
+      </edge>
+      <edge source="team-ai-research-team" target="technology-aws-sagemaker" id="25" label="edge-736b5e">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="technologies.md" />
+          <attvalue for="55" value="Running ML experiments" />
+          <attvalue for="56" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="team-ai-research-team" target="technology-qdrant" id="26" label="edge-2a9123">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="0.75" />
+          <attvalue for="48" value="technologies.md" />
+          <attvalue for="55" value="" />
+          <attvalue for="56" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="team-ai-research-team" target="technology-weaviate" id="27" label="edge-a9660b">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="0.75" />
+          <attvalue for="48" value="technologies.md" />
+          <attvalue for="55" value="" />
+          <attvalue for="56" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="team-backend-engineering-guild" target="technology-python" id="28" label="edge-5656a9">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="technologies.md" />
+          <attvalue for="55" value="Standard language for backend services" />
+          <attvalue for="56" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="team-backend-engineering-guild" target="technology-fastapi" id="29" label="edge-79570f">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="technologies.md" />
+          <attvalue for="55" value="Framework for backend services" />
+          <attvalue for="56" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="team-backend-engineering-guild" target="technology-go" id="30" label="edge-8d0efc">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="technologies.md" />
+          <attvalue for="55" value="Performance-critical components" />
+          <attvalue for="56" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="team-backend-engineering-guild" target="technology-react" id="31" label="edge-0653e1">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="0.9" />
+          <attvalue for="48" value="technologies.md" />
+          <attvalue for="55" value="Frontend framework" />
+          <attvalue for="56" value="0.9" />
+        </attvalues>
+      </edge>
+      <edge source="team-backend-engineering-guild" target="technology-typescript" id="32" label="edge-711bfe">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="0.9" />
+          <attvalue for="48" value="technologies.md" />
+          <attvalue for="55" value="Frontend type system with React" />
+          <attvalue for="56" value="0.9" />
+        </attvalues>
+      </edge>
+      <edge source="company-datasystems-inc" target="product-document-processing-pipeline" id="33" label="edge-591a21">
+        <attvalues>
+          <attvalue for="46" value="provides" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="technologies.md" />
+        </attvalues>
+      </edge>
+      <edge source="company-acme-corp" target="contract-vault-enterprise-licence" id="34" label="edge-5cec91">
+        <attvalues>
+          <attvalue for="46" value="holds_contract" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="partners.md" />
+        </attvalues>
+      </edge>
+      <edge source="partnership-acme-corp-datasystems-inc-strategic-partnership" target="company-acme-corp" id="35" label="edge-34513c">
+        <attvalues>
+          <attvalue for="46" value="involves_organization" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="partners.md" />
+          <attvalue for="49" value="partner" />
+          <attvalue for="50" value="0.9" />
+        </attvalues>
+      </edge>
+      <edge source="partnership-acme-corp-datasystems-inc-strategic-partnership" target="company-datasystems-inc" id="36" label="edge-9ff0cb">
+        <attvalues>
+          <attvalue for="46" value="involves_organization" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="partners.md" />
+          <attvalue for="49" value="partner" />
+          <attvalue for="50" value="0.9" />
+        </attvalues>
+      </edge>
+      <edge source="partnership-acme-corp-datasystems-inc-strategic-partnership" target="project-rag-pipeline" id="37" label="edge-62ae21">
+        <attvalues>
+          <attvalue for="46" value="covers_project" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="partners.md" />
+        </attvalues>
+      </edge>
+      <edge source="partnership-acme-corp-datasystems-inc-strategic-partnership" target="project-db-migration" id="38" label="edge-875834">
+        <attvalues>
+          <attvalue for="46" value="covers_project" />
+          <attvalue for="47" value="0.9" />
+          <attvalue for="48" value="partners.md" />
+        </attvalues>
+      </edge>
+      <edge source="person-carol-okafor" target="organization-acme-corp" id="39" label="edge-079047">
+        <attvalues>
+          <attvalue for="46" value="works_at" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md" />
+          <attvalue for="49" value="Site Reliability Engineer" />
+          <attvalue for="50" value="1.0" />
+          <attvalue for="51" value="January 2023" />
+          <attvalue for="52" value="1.0" />
+          <attvalue for="53" value="" />
+          <attvalue for="54" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="person-carol-okafor" target="team-infrastructure-team" id="40" label="edge-5f6aa7">
+        <attvalues>
+          <attvalue for="46" value="member_of" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md" />
+        </attvalues>
+      </edge>
+      <edge source="person-carol-okafor" target="company-datasystems-inc" id="41" label="edge-460858">
+        <attvalues>
+          <attvalue for="46" value="works_at" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="partners.md" />
+          <attvalue for="49" value="DevOps Engineer" />
+          <attvalue for="50" value="1.0" />
+          <attvalue for="51" value="2019" />
+          <attvalue for="52" value="1.0" />
+          <attvalue for="53" value="2022" />
+          <attvalue for="54" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="person-carol-okafor" target="company-acme-corp" id="42" label="edge-7fd27f">
+        <attvalues>
+          <attvalue for="46" value="works_at" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="partners.md" />
+          <attvalue for="49" value="" />
+          <attvalue for="50" value="0.0" />
+          <attvalue for="51" value="2022" />
+          <attvalue for="52" value="0.8" />
+          <attvalue for="53" value="" />
+          <attvalue for="54" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="person-carol-okafor" target="person-dr-priya-nair" id="43" label="edge-f92d5f">
+        <attvalues>
+          <attvalue for="46" value="reports_to" />
+          <attvalue for="47" value="0.9" />
+          <attvalue for="48" value="partners.md" />
+        </attvalues>
+      </edge>
+      <edge source="person-carol-okafor" target="project-db-migration" id="44" label="edge-0e1aa2">
+        <attvalues>
+          <attvalue for="46" value="contributes_to" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="projects.md" />
+          <attvalue for="49" value="Core Engineering Contributor" />
+          <attvalue for="50" value="1.0" />
+          <attvalue for="57" value="Engineering" />
+          <attvalue for="58" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="person-dr-priya-nair" target="company-datasystems-inc" id="45" label="edge-d9b19e">
+        <attvalues>
+          <attvalue for="46" value="works_at" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="partners.md" />
+          <attvalue for="49" value="VP of Engineering" />
+          <attvalue for="50" value="1.0" />
+          <attvalue for="51" value="" />
+          <attvalue for="52" value="0.0" />
+          <attvalue for="53" value="" />
+          <attvalue for="54" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="project-rag-pipeline" target="technology-pinecone" id="46" label="edge-7c71e8">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="projects.md|technologies.md" />
+          <attvalue for="55" value="Vector database for retrieval-augmented generation; Vector database for embedding storage and similarity search" />
+          <attvalue for="56" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="project-rag-pipeline" target="technology-python" id="47" label="edge-459436">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="0.95" />
+          <attvalue for="48" value="technologies.md" />
+          <attvalue for="55" value="Custom ingestion layer implementation" />
+          <attvalue for="56" value="0.95" />
+        </attvalues>
+      </edge>
+      <edge source="project-rag-pipeline" target="technology-qdrant" id="48" label="edge-cfc8e2">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="0.85" />
+          <attvalue for="48" value="technologies.md" />
+          <attvalue for="55" value="" />
+          <attvalue for="56" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="project-rag-pipeline" target="technology-weaviate" id="49" label="edge-10f2f3">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="0.85" />
+          <attvalue for="48" value="technologies.md" />
+          <attvalue for="55" value="" />
+          <attvalue for="56" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="project-db-migration" target="project-platform-secrets-service" id="50" label="edge-ee4394">
+        <attvalues>
+          <attvalue for="46" value="depends_on" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="projects.md" />
+        </attvalues>
+      </edge>
+      <edge source="project-db-migration" target="technology-postgresql" id="51" label="edge-4a21fb">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="projects.md|technologies.md" />
+          <attvalue for="55" value="Source database system being migrated from" />
+          <attvalue for="56" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="project-db-migration" target="technology-aws-aurora" id="52" label="edge-4334dd">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="projects.md|technologies.md" />
+          <attvalue for="55" value="Target database system for migration" />
+          <attvalue for="56" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="person-sandra-kim" target="organization-acme-corp" id="53" label="edge-d1a1b4">
+        <attvalues>
+          <attvalue for="46" value="leads" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md" />
+          <attvalue for="49" value="CEO" />
+          <attvalue for="50" value="1.0" />
+          <attvalue for="51" value="2015" />
+          <attvalue for="52" value="0.9" />
+          <attvalue for="53" value="" />
+          <attvalue for="54" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="person-sandra-kim" target="company-novatech-inc" id="54" label="edge-625cd5">
+        <attvalues>
+          <attvalue for="46" value="works_at" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="partners.md" />
+          <attvalue for="49" value="VP Engineering" />
+          <attvalue for="50" value="1.0" />
+          <attvalue for="51" value="" />
+          <attvalue for="52" value="0.0" />
+          <attvalue for="53" value="2015" />
+          <attvalue for="54" value="0.9" />
+        </attvalues>
+      </edge>
+      <edge source="person-sandra-kim" target="company-acme-corp" id="55" label="edge-a2d368">
+        <attvalues>
+          <attvalue for="46" value="works_at" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="partners.md" />
+          <attvalue for="49" value="CEO" />
+          <attvalue for="50" value="1.0" />
+          <attvalue for="51" value="2015" />
+          <attvalue for="52" value="1.0" />
+          <attvalue for="53" value="" />
+          <attvalue for="54" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="company-hashicorp" target="product-vault" id="56" label="edge-bfb1eb">
+        <attvalues>
+          <attvalue for="46" value="provides" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="partners.md" />
+        </attvalues>
+      </edge>
+      <edge source="company-hashicorp" target="person-marcus-tan" id="57" label="edge-ff6ca5">
+        <attvalues>
+          <attvalue for="46" value="has_contact" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="partners.md" />
+          <attvalue for="59" value="enterprise account manager" />
+          <attvalue for="60" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="project-platform-secrets-service" target="technology-hashicorp-vault" id="58" label="edge-bedee6">
+        <attvalues>
+          <attvalue for="46" value="uses_technology" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="projects.md|technologies.md" />
+          <attvalue for="55" value="Backend for secrets management service; Secrets management" />
+          <attvalue for="56" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="person-marcus-tan" target="company-hashicorp" id="59" label="edge-abcc9e">
+        <attvalues>
+          <attvalue for="46" value="works_at" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="partners.md" />
+          <attvalue for="49" value="enterprise account manager" />
+          <attvalue for="50" value="1.0" />
+          <attvalue for="51" value="" />
+          <attvalue for="52" value="0.0" />
+          <attvalue for="53" value="" />
+          <attvalue for="54" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="company-amazon-web-services" target="product-aws-aurora" id="60" label="edge-e6a525">
+        <attvalues>
+          <attvalue for="46" value="provides" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="partners.md" />
+        </attvalues>
+      </edge>
+      <edge source="company-amazon-web-services" target="person-lisa-huang" id="61" label="edge-e272b2">
+        <attvalues>
+          <attvalue for="46" value="has_contact" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="partners.md" />
+          <attvalue for="59" value="account manager" />
+          <attvalue for="60" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="person-lisa-huang" target="company-amazon-web-services" id="62" label="edge-42d45c">
+        <attvalues>
+          <attvalue for="46" value="works_at" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="partners.md" />
+          <attvalue for="49" value="account manager" />
+          <attvalue for="50" value="1.0" />
+          <attvalue for="51" value="" />
+          <attvalue for="52" value="0.0" />
+          <attvalue for="53" value="" />
+          <attvalue for="54" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="person-bob-martinez" target="organization-acme-corp" id="63" label="edge-ece6c4">
+        <attvalues>
+          <attvalue for="46" value="works_at" />
+          <attvalue for="47" value="0.975" />
+          <attvalue for="48" value="team.md|technologies.md" />
+          <attvalue for="49" value="Director of Engineering" />
+          <attvalue for="50" value="1.0" />
+          <attvalue for="51" value="2018" />
+          <attvalue for="52" value="1.0" />
+          <attvalue for="53" value="" />
+          <attvalue for="54" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="person-bob-martinez" target="team-infrastructure-team" id="64" label="edge-8c3e84">
+        <attvalues>
+          <attvalue for="46" value="manages" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md|technologies.md" />
+        </attvalues>
+      </edge>
+      <edge source="person-bob-martinez" target="team-product-team" id="65" label="edge-cff8ed">
+        <attvalues>
+          <attvalue for="46" value="manages" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md" />
+        </attvalues>
+      </edge>
+      <edge source="person-bob-martinez" target="person-sandra-kim" id="66" label="edge-9dc267">
+        <attvalues>
+          <attvalue for="46" value="reports_to" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md" />
+        </attvalues>
+      </edge>
+      <edge source="person-bob-martinez" target="project-db-migration" id="67" label="edge-825578">
+        <attvalues>
+          <attvalue for="46" value="contributes_to" />
+          <attvalue for="47" value="0.95" />
+          <attvalue for="48" value="projects.md" />
+          <attvalue for="49" value="Initiator" />
+          <attvalue for="50" value="0.9" />
+          <attvalue for="57" value="Project Initiation" />
+          <attvalue for="58" value="0.9" />
+        </attvalues>
+      </edge>
+      <edge source="person-alice-chen" target="organization-acme-corp" id="68" label="edge-0adce0">
+        <attvalues>
+          <attvalue for="46" value="works_at" />
+          <attvalue for="47" value="0.975" />
+          <attvalue for="48" value="team.md|technologies.md" />
+          <attvalue for="49" value="Senior Software Engineer" />
+          <attvalue for="50" value="1.0" />
+          <attvalue for="51" value="March 2021" />
+          <attvalue for="52" value="1.0" />
+          <attvalue for="53" value="" />
+          <attvalue for="54" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="person-alice-chen" target="team-backend-engineering-guild" id="69" label="edge-df9a75">
+        <attvalues>
+          <attvalue for="46" value="leads" />
+          <attvalue for="47" value="0.975" />
+          <attvalue for="48" value="team.md|technologies.md" />
+        </attvalues>
+      </edge>
+      <edge source="person-alice-chen" target="project-db-migration" id="70" label="edge-8dbe79">
+        <attvalues>
+          <attvalue for="46" value="contributes_to" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="projects.md" />
+          <attvalue for="49" value="Core Engineering Contributor" />
+          <attvalue for="50" value="1.0" />
+          <attvalue for="57" value="Engineering" />
+          <attvalue for="58" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="person-alice-chen" target="project-rag-pipeline" id="71" label="edge-ea8712">
+        <attvalues>
+          <attvalue for="46" value="contributes_to" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="projects.md" />
+          <attvalue for="49" value="Backend API Developer" />
+          <attvalue for="50" value="0.95" />
+          <attvalue for="57" value="Backend Engineering" />
+          <attvalue for="58" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="person-james-whitfield" target="organization-acme-corp" id="72" label="edge-94a3a9">
+        <attvalues>
+          <attvalue for="46" value="works_at" />
+          <attvalue for="47" value="0.975" />
+          <attvalue for="48" value="team.md|technologies.md" />
+          <attvalue for="49" value="CTO" />
+          <attvalue for="50" value="1.0" />
+          <attvalue for="51" value="2015" />
+          <attvalue for="52" value="0.9" />
+          <attvalue for="53" value="" />
+          <attvalue for="54" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="person-james-whitfield" target="team-platform-team" id="73" label="edge-5809d3">
+        <attvalues>
+          <attvalue for="46" value="leads" />
+          <attvalue for="47" value="0.9" />
+          <attvalue for="48" value="projects.md" />
+        </attvalues>
+      </edge>
+      <edge source="person-james-whitfield" target="team-ai-research-team" id="74" label="edge-8f0036">
+        <attvalues>
+          <attvalue for="46" value="manages" />
+          <attvalue for="47" value="0.95" />
+          <attvalue for="48" value="team.md" />
+        </attvalues>
+      </edge>
+      <edge source="person-james-whitfield" target="project-platform-secrets-service" id="75" label="edge-e68f52">
+        <attvalues>
+          <attvalue for="46" value="contributes_to" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="projects.md|technologies.md" />
+          <attvalue for="49" value="Project Owner; Project lead" />
+          <attvalue for="50" value="1.0" />
+          <attvalue for="57" value="Ownership; Leadership" />
+          <attvalue for="58" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="person-dr-yuna-park" target="organization-acme-corp" id="76" label="edge-f8fd44">
+        <attvalues>
+          <attvalue for="46" value="works_at" />
+          <attvalue for="47" value="0.975" />
+          <attvalue for="48" value="team.md|technologies.md" />
+          <attvalue for="49" value="Principal Researcher" />
+          <attvalue for="50" value="1.0" />
+          <attvalue for="51" value="" />
+          <attvalue for="52" value="0.0" />
+          <attvalue for="53" value="" />
+          <attvalue for="54" value="0.0" />
+        </attvalues>
+      </edge>
+      <edge source="person-dr-yuna-park" target="team-ai-research-team" id="77" label="edge-f4ef1d">
+        <attvalues>
+          <attvalue for="46" value="member_of" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="team.md|projects.md" />
+        </attvalues>
+      </edge>
+      <edge source="person-dr-yuna-park" target="project-rag-pipeline" id="78" label="edge-73bcce">
+        <attvalues>
+          <attvalue for="46" value="contributes_to" />
+          <attvalue for="47" value="0.975" />
+          <attvalue for="48" value="projects.md|technologies.md" />
+          <attvalue for="49" value="Project Lead" />
+          <attvalue for="50" value="1.0" />
+          <attvalue for="57" value="Leadership" />
+          <attvalue for="58" value="1.0" />
+        </attvalues>
+      </edge>
+      <edge source="partnership-datasystems-inc-rag-pipeline-partnership" target="company-datasystems-inc" id="79" label="edge-6a0480">
+        <attvalues>
+          <attvalue for="46" value="involves_organization" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="projects.md" />
+          <attvalue for="49" value="Document Indexing Infrastructure Provider" />
+          <attvalue for="50" value="0.95" />
+        </attvalues>
+      </edge>
+      <edge source="partnership-datasystems-inc-rag-pipeline-partnership" target="project-rag-pipeline" id="80" label="edge-e0dfbf">
+        <attvalues>
+          <attvalue for="46" value="covers_project" />
+          <attvalue for="47" value="1.0" />
+          <attvalue for="48" value="projects.md" />
+        </attvalues>
+      </edge>
+    </edges>
+  </graph>
+</gexf>

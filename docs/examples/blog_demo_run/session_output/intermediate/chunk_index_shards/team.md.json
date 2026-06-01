@@ -1,0 +1,23 @@
+{
+  "_fname": "team.md",
+  "data": {
+    "1": [
+      "organization-acme-corp",
+      "employee-alice-chen",
+      "employee-bob-martinez",
+      "employee-carol-okafor",
+      "employee-sandra-kim",
+      "employee-james-whitfield",
+      "employee-dr-yuna-park",
+      "team-infrastructure-team",
+      "team-product-team",
+      "team-platform-team",
+      "team-ai-research-team",
+      "team-backend-engineering-guild",
+      "organization-google",
+      "organization-datasystems-inc",
+      "organization-novatech-inc",
+      "organization-deepmind"
+    ]
+  }
+}

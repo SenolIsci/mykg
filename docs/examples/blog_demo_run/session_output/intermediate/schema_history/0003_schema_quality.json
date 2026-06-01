@@ -1,0 +1,19 @@
+{
+  "seq": 3,
+  "trigger": "schema_quality",
+  "timestamp": "2026-06-01T21:47:06Z",
+  "concepts_added": [],
+  "concepts_removed": [],
+  "properties_added": [
+    "covers_project",
+    "involves_organization",
+    "uses_technology"
+  ],
+  "properties_removed": [
+    "covers",
+    "involves",
+    "uses"
+  ],
+  "concepts_total": 10,
+  "properties_total": 16
+}

@@ -1,0 +1,25 @@
+{
+  "_fname": "projects.md",
+  "data": {
+    "1": [
+      "organization-acme-corp",
+      "team-infrastructure-team",
+      "team-ai-research-team",
+      "team-platform-team",
+      "person-bob-martinez",
+      "person-alice-chen",
+      "person-carol-okafor",
+      "person-james-whitfield",
+      "person-dr-yuna-park",
+      "project-db-migration",
+      "project-rag-pipeline",
+      "project-platform-secrets-service",
+      "technology-postgresql",
+      "technology-aws-aurora",
+      "technology-pinecone",
+      "technology-hashicorp-vault",
+      "company-datasystems-inc",
+      "partnership-datasystems-inc-rag-pipeline-partnership"
+    ]
+  }
+}

@@ -29,6 +29,9 @@ sessions/
 htmlcov
 CLAUDE.md
 
+# Exception: keep the bundled demo session under docs/examples/ tracked
+!docs/examples/**
+
 # Profiler dumps
 profile.out
 *.prof

@@ -1,0 +1,39 @@
+{
+  "seq": 1,
+  "trigger": "pass1_merge",
+  "timestamp": "2026-06-01T21:46:44Z",
+  "concepts_added": [
+    "Company",
+    "Contract",
+    "Employee",
+    "Organization",
+    "Partnership",
+    "Person",
+    "Product",
+    "Project",
+    "Team",
+    "Technology"
+  ],
+  "concepts_removed": [],
+  "properties_added": [
+    "contributes_to",
+    "covers",
+    "depends_on",
+    "governed_by",
+    "has_contact",
+    "holds_contract",
+    "involves",
+    "leads",
+    "manages",
+    "member_of",
+    "owns",
+    "partners_with",
+    "provides",
+    "reports_to",
+    "uses",
+    "works_at"
+  ],
+  "properties_removed": [],
+  "concepts_total": 10,
+  "properties_total": 16
+}

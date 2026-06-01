@@ -1,0 +1,33 @@
+{
+  "metadata": {
+    "generated_at": "2026-06-01T21:48:44.945486+00:00",
+    "input_name_count_by_type": {
+      "Organization": 5,
+      "Employee": 6,
+      "Team": 9,
+      "Company": 5,
+      "Partnership": 2,
+      "Person": 9,
+      "Project": 8,
+      "Product": 3,
+      "Contract": 1,
+      "Technology": 17
+    },
+    "aliases_mapped": 9
+  },
+  "mappings": {
+    "Team": {
+      "AI Research team": "AI Research Team",
+      "Platform team": "Platform Team",
+      "backend guild": "Backend Engineering Guild",
+      "infrastructure team": "Infrastructure Team"
+    },
+    "Project": {
+      "DB Migration Project": "DB Migration",
+      "DB Migration project": "DB Migration",
+      "RAG Pipeline Project": "RAG Pipeline",
+      "Secrets Service project": "Platform Secrets Service",
+      "data lake migration": "DB Migration"
+    }
+  }
+}

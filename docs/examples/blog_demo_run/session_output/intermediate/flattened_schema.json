@@ -1,0 +1,65 @@
+{
+  "Organization": [
+    "name",
+    "description",
+    "headquarters_location",
+    "type"
+  ],
+  "Company": [
+    "name",
+    "description",
+    "headquarters_location",
+    "type",
+    "founding_year",
+    "annual_revenue"
+  ],
+  "Person": [
+    "name",
+    "email",
+    "education"
+  ],
+  "Employee": [
+    "name",
+    "email",
+    "education",
+    "title",
+    "join_date"
+  ],
+  "Team": [
+    "name",
+    "description",
+    "headquarters_location",
+    "type",
+    "focus_area",
+    "member_count"
+  ],
+  "Project": [
+    "name",
+    "description",
+    "status",
+    "budget"
+  ],
+  "Technology": [
+    "name",
+    "category",
+    "version"
+  ],
+  "Product": [
+    "name",
+    "category",
+    "version",
+    "vendor"
+  ],
+  "Partnership": [
+    "name",
+    "type",
+    "start_date",
+    "scope"
+  ],
+  "Contract": [
+    "name",
+    "type",
+    "signed_date",
+    "value"
+  ]
+}

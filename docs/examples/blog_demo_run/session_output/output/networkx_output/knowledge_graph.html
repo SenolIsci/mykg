@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>mykg knowledge graph</title>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0f0f1a; color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    display: flex; height: 100vh; overflow: hidden;
+  }
+  #graph { flex: 1; min-width: 0; }
+  #resizer {
+    width: 5px; background: #2a2a4e; cursor: col-resize; flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  #resizer:hover, #resizer.dragging { background: #4E79A7; }
+  #sidebar {
+    width: 280px; min-width: 180px; max-width: 600px;
+    background: #1a1a2e; border-left: 1px solid #2a2a4e;
+    display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0;
+  }
+  #search-wrap { padding: 12px; border-bottom: 1px solid #2a2a4e; }
+  #search {
+    width: 100%; background: #0f0f1a; border: 1px solid #3a3a5e; color: #e0e0e0;
+    padding: 7px 10px; border-radius: 6px; font-size: 14px; outline: none;
+  }
+  #search:focus { border-color: #4E79A7; }
+  #search-results {
+    max-height: 140px; overflow-y: auto; padding: 4px 12px;
+    border-bottom: 1px solid #2a2a4e; display: none;
+  }
+  .search-item {
+    padding: 4px 6px; cursor: pointer; border-radius: 4px; font-size: 14px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .search-item:hover { background: #2a2a4e; }
+  #info-panel { padding: 14px; border-bottom: 1px solid #2a2a4e; min-height: 80px; flex: 1 1 0; overflow-y: auto; }
+  #info-panel h3 {
+    font-size: 14px; color: #aaa; margin-bottom: 8px;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  #info-content { font-size: 14px; color: #ccc; line-height: 1.6; }
+  #info-content .field { margin-bottom: 5px; }
+  #info-content .field b { color: #e0e0e0; }
+  #info-content .empty { color: #555; font-style: italic; }
+  .neighbor-link {
+    display: block; padding: 2px 6px; margin: 2px 0; border-radius: 3px;
+    cursor: pointer; font-size: 14px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; border-left: 3px solid #333;
+  }
+  .neighbor-link:hover { background: #2a2a4e; }
+  #neighbors-list { max-height: 160px; overflow-y: auto; margin-top: 4px; }
+  #legend-wrap { flex: 1; overflow-y: auto; padding: 12px; }
+  #legend-wrap h3 {
+    font-size: 14px; color: #aaa; margin-bottom: 10px;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 8px; padding: 4px 0;
+    cursor: pointer; border-radius: 4px; font-size: 14px;
+  }
+  .legend-item:hover { background: #2a2a4e; padding-left: 4px; }
+  .legend-item.dimmed { opacity: 0.35; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .legend-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .legend-count { color: #666; font-size: 14px; }
+  #stats { padding: 10px 14px; border-top: 1px solid #2a2a4e; font-size: 14px; color: #555; }
+  #legend-controls {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 4px 0;
+  }
+  #legend-controls label {
+    display: flex; align-items: center; gap: 6px;
+    cursor: pointer; font-size: 14px; color: #aaa; user-select: none;
+  }
+  #legend-controls label:hover { color: #e0e0e0; }
+  .legend-cb, #select-all-cb {
+    appearance: none; -webkit-appearance: none; width: 14px; height: 14px;
+    border: 1.5px solid #3a3a5e; border-radius: 3px; background: #0f0f1a;
+    cursor: pointer; position: relative; flex-shrink: 0;
+  }
+  .legend-cb:checked, #select-all-cb:checked { background: #4E79A7; border-color: #4E79A7; }
+  .legend-cb:checked::after, #select-all-cb:checked::after {
+    content: ''; position: absolute; left: 3.5px; top: 1px; width: 4px; height: 7px;
+    border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+  }
+  #select-all-cb:indeterminate { background: #4E79A7; border-color: #4E79A7; }
+  #select-all-cb:indeterminate::after {
+    content: ''; position: absolute; left: 2px; top: 5px;
+    width: 8px; height: 2px; background: #fff; border: none; transform: none;
+  }
+  #info-content .attr-block { margin-top: 10px; border-top: 1px solid #2a2a4e; padding-top: 8px; }
+  #info-content .attr-row { display: flex; gap: 6px; font-size: 14px; margin-bottom: 3px; }
+  #info-content .attr-key { color: #888; flex-shrink: 0; }
+  #info-content .attr-val { color: #ddd; word-break: break-word; }
+  #info-content .attr-conf { color: #555; font-size: 14px; margin-left: auto; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<div id="graph"></div>
+<div id="resizer"></div>
+<div id="sidebar">
+  <div id="search-wrap">
+    <input id="search" type="text" placeholder="Search nodes..." autocomplete="off">
+    <div id="search-results"></div>
+  </div>
+  <div id="info-panel">
+    <h3>Node Info</h3>
+    <div id="info-content"><span class="empty">Click a node to inspect it</span></div>
+  </div>
+  <div style="padding:10px 14px;border-top:1px solid #2a2a4e;font-size:14px;color:#666;flex-shrink:0;max-height:220px;overflow-y:auto">
+    <div style="margin-bottom:6px;color:#aaa">Node types</div>
+    <span style="display:inline-flex;align-items:center;gap:5px;margin:3px 8px 3px 0;font-size:14px"><span style="width:10px;height:10px;border-radius:50%;background:#4E79A7;display:inline-block"></span>Company</span><span style="display:inline-flex;align-items:center;gap:5px;margin:3px 8px 3px 0;font-size:14px"><span style="width:10px;height:10px;border-radius:50%;background:#F28E2B;display:inline-block"></span>Contract</span><span style="display:inline-flex;align-items:center;gap:5px;margin:3px 8px 3px 0;font-size:14px"><span style="width:10px;height:10px;border-radius:50%;background:#E15759;display:inline-block"></span>Employee</span><span style="display:inline-flex;align-items:center;gap:5px;margin:3px 8px 3px 0;font-size:14px"><span style="width:10px;height:10px;border-radius:50%;background:#76B7B2;display:inline-block"></span>Organization</span><span style="display:inline-flex;align-items:center;gap:5px;margin:3px 8px 3px 0;font-size:14px"><span style="width:10px;height:10px;border-radius:50%;background:#59A14F;display:inline-block"></span>Partnership</span><span style="display:inline-flex;align-items:center;gap:5px;margin:3px 8px 3px 0;font-size:14px"><span style="width:10px;height:10px;border-radius:50%;background:#EDC948;display:inline-block"></span>Person</span><span style="display:inline-flex;align-items:center;gap:5px;margin:3px 8px 3px 0;font-size:14px"><span style="width:10px;height:10px;border-radius:50%;background:#B07AA1;display:inline-block"></span>Product</span><span style="display:inline-flex;align-items:center;gap:5px;margin:3px 8px 3px 0;font-size:14px"><span style="width:10px;height:10px;border-radius:50%;background:#FF9DA7;display:inline-block"></span>Project</span><span style="display:inline-flex;align-items:center;gap:5px;margin:3px 8px 3px 0;font-size:14px"><span style="width:10px;height:10px;border-radius:50%;background:#9C755F;display:inline-block"></span>Team</span><span style="display:inline-flex;align-items:center;gap:5px;margin:3px 8px 3px 0;font-size:14px"><span style="width:10px;height:10px;border-radius:50%;background:#BAB0AC;display:inline-block"></span>Technology</span>
+  </div>
+  <div id="stats">56 nodes &middot; 81 edges</div>
+</div>
+<script>
+const RAW_NODES = [{"id": "organization-acme-corp", "label": "organization-acme-corp", "color": {"background": "#76B7B2", "border": "#76B7B2", "highlight": {"background": "#ffffff", "border": "#76B7B2"}}, "size": 40.0, "font": {"size": 15, "color": "#ffffff"}, "title": "organization-acme-corp", "_node_type": "Organization", "_confidence": 1.0, "_source_files": "team.md|projects.md|technologies.md", "_raw_attrs": {"name": {"value": "Acme Corp", "confidence": 1.0}, "description": {"value": "Organization undertaking database migration, RAG pipeline, and platform secrets service projects", "confidence": 0.9}, "headquarters_location": {"value": "", "confidence": 0.0}, "type": {"value": "Company", "confidence": 0.9}}}, {"id": "employee-alice-chen", "label": "employee-alice-chen", "color": {"background": "#E15759", "border": "#E15759", "highlight": {"background": "#ffffff", "border": "#E15759"}}, "size": 12.0, "font": {"size": 0, "color": "#ffffff"}, "title": "employee-alice-chen", "_node_type": "Employee", "_confidence": 1.0, "_source_files": "team.md", "_raw_attrs": {"name": {"value": "Alice Chen", "confidence": 1.0}, "email": {"value": "alice.chen@acme.com", "confidence": 1.0}, "education": {"value": "BSc in Computer Science from MIT", "confidence": 1.0}, "title": {"value": "Senior Software Engineer", "confidence": 1.0}, "join_date": {"value": "March 2021", "confidence": 1.0}}}, {"id": "employee-bob-martinez", "label": "employee-bob-martinez", "color": {"background": "#E15759", "border": "#E15759", "highlight": {"background": "#ffffff", "border": "#E15759"}}, "size": 18.0, "font": {"size": 15, "color": "#ffffff"}, "title": "employee-bob-martinez", "_node_type": "Employee", "_confidence": 1.0, "_source_files": "team.md", "_raw_attrs": {"name": {"value": "Bob Martinez", "confidence": 1.0}, "email": {"value": "", "confidence": 0.0}, "education": {"value": "", "confidence": 0.0}, "title": {"value": "Director of Engineering", "confidence": 1.0}, "join_date": {"value": "2018", "confidence": 1.0}}}, {"id": "employee-carol-okafor", "label": "employee-carol-okafor", "color": {"background": "#E15759", "border": "#E15759", "highlight": {"background": "#ffffff", "border": "#E15759"}}, "size": 14.0, "font": {"size": 0, "color": "#ffffff"}, "title": "employee-carol-okafor", "_node_type": "Employee", "_confidence": 1.0, "_source_files": "team.md", "_raw_attrs": {"name": {"value": "Carol Okafor", "confidence": 1.0}, "email": {"value": "", "confidence": 0.0}, "education": {"value": "", "confidence": 0.0}, "title": {"value": "Site Reliability Engineer", "confidence": 1.0}, "join_date": {"value": "January 2023", "confidence": 1.0}}}, {"id": "employee-sandra-kim", "label": "employee-sandra-kim", "color": {"background": "#E15759", "border": "#E15759", "highlight": {"background": "#ffffff", "border": "#E15759"}}, "size": 14.0, "font": {"size": 0, "color": "#ffffff"}, "title": "employee-sandra-kim", "_node_type": "Employee", "_confidence": 1.0, "_source_files": "team.md", "_raw_attrs": {"name": {"value": "Sandra Kim", "confidence": 1.0}, "email": {"value": "", "confidence": 0.0}, "education": {"value": "", "confidence": 0.0}, "title": {"value": "CEO", "confidence": 1.0}, "join_date": {"value": "2015", "confidence": 0.9}}}, {"id": "employee-james-whitfield", "label": "employee-james-whitfield", "color": {"background": "#E15759", "border": "#E15759", "highlight": {"background": "#ffffff", "border": "#E15759"}}, "size": 16.0, "font": {"size": 15, "color": "#ffffff"}, "title": "employee-james-whitfield", "_node_type": "Employee", "_confidence": 1.0, "_source_files": "team.md", "_raw_attrs": {"name": {"value": "James Whitfield", "confidence": 1.0}, "email": {"value": "", "confidence": 0.0}, "education": {"value": "PhD in Computer Science from Stanford", "confidence": 1.0}, "title": {"value": "CTO", "confidence": 1.0}, "join_date": {"value": "2015", "confidence": 0.9}}}, {"id": "employee-dr-yuna-park", "label": "employee-dr-yuna-park", "color": {"background": "#E15759", "border": "#E15759", "highlight": {"background": "#ffffff", "border": "#E15759"}}, "size": 14.0, "font": {"size": 0, "color": "#ffffff"}, "title": "employee-dr-yuna-park", "_node_type": "Employee", "_confidence": 1.0, "_source_files": "team.md", "_raw_attrs": {"name": {"value": "Dr. Yuna Park", "confidence": 1.0}, "email": {"value": "", "confidence": 0.0}, "education": {"value": "", "confidence": 0.0}, "title": {"value": "Principal Researcher", "confidence": 1.0}, "join_date": {"value": "", "confidence": 0.0}}}, {"id": "team-infrastructure-team", "label": "team-infrastructure-team", "color": {"background": "#9C755F", "border": "#9C755F", "highlight": {"background": "#ffffff", "border": "#9C755F"}}, "size": 26.0, "font": {"size": 15, "color": "#ffffff"}, "title": "team-infrastructure-team", "_node_type": "Team", "_confidence": 1.0, "_source_files": "team.md|projects.md|technologies.md", "_raw_attrs": {"name": {"value": "Infrastructure Team", "confidence": 1.0}, "description": {"value": "Responsible for cloud operations, CI/CD pipelines, and on-call rotations", "confidence": 1.0}, "headquarters_location": {"value": "", "confidence": 0.0}, "type": {"value": "Engineering Team", "confidence": 0.9}, "focus_area": {"value": "cloud operations, CI/CD pipelines, and on-call rotations; Infrastructure; Infrastructure and DevOps", "confidence": 1.0}, "member_count": {"value": 5, "confidence": 1.0}}}, {"id": "team-product-team", "label": "team-product-team", "color": {"background": "#9C755F", "border": "#9C755F", "highlight": {"background": "#ffffff", "border": "#9C755F"}}, "size": 14.0, "font": {"size": 0, "color": "#ffffff"}, "title": "team-product-team", "_node_type": "Team", "_confidence": 0.9, "_source_files": "team.md", "_raw_attrs": {"name": {"value": "product team", "confidence": 0.9}, "description": {"value": "Product development team managed by Bob Martinez", "confidence": 0.8}, "headquarters_location": {"value": "", "confidence": 0.0}, "type": {"value": "Product Team", "confidence": 0.85}, "focus_area": {"value": "", "confidence": 0.0}, "member_count": {"value": "", "confidence": 0.0}}}, {"id": "team-platform-team", "label": "team-platform-team", "color": {"background": "#9C755F", "border": "#9C755F", "highlight": {"background": "#ffffff", "border": "#9C755F"}}, "size": 18.0, "font": {"size": 15, "color": "#ffffff"}, "title": "team-platform-team", "_node_type": "Team", "_confidence": 1.0, "_source_files": "team.md|partners.md|projects.md", "_raw_attrs": {"name": {"value": "Platform Team", "confidence": 1.0}, "description": {"value": "Team building centralised secrets management service", "confidence": 0.95}, "headquarters_location": {"value": "", "confidence": 0.0}, "type": {"value": "Engineering Team", "confidence": 0.85}, "focus_area": {"value": "Platform Infrastructure", "confidence": 0.9}, "member_count": {"value": "", "confidence": 0.0}}}, {"id": "team-ai-research-team", "label": "team-ai-research-team", "color": {"background": "#9C755F", "border": "#9C755F", "highlight": {"background": "#ffffff", "border": "#9C755F"}}, "size": 30.0, "font": {"size": 15, "color": "#ffffff"}, "title": "team-ai-research-team", "_node_type": "Team", "_confidence": 1.0, "_source_files": "team.md|projects.md|technologies.md", "_raw_attrs": {"name": {"value": "AI Research Team", "confidence": 1.0}, "description": {"value": "Research team focused on retrieval-augmented generation (RAG) and knowledge graph applications", "confidence": 1.0}, "headquarters_location": {"value": "", "confidence": 0.0}, "type": {"value": "Research Team", "confidence": 0.95}, "focus_area": {"value": "retrieval-augmented generation (RAG) and knowledge graph applications; AI Research; AI and ML", "confidence": 1.0}, "member_count": {"value": "", "confidence": 0.0}}}, {"id": "team-backend-engineering-guild", "label": "team-backend-engineering-guild", "color": {"background": "#9C755F", "border": "#9C755F", "highlight": {"background": "#ffffff", "border": "#9C755F"}}, "size": 22.0, "font": {"size": 15, "color": "#ffffff"}, "title": "team-backend-engineering-guild", "_node_type": "Team", "_confidence": 0.925, "_source_files": "team.md|technologies.md", "_raw_attrs": {"name": {"value": "Backend Engineering Guild", "confidence": 1.0}, "description": {"value": "Team standardising on Python (FastAPI) for services and Go for performance-critical components", "confidence": 0.95}, "headquarters_location": {"value": "", "confidence": 0.0}, "type": {"value": "Engineering Guild", "confidence": 0.95}, "focus_area": {"value": "Backend Engineering", "confidence": 1.0}, "member_count": {"value": "", "confidence": 0.0}}}, {"id": "organization-google", "label": "organization-google", "color": {"background": "#76B7B2", "border": "#76B7B2", "highlight": {"background": "#ffffff", "border": "#76B7B2"}}, "size": 10.0, "font": {"size": 0, "color": "#ffffff"}, "title": "organization-google", "_node_type": "Organization", "_confidence": 0.9, "_source_files": "team.md", "_raw_attrs": {"name": {"value": "Google", "confidence": 0.9}, "description": {"value": "Former employer of Bob Martinez", "confidence": 0.7}, "headquarters_location": {"value": "", "confidence": 0.0}, "type": {"value": "Technology Company", "confidence": 0.8}}}, {"id": "organization-datasystems-inc", "label": "organization-datasystems-inc", "color": {"background": "#76B7B2", "border": "#76B7B2", "highlight": {"background": "#ffffff", "border": "#76B7B2"}}, "size": 10.0, "font": {"size": 0, "color": "#ffffff"}, "title": "organization-datasystems-inc", "_node_type": "Organization", "_confidence": 0.9, "_source_files": "team.md", "_raw_attrs": {"name": {"value": "DataSystems Inc", "confidence": 0.9}, "description": {"value": "Former employer of Carol Okafor", "confidence": 0.7}, "headquarters_location": {"value": "", "confidence": 0.0}, "type": {"value": "Technology Company", "confidence": 0.75}}}, {"id": "organization-novatech-inc", "label": "organization-novatech-inc", "color": {"background": "#76B7B2", "border": "#76B7B2", "highlight": {"background": "#ffffff", "border": "#76B7B2"}}, "size": 10.0, "font": {"size": 0, "color": "#ffffff"}, "title": "organization-novatech-inc", "_node_type": "Organization", "_confidence": 0.9, "_source_files": "team.md", "_raw_attrs": {"name": {"value": "NovaTech Inc", "confidence": 0.9}, "description": {"value": "Former employer of Sandra Kim", "confidence": 0.7}, "headquarters_location": {"value": "", "confidence": 0.0}, "type": {"value": "Technology Company", "confidence": 0.75}}}, {"id": "organization-deepmind", "label": "organization-deepmind", "color": {"background": "#76B7B2", "border": "#76B7B2", "highlight": {"background": "#ffffff", "border": "#76B7B2"}}, "size": 10.0, "font": {"size": 0, "color": "#ffffff"}, "title": "organization-deepmind", "_node_type": "Organization", "_confidence": 0.9, "_source_files": "team.md", "_raw_attrs": {"name": {"value": "DeepMind", "confidence": 0.9}, "description": {"value": "Former employer of Dr. Yuna Park", "confidence": 0.7}, "headquarters_location": {"value": "", "confidence": 0.0}, "type": {"value": "AI Research Organization", "confidence": 0.85}}}, {"id": "company-datasystems-inc", "label": "company-datasystems-inc", "color": {"background": "#4E79A7", "border": "#4E79A7", "highlight": {"background": "#ffffff", "border": "#4E79A7"}}, "size": 20.0, "font": {"size": 15, "color": "#ffffff"}, "title": "company-datasystems-inc", "_node_type": "Company", "_confidence": 1.0, "_source_files": "partners.md|projects.md|technologies.md", "_raw_attrs": {"name": {"value": "DataSystems Inc", "confidence": 1.0}, "description": {"value": "data infrastructure company", "confidence": 1.0}, "headquarters_location": {"value": "San Francisco", "confidence": 1.0}, "type": {"value": "data infrastructure company", "confidence": 1.0}, "founding_year": {"value": "", "confidence": 0.0}, "annual_revenue": {"value": "", "confidence": 0.0}}}, {"id": "company-acme-corp", "label": "company-acme-corp", "color": {"background": "#4E79A7", "border": "#4E79A7", "highlight": {"background": "#ffffff", "border": "#4E79A7"}}, "size": 18.0, "font": {"size": 15, "color": "#ffffff"}, "title": "company-acme-corp", "_node_type": "Company", "_confidence": 1.0, "_source_files": "partners.md|technologies.md", "_raw_attrs": {"name": {"value": "Acme Corp", "confidence": 1.0}, "description": {"value": "Company running technology infrastructure and AI/ML projects", "confidence": 0.9}, "headquarters_location": {"value": "", "confidence": 0.0}, "type": {"value": "Technology Company", "confidence": 0.8}, "founding_year": {"value": "2015", "confidence": 1.0}, "annual_revenue": {"value": "", "confidence": 0.0}}}, {"id": "partnership-acme-corp-datasystems-inc-strategic-partnership", "label": "partnership-acme-corp-datasystems-inc-strategic-partnership", "color": {"background": "#59A14F", "border": "#59A14F", "highlight": {"background": "#ffffff", "border": "#59A14F"}}, "size": 18.0, "font": {"size": 15, "color": "#ffffff"}, "title": "partnership-acme-corp-datasystems-inc-strategic-partnership", "_node_type": "Partnership", "_confidence": 1.0, "_source_files": "partners.md", "_raw_attrs": {"name": {"value": "Acme Corp - DataSystems Inc Strategic Partnership", "confidence": 0.9}, "type": {"value": "strategic partnership", "confidence": 1.0}, "start_date": {"value": "September 2025", "confidence": 1.0}, "scope": {"value": "co-develop document indexing and search infrastructure", "confidence": 1.0}}}, {"id": "person-carol-okafor", "label": "person-carol-okafor", "color": {"background": "#EDC948", "border": "#EDC948", "highlight": {"background": "#ffffff", "border": "#EDC948"}}, "size": 22.0, "font": {"size": 15, "color": "#ffffff"}, "title": "person-carol-okafor", "_node_type": "Person", "_confidence": 1.0, "_source_files": "partners.md|projects.md", "_raw_attrs": {"name": {"value": "Carol Okafor", "confidence": 1.0}, "email": {"value": "", "confidence": 0.0}, "education": {"value": "", "confidence": 0.0}}}, {"id": "person-dr-priya-nair", "label": "person-dr-priya-nair", "color": {"background": "#EDC948", "border": "#EDC948", "highlight": {"background": "#ffffff", "border": "#EDC948"}}, "size": 14.0, "font": {"size": 0, "color": "#ffffff"}, "title": "person-dr-priya-nair", "_node_type": "Person", "_confidence": 1.0, "_source_files": "partners.md", "_raw_attrs": {"name": {"value": "Dr. Priya Nair", "confidence": 1.0}, "email": {"value": "", "confidence": 0.0}, "education": {"value": "", "confidence": 0.0}}}, {"id": "project-rag-pipeline", "label": "project-rag-pipeline", "color": {"background": "#FF9DA7", "border": "#FF9DA7", "highlight": {"background": "#ffffff", "border": "#FF9DA7"}}, "size": 28.0, "font": {"size": 15, "color": "#ffffff"}, "title": "project-rag-pipeline", "_node_type": "Project", "_confidence": 1.0, "_source_files": "partners.md|projects.md|technologies.md", "_raw_attrs": {"name": {"value": "RAG Pipeline", "confidence": 1.0}, "description": {"value": "document indexing; Internal RAG (Retrieval-Augmented Generation) pipeline to allow employees to query company's internal documentation using natural language", "confidence": 1.0}, "status": {"value": "active; design phase", "confidence": 1.0}, "budget": {"value": "", "confidence": 0.0}}}, {"id": "project-db-migration", "label": "project-db-migration", "color": {"background": "#FF9DA7", "border": "#FF9DA7", "highlight": {"background": "#ffffff", "border": "#FF9DA7"}}, "size": 28.0, "font": {"size": 15, "color": "#ffffff"}, "title": "project-db-migration", "_node_type": "Project", "_confidence": 0.975, "_source_files": "partners.md|partners.md|projects.md|technologies.md", "_raw_attrs": {"name": {"value": "DB Migration", "confidence": 1.0}, "description": {"value": "targets AWS Aurora; Database migration project to move Acme Corp's production PostgreSQL clusters from on-premise hardware to AWS Aurora; Moving PostgreSQL clusters to AWS Aurora", "confidence": 1.0}, "status": {"value": "planned; in progress", "confidence": 1.0}, "budget": {"value": "$120,000", "confidence": 1.0}}}, {"id": "company-novatech-inc", "label": "company-novatech-inc", "color": {"background": "#4E79A7", "border": "#4E79A7", "highlight": {"background": "#ffffff", "border": "#4E79A7"}}, "size": 12.0, "font": {"size": 0, "color": "#ffffff"}, "title": "company-novatech-inc", "_node_type": "Company", "_confidence": 1.0, "_source_files": "partners.md", "_raw_attrs": {"name": {"value": "NovaTech Inc", "confidence": 1.0}, "description": {"value": "SaaS company focused on developer tooling", "confidence": 1.0}, "headquarters_location": {"value": "", "confidence": 0.0}, "type": {"value": "SaaS company", "confidence": 1.0}, "founding_year": {"value": "", "confidence": 0.0}, "annual_revenue": {"value": "", "confidence": 0.0}}}, {"id": "person-sandra-kim", "label": "person-sandra-kim", "color": {"background": "#EDC948", "border": "#EDC948", "highlight": {"background": "#ffffff", "border": "#EDC948"}}, "size": 18.0, "font": {"size": 15, "color": "#ffffff"}, "title": "person-sandra-kim", "_node_type": "Person", "_confidence": 1.0, "_source_files": "partners.md", "_raw_attrs": {"name": {"value": "Sandra Kim", "confidence": 1.0}, "email": {"value": "", "confidence": 0.0}, "education": {"value": "", "confidence": 0.0}}}, {"id": "company-hashicorp", "label": "company-hashicorp", "color": {"background": "#4E79A7", "border": "#4E79A7", "highlight": {"background": "#ffffff", "border": "#4E79A7"}}, "size": 16.0, "font": {"size": 15, "color": "#ffffff"}, "title": "company-hashicorp", "_node_type": "Company", "_confidence": 1.0, "_source_files": "partners.md", "_raw_attrs": {"name": {"value": "HashiCorp", "confidence": 1.0}, "description": {"value": "", "confidence": 0.0}, "headquarters_location": {"value": "", "confidence": 0.0}, "type": {"value": "", "confidence": 0.0}, "founding_year": {"value": "", "confidence": 0.0}, "annual_revenue": {"value": "", "confidence": 0.0}}}, {"id": "product-vault", "label": "product-vault", "color": {"background": "#B07AA1", "border": "#B07AA1", "highlight": {"background": "#ffffff", "border": "#B07AA1"}}, "size": 14.0, "font": {"size": 0, "color": "#ffffff"}, "title": "product-vault", "_node_type": "Product", "_confidence": 1.0, "_source_files": "partners.md", "_raw_attrs": {"name": {"value": "Vault", "confidence": 1.0}, "category": {"value": "", "confidence": 0.0}, "version": {"value": "", "confidence": 0.0}, "vendor": {"value": "HashiCorp", "confidence": 1.0}}}, {"id": "project-platform-secrets-service", "label": "project-platform-secrets-service", "color": {"background": "#FF9DA7", "border": "#FF9DA7", "highlight": {"background": "#ffffff", "border": "#FF9DA7"}}, "size": 20.0, "font": {"size": 15, "color": "#ffffff"}, "title": "project-platform-secrets-service", "_node_type": "Project", "_confidence": 1.0, "_source_files": "partners.md|projects.md|technologies.md", "_raw_attrs": {"name": {"value": "Platform Secrets Service", "confidence": 1.0}, "description": {"value": "Centralised secrets management service to replace ad-hoc use of environment variables; Adopting HashiCorp Vault for secrets management", "confidence": 1.0}, "status": {"value": "in progress", "confidence": 0.8}, "budget": {"value": "", "confidence": 0.0}}}, {"id": "contract-vault-enterprise-licence", "label": "contract-vault-enterprise-licence", "color": {"background": "#F28E2B", "border": "#F28E2B", "highlight": {"background": "#ffffff", "border": "#F28E2B"}}, "size": 12.0, "font": {"size": 0, "color": "#ffffff"}, "title": "contract-vault-enterprise-licence", "_node_type": "Contract", "_confidence": 1.0, "_source_files": "partners.md", "_raw_attrs": {"name": {"value": "Vault enterprise licence", "confidence": 1.0}, "type": {"value": "enterprise licence", "confidence": 1.0}, "signed_date": {"value": "Q1 2026", "confidence": 1.0}, "value": {"value": "", "confidence": 0.0}}}, {"id": "person-marcus-tan", "label": "person-marcus-tan", "color": {"background": "#EDC948", "border": "#EDC948", "highlight": {"background": "#ffffff", "border": "#EDC948"}}, "size": 14.0, "font": {"size": 0, "color": "#ffffff"}, "title": "person-marcus-tan", "_node_type": "Person", "_confidence": 1.0, "_source_files": "partners.md", "_raw_attrs": {"name": {"value": "Marcus Tan", "confidence": 1.0}, "email": {"value": "", "confidence": 0.0}, "education": {"value": "", "confidence": 0.0}}}, {"id": "company-amazon-web-services", "label": "company-amazon-web-services", "color": {"background": "#4E79A7", "border": "#4E79A7", "highlight": {"background": "#ffffff", "border": "#4E79A7"}}, "size": 16.0, "font": {"size": 15, "color": "#ffffff"}, "title": "company-amazon-web-services", "_node_type": "Company", "_confidence": 1.0, "_source_files": "partners.md", "_raw_attrs": {"name": {"value": "Amazon Web Services", "confidence": 1.0}, "description": {"value": "cloud provider", "confidence": 1.0}, "headquarters_location": {"value": "", "confidence": 0.0}, "type": {"value": "cloud provider", "confidence": 1.0}, "founding_year": {"value": "", "confidence": 0.0}, "annual_revenue": {"value": "", "confidence": 0.0}}}, {"id": "product-aws-aurora", "label": "product-aws-aurora", "color": {"background": "#B07AA1", "border": "#B07AA1", "highlight": {"background": "#ffffff", "border": "#B07AA1"}}, "size": 12.0, "font": {"size": 0, "color": "#ffffff"}, "title": "product-aws-aurora", "_node_type": "Product", "_confidence": 1.0, "_source_files": "partners.md", "_raw_attrs": {"name": {"value": "AWS Aurora", "confidence": 1.0}, "category": {"value": "", "confidence": 0.0}, "version": {"value": "", "confidence": 0.0}, "vendor": {"value": "Amazon Web Services", "confidence": 1.0}}}, {"id": "person-lisa-huang", "label": "person-lisa-huang", "color": {"background": "#EDC948", "border": "#EDC948", "highlight": {"background": "#ffffff", "border": "#EDC948"}}, "size": 14.0, "font": {"size": 0, "color": "#ffffff"}, "title": "person-lisa-huang", "_node_type": "Person", "_confidence": 1.0, "_source_files": "partners.md", "_raw_attrs": {"name": {"value": "Lisa Huang", "confidence": 1.0}, "email": {"value": "", "confidence": 0.0}, "education": {"value": "", "confidence": 0.0}}}, {"id": "person-bob-martinez", "label": "person-bob-martinez", "color": {"background": "#EDC948", "border": "#EDC948", "highlight": {"background": "#ffffff", "border": "#EDC948"}}, "size": 20.0, "font": {"size": 15, "color": "#ffffff"}, "title": "person-bob-martinez", "_node_type": "Person", "_confidence": 1.0, "_source_files": "projects.md|technologies.md", "_raw_attrs": {"name": {"value": "Bob Martinez", "confidence": 1.0}, "email": {"value": "", "confidence": 0.0}, "education": {"value": "", "confidence": 0.0}}}, {"id": "person-alice-chen", "label": "person-alice-chen", "color": {"background": "#EDC948", "border": "#EDC948", "highlight": {"background": "#ffffff", "border": "#EDC948"}}, "size": 18.0, "font": {"size": 15, "color": "#ffffff"}, "title": "person-alice-chen", "_node_type": "Person", "_confidence": 1.0, "_source_files": "projects.md|technologies.md", "_raw_attrs": {"name": {"value": "Alice Chen", "confidence": 1.0}, "email": {"value": "", "confidence": 0.0}, "education": {"value": "", "confidence": 0.0}}}, {"id": "person-james-whitfield", "label": "person-james-whitfield", "color": {"background": "#EDC948", "border": "#EDC948", "highlight": {"background": "#ffffff", "border": "#EDC948"}}, "size": 18.0, "font": {"size": 15, "color": "#ffffff"}, "title": "person-james-whitfield", "_node_type": "Person", "_confidence": 1.0, "_source_files": "projects.md|technologies.md", "_raw_attrs": {"name": {"value": "James Whitfield", "confidence": 1.0}, "email": {"value": "", "confidence": 0.0}, "education": {"value": "", "confidence": 0.0}}}, {"id": "person-dr-yuna-park", "label": "person-dr-yuna-park", "color": {"background": "#EDC948", "border": "#EDC948", "highlight": {"background": "#ffffff", "border": "#EDC948"}}, "size": 16.0, "font": {"size": 15, "color": "#ffffff"}, "title": "person-dr-yuna-park", "_node_type": "Person", "_confidence": 1.0, "_source_files": "projects.md|technologies.md", "_raw_attrs": {"name": {"value": "Dr. Yuna Park", "confidence": 1.0}, "email": {"value": "", "confidence": 0.0}, "education": {"value": "Doctorate", "confidence": 0.9}}}, {"id": "technology-postgresql", "label": "technology-postgresql", "color": {"background": "#BAB0AC", "border": "#BAB0AC", "highlight": {"background": "#ffffff", "border": "#BAB0AC"}}, "size": 12.0, "font": {"size": 0, "color": "#ffffff"}, "title": "technology-postgresql", "_node_type": "Technology", "_confidence": 1.0, "_source_files": "projects.md|technologies.md", "_raw_attrs": {"name": {"value": "PostgreSQL", "confidence": 1.0}, "category": {"value": "Database", "confidence": 1.0}, "version": {"value": "15", "confidence": 1.0}}}, {"id": "technology-aws-aurora", "label": "technology-aws-aurora", "color": {"background": "#BAB0AC", "border": "#BAB0AC", "highlight": {"background": "#ffffff", "border": "#BAB0AC"}}, "size": 12.0, "font": {"size": 0, "color": "#ffffff"}, "title": "technology-aws-aurora", "_node_type": "Technology", "_confidence": 1.0, "_source_files": "projects.md|technologies.md", "_raw_attrs": {"name": {"value": "AWS Aurora", "confidence": 1.0}, "category": {"value": "Database", "confidence": 1.0}, "version": {"value": "PostgreSQL-compatible", "confidence": 0.9}}}, {"id": "technology-pinecone", "label": "technology-pinecone", "color": {"background": "#BAB0AC", "border": "#BAB0AC", "highlight": {"background": "#ffffff", "border": "#BAB0AC"}}, "size": 12.0, "font": {"size": 0, "color": "#ffffff"}, "title": "technology-pinecone", "_node_type": "Technology", "_confidence": 1.0, "_source_files": "projects.md|technologies.md", "_raw_attrs": {"name": {"value": "Pinecone", "confidence": 1.0}, "category": {"value": "Vector Database", "confidence": 1.0}, "version": {"value": "", "confidence": 0.0}}}, {"id": "technology-hashicorp-vault", "label": "technology-hashicorp-vault", "color": {"background": "#BAB0AC", "border": "#BAB0AC", "highlight": {"background": "#ffffff", "border": "#BAB0AC"}}, "size": 12.0, "font": {"size": 0, "color": "#ffffff"}, "title": "technology-hashicorp-vault", "_node_type": "Technology", "_confidence": 1.0, "_source_files": "projects.md|technologies.md", "_raw_attrs": {"name": {"value": "HashiCorp Vault", "confidence": 1.0}, "category": {"value": "Secrets Management", "confidence": 1.0}, "version": {"value": "", "confidence": 0.0}}}, {"id": "partnership-datasystems-inc-rag-pipeline-partnership", "label": "partnership-datasystems-inc-rag-pipeline-partnership", "color": {"background": "#59A14F", "border": "#59A14F", "highlight": {"background": "#ffffff", "border": "#59A14F"}}, "size": 14.0, "font": {"size": 0, "color": "#ffffff"}, "title": "partnership-datasystems-inc-rag-pipeline-partnership", "_node_type": "Partnership", "_confidence": 0.95, "_source_files": "projects.md", "_raw_attrs": {"name": {"value": "DataSystems Inc - RAG Pipeline Partnership", "confidence": 0.9}, "type": {"value": "Infrastructure Partnership", "confidence": 0.8}, "start_date": {"value": "", "confidence": 0.0}, "scope": {"value": "Document indexing infrastructure for RAG pipeline project", "confidence": 0.95}}}, {"id": "technology-weaviate", "label": "technology-weaviate", "color": {"background": "#BAB0AC", "border": "#BAB0AC", "highlight": {"background": "#ffffff", "border": "#BAB0AC"}}, "size": 14.0, "font": {"size": 0, "color": "#ffffff"}, "title": "technology-weaviate", "_node_type": "Technology", "_confidence": 1.0, "_source_files": "technologies.md", "_raw_attrs": {"name": {"value": "Weaviate", "confidence": 1.0}, "category": {"value": "Vector Database", "confidence": 1.0}, "version": {"value": "", "confidence": 0.0}}}, {"id": "technology-qdrant", "label": "technology-qdrant", "color": {"background": "#BAB0AC", "border": "#BAB0AC", "highlight": {"background": "#ffffff", "border": "#BAB0AC"}}, "size": 14.0, "font": {"size": 0, "color": "#ffffff"}, "title": "technology-qdrant", "_node_type": "Technology", "_confidence": 1.0, "_source_files": "technologies.md", "_raw_attrs": {"name": {"value": "Qdrant", "confidence": 1.0}, "category": {"value": "Vector Database", "confidence": 1.0}, "version": {"value": "", "confidence": 0.0}}}, {"id": "technology-aws", "label": "technology-aws", "color": {"background": "#BAB0AC", "border": "#BAB0AC", "highlight": {"background": "#ffffff", "border": "#BAB0AC"}}, "size": 12.0, "font": {"size": 0, "color": "#ffffff"}, "title": "technology-aws", "_node_type": "Technology", "_confidence": 1.0, "_source_files": "technologies.md", "_raw_attrs": {"name": {"value": "AWS", "confidence": 1.0}, "category": {"value": "Cloud Infrastructure", "confidence": 1.0}, "version": {"value": "", "confidence": 0.0}}}, {"id": "technology-github-actions", "label": "technology-github-actions", "color": {"background": "#BAB0AC", "border": "#BAB0AC", "highlight": {"background": "#ffffff", "border": "#BAB0AC"}}, "size": 12.0, "font": {"size": 0, "color": "#ffffff"}, "title": "technology-github-actions", "_node_type": "Technology", "_confidence": 1.0, "_source_files": "technologies.md", "_raw_attrs": {"name": {"value": "GitHub Actions", "confidence": 1.0}, "category": {"value": "CI/CD", "confidence": 1.0}, "version": {"value": "", "confidence": 0.0}}}, {"id": "technology-kubernetes", "label": "technology-kubernetes", "color": {"background": "#BAB0AC", "border": "#BAB0AC", "highlight": {"background": "#ffffff", "border": "#BAB0AC"}}, "size": 12.0, "font": {"size": 0, "color": "#ffffff"}, "title": "technology-kubernetes", "_node_type": "Technology", "_confidence": 1.0, "_source_files": "technologies.md", "_raw_attrs": {"name": {"value": "Kubernetes", "confidence": 1.0}, "category": {"value": "Container Orchestration", "confidence": 1.0}, "version": {"value": "EKS", "confidence": 0.9}}}, {"id": "technology-python", "label": "technology-python", "color": {"background": "#BAB0AC", "border": "#BAB0AC", "highlight": {"background": "#ffffff", "border": "#BAB0AC"}}, "size": 16.0, "font": {"size": 15, "color": "#ffffff"}, "title": "technology-python", "_node_type": "Technology", "_confidence": 1.0, "_source_files": "technologies.md", "_raw_attrs": {"name": {"value": "Python", "confidence": 1.0}, "category": {"value": "Programming Language", "confidence": 1.0}, "version": {"value": "", "confidence": 0.0}}}, {"id": "technology-pytorch", "label": "technology-pytorch", "color": {"background": "#BAB0AC", "border": "#BAB0AC", "highlight": {"background": "#ffffff", "border": "#BAB0AC"}}, "size": 12.0, "font": {"size": 0, "color": "#ffffff"}, "title": "technology-pytorch", "_node_type": "Technology", "_confidence": 1.0, "_source_files": "technologies.md", "_raw_attrs": {"name": {"value": "PyTorch", "confidence": 1.0}, "category": {"value": "ML Framework", "confidence": 1.0}, "version": {"value": "", "confidence": 0.0}}}, {"id": "technology-hugging-face-transformers", "label": "technology-hugging-face-transformers", "color": {"background": "#BAB0AC", "border": "#BAB0AC", "highlight": {"background": "#ffffff", "border": "#BAB0AC"}}, "size": 12.0, "font": {"size": 0, "color": "#ffffff"}, "title": "technology-hugging-face-transformers", "_node_type": "Technology", "_confidence": 1.0, "_source_files": "technologies.md", "_raw_attrs": {"name": {"value": "Hugging Face Transformers", "confidence": 1.0}, "category": {"value": "ML Library", "confidence": 1.0}, "version": {"value": "", "confidence": 0.0}}}, {"id": "technology-aws-sagemaker", "label": "technology-aws-sagemaker", "color": {"background": "#BAB0AC", "border": "#BAB0AC", "highlight": {"background": "#ffffff", "border": "#BAB0AC"}}, "size": 12.0, "font": {"size": 0, "color": "#ffffff"}, "title": "technology-aws-sagemaker", "_node_type": "Technology", "_confidence": 1.0, "_source_files": "technologies.md", "_raw_attrs": {"name": {"value": "AWS SageMaker", "confidence": 1.0}, "category": {"value": "ML Platform", "confidence": 1.0}, "version": {"value": "", "confidence": 0.0}}}, {"id": "product-document-processing-pipeline", "label": "product-document-processing-pipeline", "color": {"background": "#B07AA1", "border": "#B07AA1", "highlight": {"background": "#ffffff", "border": "#B07AA1"}}, "size": 12.0, "font": {"size": 0, "color": "#ffffff"}, "title": "product-document-processing-pipeline", "_node_type": "Product", "_confidence": 0.95, "_source_files": "technologies.md", "_raw_attrs": {"name": {"value": "Document Processing Pipeline", "confidence": 0.95}, "category": {"value": "Data Processing", "confidence": 0.9}, "version": {"value": "", "confidence": 0.0}, "vendor": {"value": "DataSystems Inc", "confidence": 1.0}}}, {"id": "technology-fastapi", "label": "technology-fastapi", "color": {"background": "#BAB0AC", "border": "#BAB0AC", "highlight": {"background": "#ffffff", "border": "#BAB0AC"}}, "size": 12.0, "font": {"size": 0, "color": "#ffffff"}, "title": "technology-fastapi", "_node_type": "Technology", "_confidence": 1.0, "_source_files": "technologies.md", "_raw_attrs": {"name": {"value": "FastAPI", "confidence": 1.0}, "category": {"value": "Web Framework", "confidence": 1.0}, "version": {"value": "", "confidence": 0.0}}}, {"id": "technology-go", "label": "technology-go", "color": {"background": "#BAB0AC", "border": "#BAB0AC", "highlight": {"background": "#ffffff", "border": "#BAB0AC"}}, "size": 12.0, "font": {"size": 0, "color": "#ffffff"}, "title": "technology-go", "_node_type": "Technology", "_confidence": 1.0, "_source_files": "technologies.md", "_raw_attrs": {"name": {"value": "Go", "confidence": 1.0}, "category": {"value": "Programming Language", "confidence": 1.0}, "version": {"value": "", "confidence": 0.0}}}, {"id": "technology-react", "label": "technology-react", "color": {"background": "#BAB0AC", "border": "#BAB0AC", "highlight": {"background": "#ffffff", "border": "#BAB0AC"}}, "size": 12.0, "font": {"size": 0, "color": "#ffffff"}, "title": "technology-react", "_node_type": "Technology", "_confidence": 1.0, "_source_files": "technologies.md", "_raw_attrs": {"name": {"value": "React", "confidence": 1.0}, "category": {"value": "Frontend Framework", "confidence": 1.0}, "version": {"value": "", "confidence": 0.0}}}, {"id": "technology-typescript", "label": "technology-typescript", "color": {"background": "#BAB0AC", "border": "#BAB0AC", "highlight": {"background": "#ffffff", "border": "#BAB0AC"}}, "size": 12.0, "font": {"size": 0, "color": "#ffffff"}, "title": "technology-typescript", "_node_type": "Technology", "_confidence": 1.0, "_source_files": "technologies.md", "_raw_attrs": {"name": {"value": "TypeScript", "confidence": 1.0}, "category": {"value": "Programming Language", "confidence": 1.0}, "version": {"value": "", "confidence": 0.0}}}];
+const RAW_EDGES = [{"from": "organization-acme-corp", "to": "project-db-migration", "label": "owns", "title": "owns (conf=0.95)", "width": 2}, {"from": "organization-acme-corp", "to": "project-rag-pipeline", "label": "owns", "title": "owns (conf=0.95)", "width": 2}, {"from": "organization-acme-corp", "to": "project-platform-secrets-service", "label": "owns", "title": "owns (conf=0.95)", "width": 2}, {"from": "employee-alice-chen", "to": "organization-acme-corp", "label": "works_at", "title": "works_at (conf=1.00)", "width": 2}, {"from": "employee-bob-martinez", "to": "organization-acme-corp", "label": "works_at", "title": "works_at (conf=1.00)", "width": 2}, {"from": "employee-bob-martinez", "to": "team-infrastructure-team", "label": "manages", "title": "manages (conf=1.00)", "width": 2}, {"from": "employee-bob-martinez", "to": "team-product-team", "label": "manages", "title": "manages (conf=1.00)", "width": 2}, {"from": "employee-bob-martinez", "to": "employee-sandra-kim", "label": "reports_to", "title": "reports_to (conf=1.00)", "width": 2}, {"from": "employee-carol-okafor", "to": "organization-acme-corp", "label": "works_at", "title": "works_at (conf=1.00)", "width": 2}, {"from": "employee-carol-okafor", "to": "team-infrastructure-team", "label": "member_of", "title": "member_of (conf=1.00)", "width": 2}, {"from": "employee-sandra-kim", "to": "organization-acme-corp", "label": "leads", "title": "leads (conf=1.00)", "width": 2}, {"from": "employee-james-whitfield", "to": "organization-acme-corp", "label": "works_at", "title": "works_at (conf=1.00)", "width": 2}, {"from": "employee-james-whitfield", "to": "team-platform-team", "label": "manages", "title": "manages (conf=1.00)", "width": 2}, {"from": "employee-james-whitfield", "to": "team-ai-research-team", "label": "manages", "title": "manages (conf=1.00)", "width": 2}, {"from": "employee-dr-yuna-park", "to": "organization-acme-corp", "label": "works_at", "title": "works_at (conf=1.00)", "width": 2}, {"from": "employee-dr-yuna-park", "to": "team-ai-research-team", "label": "manages", "title": "manages (conf=1.00)", "width": 2}, {"from": "team-infrastructure-team", "to": "project-db-migration", "label": "owns", "title": "owns (conf=1.00)", "width": 2}, {"from": "team-infrastructure-team", "to": "technology-aws", "label": "uses_technology", "title": "uses_technology (conf=1.00)", "width": 2}, {"from": "team-infrastructure-team", "to": "technology-github-actions", "label": "uses_technology", "title": "uses_technology (conf=1.00)", "width": 2}, {"from": "team-infrastructure-team", "to": "technology-kubernetes", "label": "uses_technology", "title": "uses_technology (conf=1.00)", "width": 2}, {"from": "team-platform-team", "to": "product-vault", "label": "uses_technology", "title": "uses_technology (conf=0.90)", "width": 2}, {"from": "team-platform-team", "to": "project-platform-secrets-service", "label": "owns", "title": "owns (conf=1.00)", "width": 2}, {"from": "team-ai-research-team", "to": "technology-python", "label": "uses_technology", "title": "uses_technology (conf=1.00)", "width": 2}, {"from": "team-ai-research-team", "to": "technology-pytorch", "label": "uses_technology", "title": "uses_technology (conf=1.00)", "width": 2}, {"from": "team-ai-research-team", "to": "technology-hugging-face-transformers", "label": "uses_technology", "title": "uses_technology (conf=1.00)", "width": 2}, {"from": "team-ai-research-team", "to": "technology-aws-sagemaker", "label": "uses_technology", "title": "uses_technology (conf=1.00)", "width": 2}, {"from": "team-ai-research-team", "to": "technology-qdrant", "label": "uses_technology", "title": "uses_technology (conf=0.75)", "width": 1}, {"from": "team-ai-research-team", "to": "technology-weaviate", "label": "uses_technology", "title": "uses_technology (conf=0.75)", "width": 1}, {"from": "team-backend-engineering-guild", "to": "technology-python", "label": "uses_technology", "title": "uses_technology (conf=1.00)", "width": 2}, {"from": "team-backend-engineering-guild", "to": "technology-fastapi", "label": "uses_technology", "title": "uses_technology (conf=1.00)", "width": 2}, {"from": "team-backend-engineering-guild", "to": "technology-go", "label": "uses_technology", "title": "uses_technology (conf=1.00)", "width": 2}, {"from": "team-backend-engineering-guild", "to": "technology-react", "label": "uses_technology", "title": "uses_technology (conf=0.90)", "width": 2}, {"from": "team-backend-engineering-guild", "to": "technology-typescript", "label": "uses_technology", "title": "uses_technology (conf=0.90)", "width": 2}, {"from": "company-datasystems-inc", "to": "product-document-processing-pipeline", "label": "provides", "title": "provides (conf=1.00)", "width": 2}, {"from": "company-acme-corp", "to": "contract-vault-enterprise-licence", "label": "holds_contract", "title": "holds_contract (conf=1.00)", "width": 2}, {"from": "partnership-acme-corp-datasystems-inc-strategic-partnership", "to": "company-acme-corp", "label": "involves_organization", "title": "involves_organization (conf=1.00)", "width": 2}, {"from": "partnership-acme-corp-datasystems-inc-strategic-partnership", "to": "company-datasystems-inc", "label": "involves_organization", "title": "involves_organization (conf=1.00)", "width": 2}, {"from": "partnership-acme-corp-datasystems-inc-strategic-partnership", "to": "project-rag-pipeline", "label": "covers_project", "title": "covers_project (conf=1.00)", "width": 2}, {"from": "partnership-acme-corp-datasystems-inc-strategic-partnership", "to": "project-db-migration", "label": "covers_project", "title": "covers_project (conf=0.90)", "width": 2}, {"from": "person-carol-okafor", "to": "organization-acme-corp", "label": "works_at", "title": "works_at (conf=1.00)", "width": 2}, {"from": "person-carol-okafor", "to": "team-infrastructure-team", "label": "member_of", "title": "member_of (conf=1.00)", "width": 2}, {"from": "person-carol-okafor", "to": "company-datasystems-inc", "label": "works_at", "title": "works_at (conf=1.00)", "width": 2}, {"from": "person-carol-okafor", "to": "company-acme-corp", "label": "works_at", "title": "works_at (conf=1.00)", "width": 2}, {"from": "person-carol-okafor", "to": "person-dr-priya-nair", "label": "reports_to", "title": "reports_to (conf=0.90)", "width": 2}, {"from": "person-carol-okafor", "to": "project-db-migration", "label": "contributes_to", "title": "contributes_to (conf=1.00)", "width": 2}, {"from": "person-dr-priya-nair", "to": "company-datasystems-inc", "label": "works_at", "title": "works_at (conf=1.00)", "width": 2}, {"from": "project-rag-pipeline", "to": "technology-pinecone", "label": "uses_technology", "title": "uses_technology (conf=1.00)", "width": 2}, {"from": "project-rag-pipeline", "to": "technology-python", "label": "uses_technology", "title": "uses_technology (conf=0.95)", "width": 2}, {"from": "project-rag-pipeline", "to": "technology-qdrant", "label": "uses_technology", "title": "uses_technology (conf=0.85)", "width": 2}, {"from": "project-rag-pipeline", "to": "technology-weaviate", "label": "uses_technology", "title": "uses_technology (conf=0.85)", "width": 2}, {"from": "project-db-migration", "to": "project-platform-secrets-service", "label": "depends_on", "title": "depends_on (conf=1.00)", "width": 2}, {"from": "project-db-migration", "to": "technology-postgresql", "label": "uses_technology", "title": "uses_technology (conf=1.00)", "width": 2}, {"from": "project-db-migration", "to": "technology-aws-aurora", "label": "uses_technology", "title": "uses_technology (conf=1.00)", "width": 2}, {"from": "person-sandra-kim", "to": "organization-acme-corp", "label": "leads", "title": "leads (conf=1.00)", "width": 2}, {"from": "person-sandra-kim", "to": "company-novatech-inc", "label": "works_at", "title": "works_at (conf=1.00)", "width": 2}, {"from": "person-sandra-kim", "to": "company-acme-corp", "label": "works_at", "title": "works_at (conf=1.00)", "width": 2}, {"from": "company-hashicorp", "to": "product-vault", "label": "provides", "title": "provides (conf=1.00)", "width": 2}, {"from": "company-hashicorp", "to": "person-marcus-tan", "label": "has_contact", "title": "has_contact (conf=1.00)", "width": 2}, {"from": "project-platform-secrets-service", "to": "technology-hashicorp-vault", "label": "uses_technology", "title": "uses_technology (conf=1.00)", "width": 2}, {"from": "person-marcus-tan", "to": "company-hashicorp", "label": "works_at", "title": "works_at (conf=1.00)", "width": 2}, {"from": "company-amazon-web-services", "to": "product-aws-aurora", "label": "provides", "title": "provides (conf=1.00)", "width": 2}, {"from": "company-amazon-web-services", "to": "person-lisa-huang", "label": "has_contact", "title": "has_contact (conf=1.00)", "width": 2}, {"from": "person-lisa-huang", "to": "company-amazon-web-services", "label": "works_at", "title": "works_at (conf=1.00)", "width": 2}, {"from": "person-bob-martinez", "to": "organization-acme-corp", "label": "works_at", "title": "works_at (conf=0.97)", "width": 2}, {"from": "person-bob-martinez", "to": "team-infrastructure-team", "label": "manages", "title": "manages (conf=1.00)", "width": 2}, {"from": "person-bob-martinez", "to": "team-product-team", "label": "manages", "title": "manages (conf=1.00)", "width": 2}, {"from": "person-bob-martinez", "to": "person-sandra-kim", "label": "reports_to", "title": "reports_to (conf=1.00)", "width": 2}, {"from": "person-bob-martinez", "to": "project-db-migration", "label": "contributes_to", "title": "contributes_to (conf=0.95)", "width": 2}, {"from": "person-alice-chen", "to": "organization-acme-corp", "label": "works_at", "title": "works_at (conf=0.97)", "width": 2}, {"from": "person-alice-chen", "to": "team-backend-engineering-guild", "label": "leads", "title": "leads (conf=0.97)", "width": 2}, {"from": "person-alice-chen", "to": "project-db-migration", "label": "contributes_to", "title": "contributes_to (conf=1.00)", "width": 2}, {"from": "person-alice-chen", "to": "project-rag-pipeline", "label": "contributes_to", "title": "contributes_to (conf=1.00)", "width": 2}, {"from": "person-james-whitfield", "to": "organization-acme-corp", "label": "works_at", "title": "works_at (conf=0.97)", "width": 2}, {"from": "person-james-whitfield", "to": "team-platform-team", "label": "leads", "title": "leads (conf=0.90)", "width": 2}, {"from": "person-james-whitfield", "to": "team-ai-research-team", "label": "manages", "title": "manages (conf=0.95)", "width": 2}, {"from": "person-james-whitfield", "to": "project-platform-secrets-service", "label": "contributes_to", "title": "contributes_to (conf=1.00)", "width": 2}, {"from": "person-dr-yuna-park", "to": "organization-acme-corp", "label": "works_at", "title": "works_at (conf=0.97)", "width": 2}, {"from": "person-dr-yuna-park", "to": "team-ai-research-team", "label": "member_of", "title": "member_of (conf=1.00)", "width": 2}, {"from": "person-dr-yuna-park", "to": "project-rag-pipeline", "label": "contributes_to", "title": "contributes_to (conf=0.97)", "width": 2}, {"from": "partnership-datasystems-inc-rag-pipeline-partnership", "to": "company-datasystems-inc", "label": "involves_organization", "title": "involves_organization (conf=1.00)", "width": 2}, {"from": "partnership-datasystems-inc-rag-pipeline-partnership", "to": "project-rag-pipeline", "label": "covers_project", "title": "covers_project (conf=1.00)", "width": 2}];
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+const nodesDS = new vis.DataSet(RAW_NODES.map(n => ({
+  id: n.id, label: n.label, color: n.color, size: n.size,
+  font: n.font, title: n.title,
+})));
+
+const edgesDS = new vis.DataSet(RAW_EDGES.map((e, i) => ({
+  id: i, from: e.from, to: e.to,
+  label: e.label,
+  title: e.title,
+  width: e.width,
+  color: { color: '#3a3a6e', highlight: '#7777cc', opacity: 0.7 },
+  arrows: { to: { enabled: true, scaleFactor: 0.5 } },
+  font: { size: 12, color: '#666', align: 'middle' },
+})));
+
+const container = document.getElementById('graph');
+const network = new vis.Network(container, { nodes: nodesDS, edges: edgesDS }, {
+  physics: {
+    enabled: true,
+    solver: 'forceAtlas2Based',
+    forceAtlas2Based: {
+      gravitationalConstant: -60,
+      centralGravity: 0.005,
+      springLength: 120,
+      springConstant: 0.08,
+      damping: 0.4,
+      avoidOverlap: 0.8,
+    },
+    stabilization: { iterations: 200, fit: true },
+  },
+  interaction: {
+    hover: true,
+    tooltipDelay: 100,
+    hideEdgesOnDrag: true,
+    navigationButtons: false,
+    keyboard: false,
+  },
+  nodes: { shape: 'dot', borderWidth: 1.5 },
+  edges: { smooth: { type: 'continuous', roundness: 0.2 }, selectionWidth: 3 },
+});
+
+network.once('stabilizationIterationsDone', () => {
+  network.setOptions({ physics: { enabled: false } });
+});
+
+function renderAttrs(rawNode) {
+  const rows = Object.entries(rawNode._raw_attrs || {}).map(([k, v]) => {
+    const val = (v && typeof v === 'object') ? (v.value ?? '') : v;
+    const conf = (v && typeof v === 'object' && v.confidence != null)
+      ? ' (' + Number(v.confidence).toFixed(2) + ')' : '';
+    return '<div class="attr-row">'
+      + '<span class="attr-key">' + esc(k) + '</span>'
+      + '<span class="attr-val">' + esc(String(val ?? '')) + '</span>'
+      + '<span class="attr-conf">' + esc(conf) + '</span>'
+      + '</div>';
+  });
+  return rows.length
+    ? '<div class="attr-block">'
+        + '<div style="font-size:14px;color:#888;margin-bottom:4px">Attributes</div>'
+        + rows.join('') + '</div>'
+    : '';
+}
+
+function showInfo(nodeId) {
+  const rawNode = RAW_NODES.find(n => n.id === nodeId);
+  if (!rawNode) return;
+  const neighborIds = network.getConnectedNodes(nodeId);
+  const neighborItems = neighborIds.map(nid => {
+    const nb = RAW_NODES.find(n => n.id === nid);
+    const color = nb ? nb.color.background : '#555';
+    return '<span class="neighbor-link" style="border-left-color:' + esc(color) + '"'
+      + ' onclick="focusNode(' + JSON.stringify(nid) + ')">'
+      + esc(nb ? nb.label : nid) + '</span>';
+  }).join('');
+  const parts = [
+    '<div class="field"><b>' + esc(rawNode.label) + '</b></div>',
+    '<div class="field">Type: ' + esc(rawNode._node_type || 'unknown') + '</div>',
+    '<div class="field">Confidence: ' + esc(String(rawNode._confidence ?? '')) + '</div>',
+    '<div class="field">Sources: ' + esc(rawNode._source_files || '-') + '</div>',
+    renderAttrs(rawNode),
+    neighborIds.length
+      ? '<div class="field attr-block" style="color:#aaa;font-size:14px">Neighbors ('
+          + neighborIds.length + ')</div><div id="neighbors-list">' + neighborItems + '</div>'
+      : '',
+  ];
+  document.getElementById('info-content').textContent = '';
+  const div = document.getElementById('info-content');
+  div.innerHTML = parts.join('');
+}
+
+function focusNode(nodeId) {
+  network.focus(nodeId, { scale: 1.4, animation: true });
+  network.selectNodes([nodeId]);
+  showInfo(nodeId);
+}
+
+let hoveredNodeId = null;
+network.on('hoverNode', params => {
+  hoveredNodeId = params.node;
+  container.style.cursor = 'pointer';
+});
+network.on('blurNode', () => {
+  hoveredNodeId = null;
+  container.style.cursor = 'default';
+});
+network.on('click', params => {
+  if (params.nodes.length > 0) {
+    showInfo(params.nodes[0]);
+  } else if (hoveredNodeId === null) {
+    const div = document.getElementById('info-content');
+    div.innerHTML = '<span class="empty">Click a node to inspect it</span>';
+  }
+});
+
+const searchInput = document.getElementById('search');
+const searchResults = document.getElementById('search-results');
+searchInput.addEventListener('input', () => {
+  const q = searchInput.value.toLowerCase().trim();
+  searchResults.innerHTML = '';
+  if (!q) { searchResults.style.display = 'none'; return; }
+  const matches = RAW_NODES.filter(n => n.label.toLowerCase().includes(q)).slice(0, 20);
+  if (!matches.length) { searchResults.style.display = 'none'; return; }
+  searchResults.style.display = 'block';
+  matches.forEach(n => {
+    const el = document.createElement('div');
+    el.className = 'search-item';
+    el.textContent = n.label;
+    el.style.borderLeft = '3px solid ' + n.color.background;
+    el.style.paddingLeft = '8px';
+    el.onclick = () => {
+      focusNode(n.id);
+      searchResults.style.display = 'none';
+      searchInput.value = '';
+    };
+    searchResults.appendChild(el);
+  });
+});
+document.addEventListener('click', e => {
+  if (!searchResults.contains(e.target) && e.target !== searchInput)
+    searchResults.style.display = 'none';
+});
+
+const resizer = document.getElementById('resizer');
+const sidebar = document.getElementById('sidebar');
+let isResizing = false;
+let startX = 0;
+let startWidth = 0;
+resizer.addEventListener('mousedown', e => {
+  isResizing = true;
+  startX = e.clientX;
+  startWidth = sidebar.offsetWidth;
+  resizer.classList.add('dragging');
+  document.body.style.userSelect = 'none';
+  document.body.style.cursor = 'col-resize';
+});
+document.addEventListener('mousemove', e => {
+  if (!isResizing) return;
+  const delta = startX - e.clientX;
+  const newWidth = Math.min(600, Math.max(180, startWidth + delta));
+  sidebar.style.width = newWidth + 'px';
+});
+document.addEventListener('mouseup', () => {
+  if (!isResizing) return;
+  isResizing = false;
+  resizer.classList.remove('dragging');
+  document.body.style.userSelect = '';
+  document.body.style.cursor = '';
+  network.redraw();
+  network.fit();
+});
+</script>
+</body>
+</html>
