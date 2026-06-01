@@ -9,12 +9,12 @@ type: Technology
 # FastAPI
 
 ## Attributes
-- **category**: Web Framework (1.0)
+- **type**: Web Framework (0.95)
 
 ## Relationships
 
 ### Incoming
-- [[Backend Engineering Guild]] — uses_technology (1.0)
+- [[Platform Secrets Service]] — uses_technology (0.0)
 
 ## Source Files
 - technologies.md

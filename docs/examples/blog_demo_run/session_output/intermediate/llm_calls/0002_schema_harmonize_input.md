@@ -54,17 +54,16 @@ MERGED SCHEMA:
       "parent": null,
       "attributes": [
         "name",
-        "description",
         "headquarters_location",
-        "type"
+        "industry",
+        "founding_year"
       ]
     },
     {
       "type": "Company",
       "parent": "Organization",
       "attributes": [
-        "founding_year",
-        "annual_revenue"
+        "annual_spend"
       ]
     },
     {
@@ -80,16 +79,16 @@ MERGED SCHEMA:
       "type": "Employee",
       "parent": "Person",
       "attributes": [
-        "title",
-        "join_date"
+        "join_date",
+        "title"
       ]
     },
     {
       "type": "Team",
-      "parent": "Organization",
+      "parent": null,
       "attributes": [
         "name",
-        "focus_area",
+        "description",
         "member_count"
       ]
     },
@@ -98,10 +97,9 @@ MERGED SCHEMA:
       "parent": null,
       "attributes": [
         "name",
-        "description",
         "status",
-        "budget",
-        "target_date"
+        "target_completion_date",
+        "budget"
       ]
     },
     {
@@ -109,16 +107,14 @@ MERGED SCHEMA:
       "parent": null,
       "attributes": [
         "name",
-        "category",
+        "type",
         "version"
       ]
     },
     {
       "type": "Product",
       "parent": "Technology",
-      "attributes": [
-        "vendor"
-      ]
+      "attributes": []
     },
     {
       "type": "Partnership",
@@ -126,8 +122,7 @@ MERGED SCHEMA:
       "attributes": [
         "name",
         "type",
-        "start_date",
-        "scope"
+        "start_date"
       ]
     },
     {
@@ -136,8 +131,7 @@ MERGED SCHEMA:
       "attributes": [
         "name",
         "type",
-        "signed_date",
-        "value"
+        "signed_date"
       ]
     }
   ],
@@ -147,9 +141,9 @@ MERGED SCHEMA:
       "domain": "Employee",
       "range": "Company",
       "attributes": [
-        "role",
         "start_date",
-        "end_date"
+        "end_date",
+        "role"
       ]
     },
     {
@@ -171,17 +165,24 @@ MERGED SCHEMA:
       "attributes": []
     },
     {
+      "name": "leads",
+      "domain": "Employee",
+      "range": "Project",
+      "attributes": [
+        "role"
+      ]
+    },
+    {
       "name": "contributes_to",
       "domain": "Employee",
       "range": "Project",
       "attributes": [
-        "role",
-        "contribution_type"
+        "role"
       ]
     },
     {
       "name": "owns",
-      "domain": "Employee",
+      "domain": "Team",
       "range": "Project",
       "attributes": []
     },
@@ -195,9 +196,7 @@ MERGED SCHEMA:
       "name": "uses",
       "domain": "Project",
       "range": "Technology",
-      "attributes": [
-        "purpose"
-      ]
+      "attributes": []
     },
     {
       "name": "provides",
@@ -206,49 +205,44 @@ MERGED SCHEMA:
       "attributes": []
     },
     {
-      "name": "partners_with",
+      "name": "has_partnership",
+      "domain": "Company",
+      "range": "Company",
+      "attributes": [
+        "type",
+        "start_date"
+      ]
+    },
+    {
+      "name": "vendor_for",
       "domain": "Company",
       "range": "Company",
       "attributes": []
     },
     {
-      "name": "governed_by",
-      "domain": "Partnership",
+      "name": "has_contract",
+      "domain": "Company",
       "range": "Contract",
       "attributes": []
     },
     {
-      "name": "involves",
-      "domain": "Partnership",
+      "name": "account_manager_for",
+      "domain": "Employee",
+      "range": "Company",
+      "attributes": []
+    },
+    {
+      "name": "co_founded",
+      "domain": "Person",
       "range": "Company",
       "attributes": [
-        "role"
+        "year"
       ]
     },
     {
-      "name": "covers",
+      "name": "supports",
       "domain": "Partnership",
       "range": "Project",
-      "attributes": []
-    },
-    {
-      "name": "has_contact",
-      "domain": "Company",
-      "range": "Employee",
-      "attributes": [
-        "contact_type"
-      ]
-    },
-    {
-      "name": "holds_contract",
-      "domain": "Company",
-      "range": "Contract",
-      "attributes": []
-    },
-    {
-      "name": "leads",
-      "domain": "Employee",
-      "range": "Organization",
       "attributes": []
     }
   ]
@@ -263,17 +257,16 @@ RAW PROPOSALS:
         "parent": null,
         "attributes": [
           "name",
-          "description",
           "headquarters_location",
-          "type"
+          "industry",
+          "founding_year"
         ]
       },
       {
         "type": "Company",
         "parent": "Organization",
         "attributes": [
-          "founding_year",
-          "annual_revenue"
+          "annual_spend"
         ]
       },
       {
@@ -289,16 +282,16 @@ RAW PROPOSALS:
         "type": "Employee",
         "parent": "Person",
         "attributes": [
-          "title",
-          "join_date"
+          "join_date",
+          "title"
         ]
       },
       {
         "type": "Team",
-        "parent": "Organization",
+        "parent": null,
         "attributes": [
           "name",
-          "focus_area",
+          "description",
           "member_count"
         ]
       },
@@ -307,10 +300,9 @@ RAW PROPOSALS:
         "parent": null,
         "attributes": [
           "name",
-          "description",
           "status",
-          "budget",
-          "target_date"
+          "target_completion_date",
+          "budget"
         ]
       },
       {
@@ -318,16 +310,14 @@ RAW PROPOSALS:
         "parent": null,
         "attributes": [
           "name",
-          "category",
+          "type",
           "version"
         ]
       },
       {
         "type": "Product",
         "parent": "Technology",
-        "attributes": [
-          "vendor"
-        ]
+        "attributes": []
       },
       {
         "type": "Partnership",
@@ -335,8 +325,7 @@ RAW PROPOSALS:
         "attributes": [
           "name",
           "type",
-          "start_date",
-          "scope"
+          "start_date"
         ]
       },
       {
@@ -345,8 +334,7 @@ RAW PROPOSALS:
         "attributes": [
           "name",
           "type",
-          "signed_date",
-          "value"
+          "signed_date"
         ]
       }
     ],
@@ -356,9 +344,9 @@ RAW PROPOSALS:
         "domain": "Employee",
         "range": "Company",
         "attributes": [
-          "role",
           "start_date",
-          "end_date"
+          "end_date",
+          "role"
         ]
       },
       {
@@ -380,19 +368,20 @@ RAW PROPOSALS:
         "attributes": []
       },
       {
+        "name": "leads",
+        "domain": "Employee",
+        "range": "Project",
+        "attributes": [
+          "role"
+        ]
+      },
+      {
         "name": "contributes_to",
         "domain": "Employee",
         "range": "Project",
         "attributes": [
-          "role",
-          "contribution_type"
+          "role"
         ]
-      },
-      {
-        "name": "owns",
-        "domain": "Employee",
-        "range": "Project",
-        "attributes": []
       },
       {
         "name": "owns",
@@ -410,14 +399,6 @@ RAW PROPOSALS:
         "name": "uses",
         "domain": "Project",
         "range": "Technology",
-        "attributes": [
-          "purpose"
-        ]
-      },
-      {
-        "name": "uses",
-        "domain": "Team",
-        "range": "Technology",
         "attributes": []
       },
       {
@@ -427,49 +408,44 @@ RAW PROPOSALS:
         "attributes": []
       },
       {
-        "name": "partners_with",
+        "name": "has_partnership",
+        "domain": "Company",
+        "range": "Company",
+        "attributes": [
+          "type",
+          "start_date"
+        ]
+      },
+      {
+        "name": "vendor_for",
         "domain": "Company",
         "range": "Company",
         "attributes": []
       },
       {
-        "name": "governed_by",
-        "domain": "Partnership",
+        "name": "has_contract",
+        "domain": "Company",
         "range": "Contract",
         "attributes": []
       },
       {
-        "name": "involves",
-        "domain": "Partnership",
+        "name": "account_manager_for",
+        "domain": "Employee",
+        "range": "Company",
+        "attributes": []
+      },
+      {
+        "name": "co_founded",
+        "domain": "Person",
         "range": "Company",
         "attributes": [
-          "role"
+          "year"
         ]
       },
       {
-        "name": "covers",
+        "name": "supports",
         "domain": "Partnership",
         "range": "Project",
-        "attributes": []
-      },
-      {
-        "name": "has_contact",
-        "domain": "Company",
-        "range": "Employee",
-        "attributes": [
-          "contact_type"
-        ]
-      },
-      {
-        "name": "holds_contract",
-        "domain": "Company",
-        "range": "Contract",
-        "attributes": []
-      },
-      {
-        "name": "leads",
-        "domain": "Employee",
-        "range": "Organization",
         "attributes": []
       }
     ]

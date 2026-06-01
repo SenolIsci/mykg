@@ -10,13 +10,13 @@ type: Technology
 # PostgreSQL
 
 ## Attributes
-- **category**: Database (1.0)
+- **type**: database (0.95)
 - **version**: 15 (1.0)
 
 ## Relationships
 
 ### Incoming
-- [[DB Migration]] — uses_technology (1.0)
+- [[DB Migration Project]] — uses_technology (0.95)
 
 ## Source Files
 - projects.md

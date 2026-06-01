@@ -12,9 +12,7 @@ type: Person
 
 ### Outgoing
 - [[HashiCorp]] — works_at (1.0)
-
-### Incoming
-- [[HashiCorp]] — has_contact (1.0)
+- [[Acme Corp]] — account_manager_for (1.0)
 
 ## Source Files
 - partners.md

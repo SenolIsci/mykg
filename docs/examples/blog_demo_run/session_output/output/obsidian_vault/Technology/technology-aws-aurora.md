@@ -3,6 +3,7 @@ confidence: 1.0
 id: technology-aws-aurora
 sources:
 - projects.md
+- partners.md
 - technologies.md
 type: Technology
 ---
@@ -10,14 +11,15 @@ type: Technology
 # AWS Aurora
 
 ## Attributes
-- **category**: Database (1.0)
-- **version**: PostgreSQL-compatible (0.9)
+- **type**: cloud database (0.95)
+- **version**: PostgreSQL-compatible (0.8)
 
 ## Relationships
 
 ### Incoming
-- [[DB Migration]] — uses_technology (1.0)
+- [[DB Migration Project]] — uses_technology (0.98)
 
 ## Source Files
 - projects.md
+- partners.md
 - technologies.md

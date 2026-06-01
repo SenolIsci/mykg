@@ -15,30 +15,25 @@ ex:Team rdf:type rdfs:Class .
 ex:Project rdf:type rdfs:Class .
 ex:Technology rdf:type rdfs:Class .
 ex:Product rdf:type rdfs:Class .
-ex:Partnership rdf:type rdfs:Class .
-ex:Contract rdf:type rdfs:Class .
+ex:Agreement rdf:type rdfs:Class .
 
 ex:Company rdfs:subClassOf ex:Organization .
 ex:Employee rdfs:subClassOf ex:Person .
-ex:Team rdfs:subClassOf ex:Organization .
 ex:Product rdfs:subClassOf ex:Technology .
 
 ex:name rdf:type rdf:Property ;
     rdfs:domain ex:Organization ;
     rdfs:range  rdfs:Literal .
-ex:description rdf:type rdf:Property ;
-    rdfs:domain ex:Organization ;
-    rdfs:range  rdfs:Literal .
 ex:headquarters_location rdf:type rdf:Property ;
     rdfs:domain ex:Organization ;
     rdfs:range  rdfs:Literal .
-ex:type rdf:type rdf:Property ;
+ex:industry rdf:type rdf:Property ;
     rdfs:domain ex:Organization ;
     rdfs:range  rdfs:Literal .
 ex:founding_year rdf:type rdf:Property ;
-    rdfs:domain ex:Company ;
+    rdfs:domain ex:Organization ;
     rdfs:range  rdfs:Literal .
-ex:annual_revenue rdf:type rdf:Property ;
+ex:annual_spend rdf:type rdf:Property ;
     rdfs:domain ex:Company ;
     rdfs:range  rdfs:Literal .
 ex:name rdf:type rdf:Property ;
@@ -50,13 +45,16 @@ ex:email rdf:type rdf:Property ;
 ex:education rdf:type rdf:Property ;
     rdfs:domain ex:Person ;
     rdfs:range  rdfs:Literal .
-ex:title rdf:type rdf:Property ;
-    rdfs:domain ex:Employee ;
-    rdfs:range  rdfs:Literal .
 ex:join_date rdf:type rdf:Property ;
     rdfs:domain ex:Employee ;
     rdfs:range  rdfs:Literal .
-ex:focus_area rdf:type rdf:Property ;
+ex:title rdf:type rdf:Property ;
+    rdfs:domain ex:Employee ;
+    rdfs:range  rdfs:Literal .
+ex:name rdf:type rdf:Property ;
+    rdfs:domain ex:Team ;
+    rdfs:range  rdfs:Literal .
+ex:description rdf:type rdf:Property ;
     rdfs:domain ex:Team ;
     rdfs:range  rdfs:Literal .
 ex:member_count rdf:type rdf:Property ;
@@ -65,10 +63,10 @@ ex:member_count rdf:type rdf:Property ;
 ex:name rdf:type rdf:Property ;
     rdfs:domain ex:Project ;
     rdfs:range  rdfs:Literal .
-ex:description rdf:type rdf:Property ;
+ex:status rdf:type rdf:Property ;
     rdfs:domain ex:Project ;
     rdfs:range  rdfs:Literal .
-ex:status rdf:type rdf:Property ;
+ex:target_completion_date rdf:type rdf:Property ;
     rdfs:domain ex:Project ;
     rdfs:range  rdfs:Literal .
 ex:budget rdf:type rdf:Property ;
@@ -77,38 +75,23 @@ ex:budget rdf:type rdf:Property ;
 ex:name rdf:type rdf:Property ;
     rdfs:domain ex:Technology ;
     rdfs:range  rdfs:Literal .
-ex:category rdf:type rdf:Property ;
+ex:type rdf:type rdf:Property ;
     rdfs:domain ex:Technology ;
     rdfs:range  rdfs:Literal .
 ex:version rdf:type rdf:Property ;
     rdfs:domain ex:Technology ;
     rdfs:range  rdfs:Literal .
-ex:vendor rdf:type rdf:Property ;
+ex:description rdf:type rdf:Property ;
     rdfs:domain ex:Product ;
     rdfs:range  rdfs:Literal .
 ex:name rdf:type rdf:Property ;
-    rdfs:domain ex:Partnership ;
+    rdfs:domain ex:Agreement ;
     rdfs:range  rdfs:Literal .
 ex:type rdf:type rdf:Property ;
-    rdfs:domain ex:Partnership ;
+    rdfs:domain ex:Agreement ;
     rdfs:range  rdfs:Literal .
 ex:start_date rdf:type rdf:Property ;
-    rdfs:domain ex:Partnership ;
-    rdfs:range  rdfs:Literal .
-ex:scope rdf:type rdf:Property ;
-    rdfs:domain ex:Partnership ;
-    rdfs:range  rdfs:Literal .
-ex:name rdf:type rdf:Property ;
-    rdfs:domain ex:Contract ;
-    rdfs:range  rdfs:Literal .
-ex:type rdf:type rdf:Property ;
-    rdfs:domain ex:Contract ;
-    rdfs:range  rdfs:Literal .
-ex:signed_date rdf:type rdf:Property ;
-    rdfs:domain ex:Contract ;
-    rdfs:range  rdfs:Literal .
-ex:value rdf:type rdf:Property ;
-    rdfs:domain ex:Contract ;
+    rdfs:domain ex:Agreement ;
     rdfs:range  rdfs:Literal .
 
 ex:works_at rdf:type rdf:Property ;
@@ -116,18 +99,21 @@ ex:works_at rdf:type rdf:Property ;
     rdfs:range  ex:Organization .
 ex:manages rdf:type rdf:Property ;
     rdfs:domain ex:Person ;
-    rdfs:range  ex:Organization .
+    rdfs:range  ex:Team .
 ex:member_of rdf:type rdf:Property ;
     rdfs:domain ex:Person ;
     rdfs:range  ex:Team .
 ex:reports_to rdf:type rdf:Property ;
     rdfs:domain ex:Person ;
     rdfs:range  ex:Person .
+ex:leads rdf:type rdf:Property ;
+    rdfs:domain ex:Person ;
+    rdfs:range  ex:Project .
 ex:contributes_to rdf:type rdf:Property ;
     rdfs:domain ex:Person ;
     rdfs:range  ex:Project .
 ex:owns rdf:type rdf:Property ;
-    rdfs:domain ex:Organization ;
+    rdfs:domain ex:Team ;
     rdfs:range  ex:Project .
 ex:depends_on rdf:type rdf:Property ;
     rdfs:domain ex:Project ;
@@ -135,32 +121,26 @@ ex:depends_on rdf:type rdf:Property ;
 ex:uses_technology rdf:type rdf:Property ;
     rdfs:domain ex:Project ;
     rdfs:range  ex:Technology .
-ex:uses_technology rdf:type rdf:Property ;
-    rdfs:domain ex:Team ;
-    rdfs:range  ex:Technology .
 ex:provides rdf:type rdf:Property ;
-    rdfs:domain ex:Company ;
+    rdfs:domain ex:Organization ;
     rdfs:range  ex:Product .
-ex:partners_with rdf:type rdf:Property ;
-    rdfs:domain ex:Company ;
-    rdfs:range  ex:Company .
-ex:governed_by rdf:type rdf:Property ;
-    rdfs:domain ex:Partnership ;
-    rdfs:range  ex:Contract .
-ex:involves_organization rdf:type rdf:Property ;
-    rdfs:domain ex:Partnership ;
-    rdfs:range  ex:Company .
-ex:covers_project rdf:type rdf:Property ;
-    rdfs:domain ex:Partnership ;
-    rdfs:range  ex:Project .
-ex:has_contact rdf:type rdf:Property ;
-    rdfs:domain ex:Company ;
-    rdfs:range  ex:Person .
-ex:holds_contract rdf:type rdf:Property ;
-    rdfs:domain ex:Company ;
-    rdfs:range  ex:Contract .
-ex:leads rdf:type rdf:Property ;
+ex:has_partnership rdf:type rdf:Property ;
+    rdfs:domain ex:Organization ;
+    rdfs:range  ex:Organization .
+ex:vendor_for rdf:type rdf:Property ;
+    rdfs:domain ex:Organization ;
+    rdfs:range  ex:Organization .
+ex:has_agreement rdf:type rdf:Property ;
+    rdfs:domain ex:Organization ;
+    rdfs:range  ex:Agreement .
+ex:account_manager_for rdf:type rdf:Property ;
     rdfs:domain ex:Person ;
     rdfs:range  ex:Organization .
+ex:co_founded rdf:type rdf:Property ;
+    rdfs:domain ex:Person ;
+    rdfs:range  ex:Organization .
+ex:supports rdf:type rdf:Property ;
+    rdfs:domain ex:Agreement ;
+    rdfs:range  ex:Project .
 
 

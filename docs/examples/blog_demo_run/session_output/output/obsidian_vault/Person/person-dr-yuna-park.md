@@ -10,15 +10,17 @@ type: Person
 # Dr. Yuna Park
 
 ## Attributes
-- **education**: Doctorate (0.9)
+- **education**: doctorate (0.7)
 
 ## Relationships
 
 ### Outgoing
 - [[Acme Corp]] — works_at (0.97)
-- [[AI Research Team]] — leads (1.0)
+- [[DeepMind]] — works_at (0.9)
+- [[RAG Pipeline Project]] — leads (1.0)
 - [[AI Research Team]] — member_of (1.0)
-- [[RAG Pipeline]] — contributes_to (0.97)
+- [[RAG Pipeline Project]] — contributes_to (0.85)
+- [[AI Research Team]] — manages (1.0)
 
 ## Source Files
 - projects.md

@@ -9,12 +9,13 @@ type: Technology
 # AWS
 
 ## Attributes
-- **category**: Cloud Infrastructure (1.0)
+- **type**: Cloud Platform (0.95)
 
 ## Relationships
 
 ### Incoming
-- [[Infrastructure Team]] — uses_technology (1.0)
+- [[DB Migration Project]] — uses_technology (0.85)
+- [[RAG Pipeline Project]] — uses_technology (0.75)
 
 ## Source Files
 - technologies.md

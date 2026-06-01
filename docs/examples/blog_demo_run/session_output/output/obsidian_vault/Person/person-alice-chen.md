@@ -13,10 +13,9 @@ type: Person
 
 ### Outgoing
 - [[Acme Corp]] — works_at (0.97)
-- [[Backend Engineering Guild]] — member_of (0.9)
-- [[Backend Engineering Guild]] — leads (0.97)
-- [[DB Migration]] — contributes_to (1.0)
-- [[RAG Pipeline]] — contributes_to (1.0)
+- [[DB Migration Project]] — contributes_to (1.0)
+- [[RAG Pipeline Project]] — contributes_to (1.0)
+- [[Backend Engineering Guild]] — manages (1.0)
 
 ## Source Files
 - projects.md

@@ -16,7 +16,8 @@ type: Person
 - [[Infrastructure Team]] — manages (1.0)
 - [[product team]] — manages (1.0)
 - [[Sandra Kim]] — reports_to (1.0)
-- [[DB Migration]] — contributes_to (0.95)
+- [[Google]] — works_at (0.9)
+- [[DB Migration Project]] — leads (0.9)
 
 ## Source Files
 - projects.md

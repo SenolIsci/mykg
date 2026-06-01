@@ -1,18 +1,8 @@
 # Knowledge Graph Index
 
-**56 entities** — **86 relationships**
+**50 entities** — **79 relationships**
 
-## Company
-
-| Entity |
-| --- |
-| [[Acme Corp]] |
-| [[Amazon Web Services]] |
-| [[DataSystems Inc]] |
-| [[HashiCorp]] |
-| [[NovaTech Inc]] |
-
-## Contract
+## Agreement
 
 | Entity |
 | --- |
@@ -34,17 +24,12 @@
 | Entity |
 | --- |
 | [[Acme Corp]] |
+| [[Amazon Web Services]] |
 | [[DataSystems Inc]] |
 | [[DeepMind]] |
 | [[Google]] |
+| [[HashiCorp]] |
 | [[NovaTech Inc]] |
-
-## Partnership
-
-| Entity |
-| --- |
-| [[Acme Corp - DataSystems Inc Strategic Partnership]] |
-| [[DataSystems Inc - RAG Pipeline Partnership]] |
 
 ## Person
 
@@ -64,7 +49,6 @@
 
 | Entity |
 | --- |
-| [[AWS Aurora]] |
 | [[Document Processing Pipeline]] |
 | [[Vault]] |
 
@@ -72,9 +56,9 @@
 
 | Entity |
 | --- |
-| [[DB Migration]] |
+| [[DB Migration Project]] |
 | [[Platform Secrets Service]] |
-| [[RAG Pipeline]] |
+| [[RAG Pipeline Project]] |
 
 ## Team
 

@@ -1,5 +1,5 @@
 ---
-confidence: 0.9
+confidence: 1.0
 id: organization-google
 sources:
 - team.md
@@ -8,9 +8,10 @@ type: Organization
 
 # Google
 
-## Attributes
-- **description**: Former employer of Bob Martinez (0.7)
-- **type**: Technology Company (0.8)
+## Relationships
+
+### Incoming
+- [[Bob Martinez]] — works_at (0.9)
 
 ## Source Files
 - team.md

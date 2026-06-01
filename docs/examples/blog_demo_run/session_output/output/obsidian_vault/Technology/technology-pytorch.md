@@ -9,12 +9,12 @@ type: Technology
 # PyTorch
 
 ## Attributes
-- **category**: ML Framework (1.0)
+- **type**: ML Framework (0.95)
 
 ## Relationships
 
 ### Incoming
-- [[AI Research Team]] — uses_technology (1.0)
+- [[RAG Pipeline Project]] — uses_technology (0.75)
 
 ## Source Files
 - technologies.md

@@ -9,12 +9,12 @@ type: Technology
 # AWS SageMaker
 
 ## Attributes
-- **category**: ML Platform (1.0)
+- **type**: ML Platform (0.95)
 
 ## Relationships
 
 ### Incoming
-- [[AI Research Team]] — uses_technology (1.0)
+- [[RAG Pipeline Project]] — uses_technology (0.7)
 
 ## Source Files
 - technologies.md

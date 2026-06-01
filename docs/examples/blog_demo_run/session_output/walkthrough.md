@@ -1,99 +1,98 @@
-# Walkthrough — Session `2026-06-01T21-46-31`
+# Walkthrough — Session `2026-06-01T21-52-37`
 
 **Run health:** ✓ Clean
 
 ## 1. Final Graph Summary
 
-**Total nodes:** 56
+**Total nodes:** 50
 
 | Type | Count |
 |---|---|
 | Technology | 17 |
 | Person | 9 |
+| Organization | 7 |
 | Employee | 6 |
-| Organization | 5 |
 | Team | 5 |
-| Company | 5 |
 | Project | 3 |
-| Product | 3 |
-| Partnership | 2 |
-| Contract | 1 |
+| Product | 2 |
+| Agreement | 1 |
 
-**Total edges:** 86
+**Total edges:** 79
 
 **Edges by type:**
 
 | Type | Count |
 |---|---|
-| uses_technology | 22 |
-| works_at | 18 |
-| manages | 9 |
-| contributes_to | 6 |
-| member_of | 5 |
-| leads | 5 |
-| owns | 5 |
+| uses_technology | 20 |
+| works_at | 19 |
+| manages | 10 |
+| co_founded | 4 |
+| contributes_to | 4 |
+| member_of | 3 |
 | reports_to | 3 |
-| involves_organization | 3 |
-| covers_project | 3 |
-| provides | 3 |
-| has_contact | 2 |
-| holds_contract | 1 |
+| leads | 3 |
+| vendor_for | 3 |
+| owns | 2 |
+| has_partnership | 2 |
+| provides | 2 |
+| account_manager_for | 2 |
 | depends_on | 1 |
+| has_agreement | 1 |
 
 **Edges by method:**
 
 | Method | Count |
 |---|---|
-| llm_extraction | 69 |
-| orphan_inferred | 17 |
+| llm_extraction | 57 |
+| orphan_inferred | 22 |
 
 **Validation:** valid
 
 **Output files:**
 
-- `edges.jsonl` — 23.2 KB
-- `knowledge_graph.ttl` — 24.4 KB
+- `edges.jsonl` — 20.3 KB
+- `knowledge_graph.ttl` — 19.5 KB
 - `knowledge_graph_validation.json` — 0.1 KB
-- `nodes.jsonl` — 20.7 KB
+- `nodes.jsonl` — 16.0 KB
 - `networkx_output/` — 8 file(s):
-  - `adjacency.txt` — 3.2 KB
-  - `edges_nx.txt` — 18.6 KB
-  - `knowledge_graph.gexf` — 77.5 KB
-  - `knowledge_graph.gml` — 43.0 KB
-  - `knowledge_graph.graphml` — 56.4 KB
-  - `knowledge_graph.html` — 58.3 KB
-  - `knowledge_graph.json` — 56.3 KB
-  - `knowledge_graph.net` — 21.5 KB
+  - `adjacency.txt` — 3.0 KB
+  - `edges_nx.txt` — 15.5 KB
+  - `knowledge_graph.gexf` — 64.2 KB
+  - `knowledge_graph.gml` — 34.2 KB
+  - `knowledge_graph.graphml` — 46.3 KB
+  - `knowledge_graph.html` — 50.7 KB
+  - `knowledge_graph.json` — 45.7 KB
+  - `knowledge_graph.net` — 16.4 KB
 
 ## 2. Run Overview
 
 | Field | Value |
 |---|---|
-| Session | `2026-06-01T21-46-31` |
-| Run date/time (UTC) | 2026-06-01 21:46:31 |
+| Session | `2026-06-01T21-52-37` |
+| Run date/time (UTC) | 2026-06-01 21:52:37 |
 | LLM provider | anthropic |
 | LLM model | claude-sonnet-4-5 |
 | Input files | 4 |
-| Total duration | 2m 25s |
+| Total duration | 2m 07s |
 | Schema-gap restarts | 0 |
-| Run health | healthy |
+| Run health | healthy with warnings — 1 warning(s) |
 
 ## 3. Step Timeline
 
 | Step | Status | Start | Duration |
 |---|---|---|---|
-| preprocess | done | 22:46:31 | 0s |
-| ingest | done | 22:46:31 | 0s |
-| pass1 | done | 22:46:31 | 35s |
-| schema_validate | done | 22:47:06 | 0s |
-| human_review | done | 22:47:06 | 0s |
-| schema_flatten | done | 22:47:06 | 0s |
-| pass2 | done | 22:47:06 | 58s |
-| normalize_names | done | 22:48:04 | 40s |
-| assemble | done | 22:48:44 | 0s |
-| orphan_score | done | 22:48:44 | 0s |
-| orphan_connect | done | 22:48:44 | 12s |
-| validate_graph | done | 22:48:56 | 0s |
+| preprocess | done | 22:52:37 | 0s |
+| ingest | done | 22:52:37 | 0s |
+| pass1 | done | 22:52:37 | 34s |
+| schema_validate | done | 22:53:11 | 0s |
+| human_review | done | 22:53:11 | 0s |
+| schema_flatten | done | 22:53:11 | 0s |
+| pass2 | done | 22:53:11 | 45s |
+| normalize_names | done | 22:53:56 | 36s |
+| assemble | done | 22:54:32 | 0s |
+| orphan_score | done | 22:54:32 | 0s |
+| orphan_connect | done | 22:54:32 | 12s |
+| validate_graph | done | 22:54:44 | 0s |
 
 ## 4. Schema Evolution
 
@@ -103,54 +102,52 @@
 |---|---|---|---|
 | 1 | pass1_merge | +10 / -0 | +16 / -0 |
 | 2 | schema_harmonize | +0 / -0 | +0 / -0 |
-| 3 | schema_quality | +0 / -0 | +3 / -3 |
+| 3 | schema_quality | +1 / -2 | +2 / -2 |
 
 ### Final Schema
 
-**Concepts** (10 total):
+**Concepts** (9 total):
 
-- **Contract** — attrs: `name, type, signed_date, value`
-- **Organization** — attrs: `name, description, headquarters_location, type`
-  - **Company** *(is-a: Organization)* — attrs: `founding_year, annual_revenue`
-  - **Team** *(is-a: Organization)* — attrs: `focus_area, member_count`
-- **Partnership** — attrs: `name, type, start_date, scope`
+- **Agreement** — attrs: `name, type, start_date`
+- **Organization** — attrs: `name, headquarters_location, industry, founding_year`
+  - **Company** *(is-a: Organization)* — attrs: `annual_spend`
 - **Person** — attrs: `name, email, education`
-  - **Employee** *(is-a: Person)* — attrs: `title, join_date`
-- **Project** — attrs: `name, description, status, budget`
-- **Technology** — attrs: `name, category, version`
-  - **Product** *(is-a: Technology)* — attrs: `vendor`
+  - **Employee** *(is-a: Person)* — attrs: `join_date, title`
+- **Project** — attrs: `name, status, target_completion_date, budget`
+- **Team** — attrs: `name, description, member_count`
+- **Technology** — attrs: `name, type, version`
+  - **Product** *(is-a: Technology)* — attrs: `description`
 
-**Properties** (17 total):
+**Properties** (16 total):
 
-- `Person` →[**contributes_to**]→ `Project`  *(edge attrs: role, contribution_type)*
-- `Partnership` →[**covers_project**]→ `Project`
+- `Person` →[**account_manager_for**]→ `Organization`
+- `Person` →[**co_founded**]→ `Organization`  *(edge attrs: year)*
+- `Person` →[**contributes_to**]→ `Project`  *(edge attrs: role)*
 - `Project` →[**depends_on**]→ `Project`
-- `Partnership` →[**governed_by**]→ `Contract`
-- `Company` →[**has_contact**]→ `Person`  *(edge attrs: contact_type)*
-- `Company` →[**holds_contract**]→ `Contract`
-- `Partnership` →[**involves_organization**]→ `Company`  *(edge attrs: role)*
-- `Person` →[**leads**]→ `Organization`
-- `Person` →[**manages**]→ `Organization`
+- `Organization` →[**has_agreement**]→ `Agreement`
+- `Organization` →[**has_partnership**]→ `Organization`  *(edge attrs: type, start_date)*
+- `Person` →[**leads**]→ `Project`  *(edge attrs: role)*
+- `Person` →[**manages**]→ `Team`
 - `Person` →[**member_of**]→ `Team`
-- `Organization` →[**owns**]→ `Project`
-- `Company` →[**partners_with**]→ `Company`
-- `Company` →[**provides**]→ `Product`
+- `Team` →[**owns**]→ `Project`
+- `Organization` →[**provides**]→ `Product`
 - `Person` →[**reports_to**]→ `Person`
-- `Project` →[**uses_technology**]→ `Technology`  *(edge attrs: purpose)*
-- `Team` →[**uses_technology**]→ `Technology`  *(edge attrs: purpose)*
-- `Person` →[**works_at**]→ `Organization`  *(edge attrs: role, start_date, end_date)*
+- `Agreement` →[**supports**]→ `Project`
+- `Project` →[**uses_technology**]→ `Technology`
+- `Organization` →[**vendor_for**]→ `Organization`
+- `Person` →[**works_at**]→ `Organization`  *(edge attrs: start_date, end_date, role)*
 
 ## 5. LLM Call Statistics
 
 | Stage | Calls | Fresh input | Cache read | Cache create | Output | Latency |
 |---|---|---|---|---|---|---|
-| Pass 1 batch induction | 1 | 2,088 | 0 | 0 | 1,098 | 12.7s |
-| Schema harmonization | 1 | 3,066 | 0 | 0 | 1,252 | 11.0s |
-| Schema quality review | 1 | 2,225 | 0 | 0 | 1,204 | 10.9s |
-| Instance extraction (Pass 2) | 4 | 9,632 | 0 | 0 | 19,128 | 43.0s |
-| Orphan connection | 2 | 2,070 | 0 | 0 | 1,386 | 8.4s |
-| Other | 1 | 708 | 0 | 0 | 132 | 40.5s |
-| **Total** | **10** | **19,789** | **0** | **0** | **24,200** | **26.4s** |
+| Pass 1 batch induction | 1 | 2,088 | 0 | 0 | 1,013 | 13.9s |
+| Schema harmonization | 1 | 2,940 | 0 | 0 | 1,145 | 10.1s |
+| Schema quality review | 1 | 2,118 | 0 | 0 | 1,100 | 10.0s |
+| Instance extraction (Pass 2) | 4 | 9,296 | 0 | 0 | 16,808 | 37.3s |
+| Orphan connection | 2 | 2,031 | 0 | 0 | 1,803 | 9.7s |
+| Other | 1 | 650 | 0 | 0 | 141 | 35.4s |
+| **Total** | **10** | **19,123** | **0** | **0** | **22,010** | **23.8s** |
 
 ## 6. Extraction Summary
 
@@ -172,36 +169,31 @@
 
 | File | Nodes | Edges | Retries |
 |---|---|---|---|
-| team.md | 16 | 17 | 0 |
-| partners.md | 19 | 18 | 0 |
-| projects.md | 18 | 21 | 0 |
-| technologies.md | 31 | 30 | 0 |
+| team.md | 15 | 16 | 0 |
+| projects.md | 17 | 21 | 0 |
+| partners.md | 18 | 20 | 0 |
+| technologies.md | 30 | 23 | 0 |
 
-**Name normalization:** 9 aliases mapped across 2 concept type(s).
+**Name normalization:** 8 aliases mapped across 2 concept type(s).
 
-**Deduplication:** 19 node merge(s), 17 edge merge(s).
+**Deduplication:** 18 node merge(s), 17 edge merge(s).
 
 **Dangling edges dropped:** 0
 
 ## 7. Orphan Pass Summary
 
 - Orphan chunk groups found: **2**
-- Total orphans across groups: **12**
+- Total orphans across groups: **13**
 - Schema-gap orphans: **0**
-- Orphan edges added (LLM confirmed): **17**
-- Orphan edges rejected: **4**
-- Promoted to schema-gap orphan: **4**
+- Orphan edges added (LLM confirmed): **22**
+- Orphan edges rejected: **0**
 
-**Orphans remaining in final KG:** 4
-
-- `organization-google` (Organization)
-- `organization-datasystems-inc` (Organization)
-- `organization-novatech-inc` (Organization)
-- `organization-deepmind` (Organization)
+**Orphans remaining in final KG:** 0
 
 ## 8. Warnings & Retries
 
-*No warnings or errors recorded.*
+### Other Warnings (1)
+- `22:54:32` [WARNING] mykg.steps.normalize: Step 6b — normalization warning: Type 'Technology': canonical 'Amazon Web Services' not in inventory, dropping 'AWS'
 
 ---
-*Generated 2026-06-01T21:48:56 UTC*
+*Generated 2026-06-01T21:54:44 UTC*

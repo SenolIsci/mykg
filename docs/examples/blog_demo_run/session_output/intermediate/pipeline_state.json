@@ -1,55 +1,55 @@
 {
   "status": "running",
-  "started_at": "2026-06-01T21:46:31.529170+00:00",
-  "last_updated": "2026-06-01T21:48:56.639487+00:00",
+  "started_at": "2026-06-01T21:52:37.859143+00:00",
+  "last_updated": "2026-06-01T21:54:44.175490+00:00",
   "steps": {
     "preprocess": {
       "status": "done",
-      "completed_at": "2026-06-01T21:46:31.531367+00:00"
+      "completed_at": "2026-06-01T21:52:37.859689+00:00"
     },
     "ingest": {
       "status": "done",
-      "completed_at": "2026-06-01T21:46:31.592568+00:00"
+      "completed_at": "2026-06-01T21:52:37.922817+00:00"
     },
     "pass1": {
       "status": "done",
-      "completed_at": "2026-06-01T21:47:06.140840+00:00"
+      "completed_at": "2026-06-01T21:53:11.963260+00:00"
     },
     "schema_validate": {
       "status": "done",
-      "completed_at": "2026-06-01T21:47:06.150510+00:00"
+      "completed_at": "2026-06-01T21:53:11.972974+00:00"
     },
     "human_review": {
       "status": "done",
-      "completed_at": "2026-06-01T21:47:06.151126+00:00"
+      "completed_at": "2026-06-01T21:53:11.973678+00:00"
     },
     "schema_flatten": {
       "status": "done",
-      "completed_at": "2026-06-01T21:47:06.151767+00:00"
+      "completed_at": "2026-06-01T21:53:11.974253+00:00"
     },
     "pass2": {
       "status": "done",
-      "completed_at": "2026-06-01T21:48:04.402640+00:00"
+      "completed_at": "2026-06-01T21:53:56.700413+00:00"
     },
     "normalize_names": {
       "status": "done",
-      "completed_at": "2026-06-01T21:48:44.950862+00:00"
+      "completed_at": "2026-06-01T21:54:32.099939+00:00"
     },
     "assemble": {
       "status": "done",
-      "completed_at": "2026-06-01T21:48:44.955771+00:00"
+      "completed_at": "2026-06-01T21:54:32.105093+00:00"
     },
     "orphan_score": {
       "status": "done",
-      "completed_at": "2026-06-01T21:48:44.956840+00:00"
+      "completed_at": "2026-06-01T21:54:32.106719+00:00"
     },
     "orphan_connect": {
       "status": "done",
-      "completed_at": "2026-06-01T21:48:56.526478+00:00"
+      "completed_at": "2026-06-01T21:54:44.057051+00:00"
     },
     "validate_graph": {
       "status": "done",
-      "completed_at": "2026-06-01T21:48:56.639469+00:00"
+      "completed_at": "2026-06-01T21:54:44.175473+00:00"
     }
   },
   "errors": {}

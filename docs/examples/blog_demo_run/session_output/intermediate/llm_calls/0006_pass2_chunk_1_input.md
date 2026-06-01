@@ -91,73 +91,69 @@ not present in the prior record.
 SCHEMA
 ======
 Concept types:
-  - Organization: attributes = ['name', 'description', 'headquarters_location', 'type']
-    Outgoing edges: owns → Project
-    Incoming edges: Person → works_at, Person → manages, Person → leads
-  - Company: attributes = ['name', 'description', 'headquarters_location', 'type', 'founding_year', 'annual_revenue']
-    Outgoing edges: provides → Product, partners_with → Company, has_contact → Person, holds_contract → Contract
-    Incoming edges: Company → partners_with, Partnership → involves_organization
+  - Organization: attributes = ['name', 'headquarters_location', 'industry', 'founding_year']
+    Outgoing edges: provides → Product, has_partnership → Organization, vendor_for → Organization, has_agreement → Agreement
+    Incoming edges: Person → works_at, Organization → has_partnership, Organization → vendor_for, Person → account_manager_for, Person → co_founded
+  - Company: attributes = ['name', 'headquarters_location', 'industry', 'founding_year', 'annual_spend']
   - Person: attributes = ['name', 'email', 'education']
-    Outgoing edges: works_at → Organization, manages → Organization, member_of → Team, reports_to → Person, contributes_to → Project, leads → Organization
-    Incoming edges: Person → reports_to, Company → has_contact
-  - Employee: attributes = ['name', 'email', 'education', 'title', 'join_date']
-  - Team: attributes = ['name', 'description', 'headquarters_location', 'type', 'focus_area', 'member_count']
-    Outgoing edges: uses_technology → Technology
-    Incoming edges: Person → member_of
-  - Project: attributes = ['name', 'description', 'status', 'budget']
+    Outgoing edges: works_at → Organization, manages → Team, member_of → Team, reports_to → Person, leads → Project, contributes_to → Project, account_manager_for → Organization, co_founded → Organization
+    Incoming edges: Person → reports_to
+  - Employee: attributes = ['name', 'email', 'education', 'join_date', 'title']
+  - Team: attributes = ['name', 'description', 'member_count']
+    Outgoing edges: owns → Project
+    Incoming edges: Person → manages, Person → member_of
+  - Project: attributes = ['name', 'status', 'target_completion_date', 'budget']
     Outgoing edges: depends_on → Project, uses_technology → Technology
-    Incoming edges: Person → contributes_to, Organization → owns, Project → depends_on, Partnership → covers_project
-  - Technology: attributes = ['name', 'category', 'version']
-    Incoming edges: Project → uses_technology, Team → uses_technology
-  - Product: attributes = ['name', 'category', 'version', 'vendor']
-    Incoming edges: Company → provides
-  - Partnership: attributes = ['name', 'type', 'start_date', 'scope']
-    Outgoing edges: governed_by → Contract, involves_organization → Company, covers_project → Project
-  - Contract: attributes = ['name', 'type', 'signed_date', 'value']
-    Incoming edges: Partnership → governed_by, Company → holds_contract
+    Incoming edges: Person → leads, Person → contributes_to, Team → owns, Project → depends_on, Agreement → supports
+  - Technology: attributes = ['name', 'type', 'version']
+    Incoming edges: Project → uses_technology
+  - Product: attributes = ['name', 'type', 'version', 'description']
+    Incoming edges: Organization → provides
+  - Agreement: attributes = ['name', 'type', 'start_date']
+    Outgoing edges: supports → Project
+    Incoming edges: Organization → has_agreement
 
 Relationship types:
-  - works_at (Person → Organization): edge attributes = ['role', 'start_date', 'end_date']
-  - manages (Person → Organization): edge attributes = []
+  - works_at (Person → Organization): edge attributes = ['start_date', 'end_date', 'role']
+  - manages (Person → Team): edge attributes = []
   - member_of (Person → Team): edge attributes = []
   - reports_to (Person → Person): edge attributes = []
-  - contributes_to (Person → Project): edge attributes = ['role', 'contribution_type']
-  - owns (Organization → Project): edge attributes = []
+  - leads (Person → Project): edge attributes = ['role']
+  - contributes_to (Person → Project): edge attributes = ['role']
+  - owns (Team → Project): edge attributes = []
   - depends_on (Project → Project): edge attributes = []
-  - uses_technology (Project → Technology): edge attributes = ['purpose']
-  - uses_technology (Team → Technology): edge attributes = ['purpose']
-  - provides (Company → Product): edge attributes = []
-  - partners_with (Company → Company): edge attributes = []
-  - governed_by (Partnership → Contract): edge attributes = []
-  - involves_organization (Partnership → Company): edge attributes = ['role']
-  - covers_project (Partnership → Project): edge attributes = []
-  - has_contact (Company → Person): edge attributes = ['contact_type']
-  - holds_contract (Company → Contract): edge attributes = []
-  - leads (Person → Organization): edge attributes = []
+  - uses_technology (Project → Technology): edge attributes = []
+  - provides (Organization → Product): edge attributes = []
+  - has_partnership (Organization → Organization): edge attributes = ['type', 'start_date']
+  - vendor_for (Organization → Organization): edge attributes = []
+  - has_agreement (Organization → Agreement): edge attributes = []
+  - account_manager_for (Person → Organization): edge attributes = []
+  - co_founded (Person → Organization): edge attributes = ['year']
+  - supports (Agreement → Project): edge attributes = []
 
 DOCUMENT
 ========
-# Active Projects — Q2/Q3 2026
+# Partner and Vendor Notes
 
-## DB Migration Project
+## DataSystems Inc
 
-The database migration project aims to move Acme Corp's production PostgreSQL clusters from on-premise hardware to AWS Aurora. The project is owned by the infrastructure team and was initiated by Bob Martinez following a reliability incident in January 2026.
+DataSystems Inc is a data infrastructure company headquartered in San Francisco. Acme Corp signed a strategic partnership with DataSystems in September 2025 to co-develop document indexing and search infrastructure.
 
-Alice Chen and Carol Okafor are the core engineering contributors. The target completion date is end of Q3 2026. The project has a dependency on the Platform team's new secrets management service, which is being built by James Whitfield's team.
+Carol Okafor previously worked at DataSystems Inc as a DevOps Engineer from 2019 to 2022, before joining Acme Corp. Her former manager at DataSystems was Dr. Priya Nair, who is now VP of Engineering at DataSystems.
 
-Current status: in progress. Risk: medium. Budget: $120,000.
+The partnership covers two active workstreams: the RAG Pipeline Project (document indexing) and a planned data lake migration.
 
-## RAG Pipeline Project
+## NovaTech Inc
 
-Acme Corp is building an internal RAG (Retrieval-Augmented Generation) pipeline to allow employees to query the company's internal documentation using natural language. The project is led by Dr. Yuna Park from the AI Research team.
+NovaTech Inc is a SaaS company focused on developer tooling. Sandra Kim, Acme Corp's CEO, was VP Engineering at NovaTech before co-founding Acme Corp in 2015.
 
-Alice Chen is contributing backend API work. The project uses a vector database (Pinecone) and integrates with the internal knowledge base. A partnership with DataSystems Inc provides the document indexing infrastructure for this project.
+Acme Corp has an informal advisory relationship with NovaTech. No active commercial contract exists.
 
-Target delivery: Q4 2026. Current status: design phase.
+## HashiCorp
 
-## Platform Secrets Service
+HashiCorp provides the Vault product used by Acme Corp's Platform team in the Secrets Service project. Acme Corp holds an enterprise licence for Vault signed in Q1 2026. The vendor contact is Marcus Tan, an enterprise account manager at HashiCorp.
 
-The Platform team is building a centralised secrets management service to replace ad-hoc use of environment variables. James Whitfield is the project owner. The service will use HashiCorp Vault as its backend.
+## AWS
 
-Alice Chen requested this project after identifying credential hygiene issues during a security audit in February 2026. Expected completion: August 2026.
+Amazon Web Services (AWS) is Acme Corp's primary cloud provider. The DB Migration project targets AWS Aurora. Acme Corp's annual AWS spend is approximately $800,000. The account manager is Lisa Huang at AWS.
 

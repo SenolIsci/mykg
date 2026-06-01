@@ -9,12 +9,12 @@ type: Technology
 # TypeScript
 
 ## Attributes
-- **category**: Programming Language (1.0)
+- **type**: Programming Language (0.95)
 
 ## Relationships
 
 ### Incoming
-- [[Backend Engineering Guild]] — uses_technology (0.9)
+- [[Platform Secrets Service]] — uses_technology (0.0)
 
 ## Source Files
 - technologies.md

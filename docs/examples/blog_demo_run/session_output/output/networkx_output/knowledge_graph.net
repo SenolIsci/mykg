@@ -1,64 +1,58 @@
-*vertices 56
-1 organization-acme-corp 0.0 0.0 ellipse label organization-acme-corp node_type Organization source_files team.md|projects.md|technologies.md attr_name_value "Acme Corp" attr_description_value "Organization undertaking database migration, RAG pipeline, and platform secrets service projects" attr_type_value Company
-2 employee-alice-chen 0.0 0.0 ellipse label employee-alice-chen node_type Employee source_files team.md attr_name_value "Alice Chen" attr_email_value alice.chen@acme.com attr_education_value "BSc in Computer Science from MIT" attr_title_value "Senior Software Engineer" attr_join_date_value "March 2021"
-3 employee-bob-martinez 0.0 0.0 ellipse label employee-bob-martinez node_type Employee source_files team.md attr_name_value "Bob Martinez" attr_title_value "Director of Engineering" attr_join_date_value 2018
-4 employee-carol-okafor 0.0 0.0 ellipse label employee-carol-okafor node_type Employee source_files team.md attr_name_value "Carol Okafor" attr_title_value "Site Reliability Engineer" attr_join_date_value "January 2023"
-5 employee-sandra-kim 0.0 0.0 ellipse label employee-sandra-kim node_type Employee source_files team.md attr_name_value "Sandra Kim" attr_title_value CEO attr_join_date_value 2015
-6 employee-james-whitfield 0.0 0.0 ellipse label employee-james-whitfield node_type Employee source_files team.md attr_name_value "James Whitfield" attr_education_value "PhD in Computer Science from Stanford" attr_title_value CTO attr_join_date_value 2015
+*vertices 50
+1 organization-acme-corp 0.0 0.0 ellipse label organization-acme-corp node_type Organization source_files team.md|projects.md|partners.md|technologies.md attr_name_value "Acme Corp" attr_founding_year_value 2015
+2 employee-alice-chen 0.0 0.0 ellipse label employee-alice-chen node_type Employee source_files team.md attr_name_value "Alice Chen" attr_email_value alice.chen@acme.com attr_education_value "BSc in Computer Science from MIT" attr_join_date_value "March 2021" attr_title_value "Senior Software Engineer"
+3 employee-bob-martinez 0.0 0.0 ellipse label employee-bob-martinez node_type Employee source_files team.md attr_name_value "Bob Martinez" attr_join_date_value 2018 attr_title_value "Director of Engineering"
+4 employee-carol-okafor 0.0 0.0 ellipse label employee-carol-okafor node_type Employee source_files team.md attr_name_value "Carol Okafor" attr_join_date_value "January 2023" attr_title_value "Site Reliability Engineer"
+5 employee-sandra-kim 0.0 0.0 ellipse label employee-sandra-kim node_type Employee source_files team.md attr_name_value "Sandra Kim" attr_title_value CEO
+6 employee-james-whitfield 0.0 0.0 ellipse label employee-james-whitfield node_type Employee source_files team.md attr_name_value "James Whitfield" attr_education_value "PhD in Computer Science from Stanford" attr_title_value CTO
 7 employee-dr-yuna-park 0.0 0.0 ellipse label employee-dr-yuna-park node_type Employee source_files team.md attr_name_value "Dr. Yuna Park" attr_title_value "Principal Researcher"
-8 team-infrastructure-team 0.0 0.0 ellipse label team-infrastructure-team node_type Team source_files team.md|projects.md|technologies.md aliases "infrastructure team" attr_name_value "Infrastructure Team" attr_description_value "Responsible for cloud operations, CI/CD pipelines, and on-call rotations" attr_type_value "Engineering Team" attr_focus_area_value "cloud operations, CI/CD pipelines, and on-call rotations; Infrastructure; Infrastructure and DevOps"
-9 team-product-team 0.0 0.0 ellipse label team-product-team node_type Team source_files team.md attr_name_value "product team" attr_description_value "Product development team managed by Bob Martinez" attr_type_value "Product Team"
-10 team-platform-team 0.0 0.0 ellipse label team-platform-team node_type Team source_files team.md|partners.md|projects.md aliases "Platform team" attr_name_value "Platform Team" attr_description_value "Team building centralised secrets management service" attr_type_value "Engineering Team" attr_focus_area_value "Platform Infrastructure"
-11 team-ai-research-team 0.0 0.0 ellipse label team-ai-research-team node_type Team source_files team.md|projects.md|technologies.md aliases "AI Research team" attr_name_value "AI Research Team" attr_description_value "Research team focused on retrieval-augmented generation (RAG) and knowledge graph applications" attr_type_value "Research Team" attr_focus_area_value "retrieval-augmented generation (RAG) and knowledge graph applications; AI Research; AI and ML"
-12 team-backend-engineering-guild 0.0 0.0 ellipse label team-backend-engineering-guild node_type Team source_files team.md|technologies.md aliases "backend guild" attr_name_value "Backend Engineering Guild" attr_description_value "Team standardising on Python (FastAPI) for services and Go for performance-critical components" attr_type_value "Engineering Guild" attr_focus_area_value "Backend Engineering"
-13 organization-google 0.0 0.0 ellipse label organization-google node_type Organization source_files team.md attr_name_value Google attr_description_value "Former employer of Bob Martinez" attr_type_value "Technology Company"
-14 organization-datasystems-inc 0.0 0.0 ellipse label organization-datasystems-inc node_type Organization source_files team.md attr_name_value "DataSystems Inc" attr_description_value "Former employer of Carol Okafor" attr_type_value "Technology Company"
-15 organization-novatech-inc 0.0 0.0 ellipse label organization-novatech-inc node_type Organization source_files team.md attr_name_value "NovaTech Inc" attr_description_value "Former employer of Sandra Kim" attr_type_value "Technology Company"
-16 organization-deepmind 0.0 0.0 ellipse label organization-deepmind node_type Organization source_files team.md attr_name_value DeepMind attr_description_value "Former employer of Dr. Yuna Park" attr_type_value "AI Research Organization"
-17 company-datasystems-inc 0.0 0.0 ellipse label company-datasystems-inc node_type Company source_files partners.md|projects.md|technologies.md attr_name_value "DataSystems Inc" attr_description_value "data infrastructure company" attr_headquarters_location_value "San Francisco" attr_type_value "data infrastructure company"
-18 company-acme-corp 0.0 0.0 ellipse label company-acme-corp node_type Company source_files partners.md|technologies.md attr_name_value "Acme Corp" attr_description_value "Company running technology infrastructure and AI/ML projects" attr_type_value "Technology Company" attr_founding_year_value 2015
-19 partnership-acme-corp-datasystems-inc-strategic-partnership 0.0 0.0 ellipse label partnership-acme-corp-datasystems-inc-strategic-partnership node_type Partnership source_files partners.md attr_name_value "Acme Corp - DataSystems Inc Strategic Partnership" attr_type_value "strategic partnership" attr_start_date_value "September 2025" attr_scope_value "co-develop document indexing and search infrastructure"
-20 person-carol-okafor 0.0 0.0 ellipse label person-carol-okafor node_type Person source_files partners.md|projects.md attr_name_value "Carol Okafor"
-21 person-dr-priya-nair 0.0 0.0 ellipse label person-dr-priya-nair node_type Person source_files partners.md attr_name_value "Dr. Priya Nair"
-22 project-rag-pipeline 0.0 0.0 ellipse label project-rag-pipeline node_type Project source_files partners.md|projects.md|technologies.md aliases "RAG Pipeline Project" attr_name_value "RAG Pipeline" attr_description_value "document indexing; Internal RAG (Retrieval-Augmented Generation) pipeline to allow employees to query company's internal documentation using natural language" attr_status_value "active; design phase"
-23 project-db-migration 0.0 0.0 ellipse label project-db-migration node_type Project source_files partners.md|partners.md|projects.md|technologies.md aliases "DB Migration Project|DB Migration project|data lake migration" attr_name_value "DB Migration" attr_description_value "targets AWS Aurora; Database migration project to move Acme Corp's production PostgreSQL clusters from on-premise hardware to AWS Aurora; Moving PostgreSQL clusters to AWS Aurora" attr_status_value "planned; in progress" attr_budget_value $120,000
-24 company-novatech-inc 0.0 0.0 ellipse label company-novatech-inc node_type Company source_files partners.md attr_name_value "NovaTech Inc" attr_description_value "SaaS company focused on developer tooling" attr_type_value "SaaS company"
-25 person-sandra-kim 0.0 0.0 ellipse label person-sandra-kim node_type Person source_files partners.md attr_name_value "Sandra Kim"
-26 company-hashicorp 0.0 0.0 ellipse label company-hashicorp node_type Company source_files partners.md attr_name_value HashiCorp
-27 product-vault 0.0 0.0 ellipse label product-vault node_type Product source_files partners.md attr_name_value Vault attr_vendor_value HashiCorp
-28 project-platform-secrets-service 0.0 0.0 ellipse label project-platform-secrets-service node_type Project source_files partners.md|projects.md|technologies.md aliases "Secrets Service project" attr_name_value "Platform Secrets Service" attr_description_value "Centralised secrets management service to replace ad-hoc use of environment variables; Adopting HashiCorp Vault for secrets management" attr_status_value "in progress"
-29 contract-vault-enterprise-licence 0.0 0.0 ellipse label contract-vault-enterprise-licence node_type Contract source_files partners.md attr_name_value "Vault enterprise licence" attr_type_value "enterprise licence" attr_signed_date_value "Q1 2026"
-30 person-marcus-tan 0.0 0.0 ellipse label person-marcus-tan node_type Person source_files partners.md attr_name_value "Marcus Tan"
-31 company-amazon-web-services 0.0 0.0 ellipse label company-amazon-web-services node_type Company source_files partners.md attr_name_value "Amazon Web Services" attr_description_value "cloud provider" attr_type_value "cloud provider"
-32 product-aws-aurora 0.0 0.0 ellipse label product-aws-aurora node_type Product source_files partners.md attr_name_value "AWS Aurora" attr_vendor_value "Amazon Web Services"
-33 person-lisa-huang 0.0 0.0 ellipse label person-lisa-huang node_type Person source_files partners.md attr_name_value "Lisa Huang"
-34 person-bob-martinez 0.0 0.0 ellipse label person-bob-martinez node_type Person source_files projects.md|technologies.md attr_name_value "Bob Martinez"
-35 person-alice-chen 0.0 0.0 ellipse label person-alice-chen node_type Person source_files projects.md|technologies.md attr_name_value "Alice Chen"
-36 person-james-whitfield 0.0 0.0 ellipse label person-james-whitfield node_type Person source_files projects.md|technologies.md attr_name_value "James Whitfield"
-37 person-dr-yuna-park 0.0 0.0 ellipse label person-dr-yuna-park node_type Person source_files projects.md|technologies.md attr_name_value "Dr. Yuna Park" attr_education_value Doctorate
-38 technology-postgresql 0.0 0.0 ellipse label technology-postgresql node_type Technology source_files projects.md|technologies.md attr_name_value PostgreSQL attr_category_value Database attr_version_value 15
-39 technology-aws-aurora 0.0 0.0 ellipse label technology-aws-aurora node_type Technology source_files projects.md|technologies.md attr_name_value "AWS Aurora" attr_category_value Database attr_version_value PostgreSQL-compatible
-40 technology-pinecone 0.0 0.0 ellipse label technology-pinecone node_type Technology source_files projects.md|technologies.md attr_name_value Pinecone attr_category_value "Vector Database"
-41 technology-hashicorp-vault 0.0 0.0 ellipse label technology-hashicorp-vault node_type Technology source_files projects.md|technologies.md attr_name_value "HashiCorp Vault" attr_category_value "Secrets Management"
-42 partnership-datasystems-inc-rag-pipeline-partnership 0.0 0.0 ellipse label partnership-datasystems-inc-rag-pipeline-partnership node_type Partnership source_files projects.md attr_name_value "DataSystems Inc - RAG Pipeline Partnership" attr_type_value "Infrastructure Partnership" attr_scope_value "Document indexing infrastructure for RAG pipeline project"
-43 technology-weaviate 0.0 0.0 ellipse label technology-weaviate node_type Technology source_files technologies.md attr_name_value Weaviate attr_category_value "Vector Database"
-44 technology-qdrant 0.0 0.0 ellipse label technology-qdrant node_type Technology source_files technologies.md attr_name_value Qdrant attr_category_value "Vector Database"
-45 technology-aws 0.0 0.0 ellipse label technology-aws node_type Technology source_files technologies.md attr_name_value AWS attr_category_value "Cloud Infrastructure"
-46 technology-github-actions 0.0 0.0 ellipse label technology-github-actions node_type Technology source_files technologies.md attr_name_value "GitHub Actions" attr_category_value CI/CD
-47 technology-kubernetes 0.0 0.0 ellipse label technology-kubernetes node_type Technology source_files technologies.md attr_name_value Kubernetes attr_category_value "Container Orchestration" attr_version_value EKS
-48 technology-python 0.0 0.0 ellipse label technology-python node_type Technology source_files technologies.md attr_name_value Python attr_category_value "Programming Language"
-49 technology-pytorch 0.0 0.0 ellipse label technology-pytorch node_type Technology source_files technologies.md attr_name_value PyTorch attr_category_value "ML Framework"
-50 technology-hugging-face-transformers 0.0 0.0 ellipse label technology-hugging-face-transformers node_type Technology source_files technologies.md attr_name_value "Hugging Face Transformers" attr_category_value "ML Library"
-51 technology-aws-sagemaker 0.0 0.0 ellipse label technology-aws-sagemaker node_type Technology source_files technologies.md attr_name_value "AWS SageMaker" attr_category_value "ML Platform"
-52 product-document-processing-pipeline 0.0 0.0 ellipse label product-document-processing-pipeline node_type Product source_files technologies.md attr_name_value "Document Processing Pipeline" attr_category_value "Data Processing" attr_vendor_value "DataSystems Inc"
-53 technology-fastapi 0.0 0.0 ellipse label technology-fastapi node_type Technology source_files technologies.md attr_name_value FastAPI attr_category_value "Web Framework"
-54 technology-go 0.0 0.0 ellipse label technology-go node_type Technology source_files technologies.md attr_name_value Go attr_category_value "Programming Language"
-55 technology-react 0.0 0.0 ellipse label technology-react node_type Technology source_files technologies.md attr_name_value React attr_category_value "Frontend Framework"
-56 technology-typescript 0.0 0.0 ellipse label technology-typescript node_type Technology source_files technologies.md attr_name_value TypeScript attr_category_value "Programming Language"
+8 team-infrastructure-team 0.0 0.0 ellipse label team-infrastructure-team node_type Team source_files team.md|projects.md|technologies.md aliases "infrastructure team" attr_name_value "Infrastructure Team" attr_description_value "responsible for cloud operations, CI/CD pipelines, and on-call rotations" attr_member_count_value 5
+9 team-product-team 0.0 0.0 ellipse label team-product-team node_type Team source_files team.md attr_name_value "product team"
+10 team-platform-team 0.0 0.0 ellipse label team-platform-team node_type Team source_files team.md|projects.md|partners.md aliases "Platform team" attr_name_value "Platform Team" attr_description_value "team building platform services including secrets management"
+11 team-ai-research-team 0.0 0.0 ellipse label team-ai-research-team node_type Team source_files team.md|projects.md|technologies.md aliases "AI Research team" attr_name_value "AI Research Team" attr_description_value "current focus is on retrieval-augmented generation (RAG) and knowledge graph applications"
+12 organization-google 0.0 0.0 ellipse label organization-google node_type Organization source_files team.md attr_name_value Google
+13 organization-datasystems-inc 0.0 0.0 ellipse label organization-datasystems-inc node_type Organization source_files team.md|projects.md|partners.md|technologies.md attr_name_value "DataSystems Inc" attr_headquarters_location_value "San Francisco" attr_industry_value "data infrastructure"
+14 organization-novatech-inc 0.0 0.0 ellipse label organization-novatech-inc node_type Organization source_files team.md|partners.md attr_name_value "NovaTech Inc" attr_industry_value SaaS
+15 organization-deepmind 0.0 0.0 ellipse label organization-deepmind node_type Organization source_files team.md attr_name_value DeepMind
+16 person-bob-martinez 0.0 0.0 ellipse label person-bob-martinez node_type Person source_files projects.md|technologies.md attr_name_value "Bob Martinez"
+17 person-alice-chen 0.0 0.0 ellipse label person-alice-chen node_type Person source_files projects.md|technologies.md attr_name_value "Alice Chen"
+18 person-carol-okafor 0.0 0.0 ellipse label person-carol-okafor node_type Person source_files projects.md|partners.md attr_name_value "Carol Okafor"
+19 person-james-whitfield 0.0 0.0 ellipse label person-james-whitfield node_type Person source_files projects.md|technologies.md attr_name_value "James Whitfield"
+20 person-dr-yuna-park 0.0 0.0 ellipse label person-dr-yuna-park node_type Person source_files projects.md|technologies.md attr_name_value "Dr. Yuna Park" attr_education_value doctorate
+21 project-db-migration-project 0.0 0.0 ellipse label project-db-migration-project node_type Project source_files projects.md|partners.md|partners.md|technologies.md aliases "DB Migration|DB Migration project|data lake migration" attr_name_value "DB Migration Project" attr_status_value "in progress" attr_target_completion_date_value "end of Q3 2026" attr_budget_value $120,000
+22 project-rag-pipeline-project 0.0 0.0 ellipse label project-rag-pipeline-project node_type Project source_files projects.md|partners.md|technologies.md aliases "RAG Pipeline" attr_name_value "RAG Pipeline Project" attr_status_value "design phase" attr_target_completion_date_value "Q4 2026"
+23 project-platform-secrets-service 0.0 0.0 ellipse label project-platform-secrets-service node_type Project source_files projects.md|partners.md|technologies.md aliases "Secrets Service" attr_name_value "Platform Secrets Service" attr_status_value "in progress" attr_target_completion_date_value "August 2026"
+24 technology-postgresql 0.0 0.0 ellipse label technology-postgresql node_type Technology source_files projects.md|technologies.md attr_name_value PostgreSQL attr_type_value database attr_version_value 15
+25 technology-aws-aurora 0.0 0.0 ellipse label technology-aws-aurora node_type Technology source_files projects.md|partners.md|technologies.md attr_name_value "AWS Aurora" attr_type_value "cloud database" attr_version_value PostgreSQL-compatible
+26 technology-pinecone 0.0 0.0 ellipse label technology-pinecone node_type Technology source_files projects.md|technologies.md attr_name_value Pinecone attr_type_value "vector database"
+27 technology-hashicorp-vault 0.0 0.0 ellipse label technology-hashicorp-vault node_type Technology source_files projects.md|technologies.md attr_name_value "HashiCorp Vault" attr_type_value "secrets management"
+28 person-dr-priya-nair 0.0 0.0 ellipse label person-dr-priya-nair node_type Person source_files partners.md attr_name_value "Dr. Priya Nair"
+29 person-sandra-kim 0.0 0.0 ellipse label person-sandra-kim node_type Person source_files partners.md attr_name_value "Sandra Kim"
+30 organization-hashicorp 0.0 0.0 ellipse label organization-hashicorp node_type Organization source_files partners.md attr_name_value HashiCorp
+31 product-vault 0.0 0.0 ellipse label product-vault node_type Product source_files partners.md attr_name_value Vault
+32 agreement-vault-enterprise-licence 0.0 0.0 ellipse label agreement-vault-enterprise-licence node_type Agreement source_files partners.md attr_name_value "Vault enterprise licence" attr_type_value "enterprise licence" attr_start_date_value "Q1 2026"
+33 person-marcus-tan 0.0 0.0 ellipse label person-marcus-tan node_type Person source_files partners.md attr_name_value "Marcus Tan"
+34 organization-amazon-web-services 0.0 0.0 ellipse label organization-amazon-web-services node_type Organization source_files partners.md attr_name_value "Amazon Web Services" attr_industry_value "cloud provider"
+35 person-lisa-huang 0.0 0.0 ellipse label person-lisa-huang node_type Person source_files partners.md attr_name_value "Lisa Huang"
+36 technology-weaviate 0.0 0.0 ellipse label technology-weaviate node_type Technology source_files technologies.md attr_name_value Weaviate attr_type_value "Vector Database"
+37 technology-qdrant 0.0 0.0 ellipse label technology-qdrant node_type Technology source_files technologies.md attr_name_value Qdrant attr_type_value "Vector Database"
+38 technology-aws 0.0 0.0 ellipse label technology-aws node_type Technology source_files technologies.md attr_name_value AWS attr_type_value "Cloud Platform"
+39 technology-github-actions 0.0 0.0 ellipse label technology-github-actions node_type Technology source_files technologies.md attr_name_value "GitHub Actions" attr_type_value CI/CD
+40 technology-kubernetes 0.0 0.0 ellipse label technology-kubernetes node_type Technology source_files technologies.md attr_name_value Kubernetes attr_type_value "Container Orchestration" attr_version_value EKS
+41 technology-python 0.0 0.0 ellipse label technology-python node_type Technology source_files technologies.md attr_name_value Python attr_type_value "Programming Language"
+42 technology-pytorch 0.0 0.0 ellipse label technology-pytorch node_type Technology source_files technologies.md attr_name_value PyTorch attr_type_value "ML Framework"
+43 technology-hugging-face-transformers 0.0 0.0 ellipse label technology-hugging-face-transformers node_type Technology source_files technologies.md attr_name_value "Hugging Face Transformers" attr_type_value "ML Library"
+44 technology-aws-sagemaker 0.0 0.0 ellipse label technology-aws-sagemaker node_type Technology source_files technologies.md attr_name_value "AWS SageMaker" attr_type_value "ML Platform"
+45 product-document-processing-pipeline 0.0 0.0 ellipse label product-document-processing-pipeline node_type Product source_files technologies.md attr_name_value "Document Processing Pipeline" attr_type_value "Data Processing" attr_description_value "Feeds the RAG pipeline ingestion layer"
+46 team-backend-engineering-guild 0.0 0.0 ellipse label team-backend-engineering-guild node_type Team source_files technologies.md attr_name_value "Backend Engineering Guild" attr_description_value "Standardizes backend technologies at Acme Corp"
+47 technology-fastapi 0.0 0.0 ellipse label technology-fastapi node_type Technology source_files technologies.md attr_name_value FastAPI attr_type_value "Web Framework"
+48 technology-go 0.0 0.0 ellipse label technology-go node_type Technology source_files technologies.md attr_name_value Go attr_type_value "Programming Language"
+49 technology-react 0.0 0.0 ellipse label technology-react node_type Technology source_files technologies.md attr_name_value React attr_type_value "Frontend Framework"
+50 technology-typescript 0.0 0.0 ellipse label technology-typescript node_type Technology source_files technologies.md attr_name_value TypeScript attr_type_value "Programming Language"
 *arcs
-1 23 1.0 label edge-a0b90d edge_type owns source_files projects.md|technologies.md
-1 22 1.0 label edge-7eb87c edge_type owns source_files projects.md|technologies.md
-1 28 1.0 label edge-291e7d edge_type owns source_files projects.md|technologies.md
+1 13 1.0 label edge-d7c9a1 edge_type has_partnership source_files projects.md|partners.md attr_type_value "strategic partnership" attr_start_date_value "September 2025"
+1 14 1.0 label edge-b5eb28 edge_type has_partnership source_files partners.md attr_type_value "informal advisory relationship"
+1 32 1.0 label edge-1b377e edge_type has_agreement source_files partners.md
 2 1 1.0 label edge-88cb24 edge_type works_at source_files team.md
 3 1 1.0 label edge-2d3f24 edge_type works_at source_files team.md
 3 8 1.0 label edge-c64595 edge_type manages source_files team.md
@@ -66,74 +60,66 @@
 3 5 1.0 label edge-dd4d62 edge_type reports_to source_files team.md
 4 1 1.0 label edge-91d97c edge_type works_at source_files team.md
 4 8 1.0 label edge-e59ad9 edge_type member_of source_files team.md
-5 1 1.0 label edge-49e18d edge_type leads source_files team.md
-6 1 1.0 label edge-c763a6 edge_type works_at source_files team.md
+5 1 1.0 label edge-f6784c edge_type co_founded source_files team.md
+6 1 1.0 label edge-2f8749 edge_type co_founded source_files team.md
 6 10 1.0 label edge-0d344b edge_type manages source_files team.md
 6 11 1.0 label edge-cd3575 edge_type manages source_files team.md
 7 1 1.0 label edge-7f50a8 edge_type works_at source_files team.md
 7 11 1.0 label edge-abfe59 edge_type manages source_files team.md
-8 23 1.0 label edge-684e6a edge_type owns source_files projects.md
-8 45 1.0 label edge-a5fa0b edge_type uses_technology source_files technologies.md attr_purpose_value "Cloud infrastructure hosting"
-8 46 1.0 label edge-250ef2 edge_type uses_technology source_files technologies.md attr_purpose_value "CI/CD pipeline"
-8 47 1.0 label edge-a2c9f9 edge_type uses_technology source_files technologies.md attr_purpose_value "Container orchestration"
-10 27 1.0 label edge-4974af edge_type uses_technology source_files partners.md attr_purpose_value "Secrets Service project"
-10 28 1.0 label edge-32a3bc edge_type owns source_files projects.md
-11 48 1.0 label edge-7909c4 edge_type uses_technology source_files technologies.md attr_purpose_value "Primary programming language for AI/ML research"
-11 49 1.0 label edge-272682 edge_type uses_technology source_files technologies.md attr_purpose_value "Machine learning framework"
-11 50 1.0 label edge-0e75a3 edge_type uses_technology source_files technologies.md attr_purpose_value "Transformer models and NLP"
-11 51 1.0 label edge-736b5e edge_type uses_technology source_files technologies.md attr_purpose_value "Running ML experiments"
-11 44 1.0 label edge-2a9123 edge_type uses_technology source_files technologies.md
-11 43 1.0 label edge-a9660b edge_type uses_technology source_files technologies.md
-12 48 1.0 label edge-5656a9 edge_type uses_technology source_files technologies.md attr_purpose_value "Standard language for backend services"
-12 53 1.0 label edge-79570f edge_type uses_technology source_files technologies.md attr_purpose_value "Framework for backend services"
-12 54 1.0 label edge-8d0efc edge_type uses_technology source_files technologies.md attr_purpose_value "Performance-critical components"
-12 55 1.0 label edge-0653e1 edge_type uses_technology source_files technologies.md attr_purpose_value "Frontend framework"
-12 56 1.0 label edge-711bfe edge_type uses_technology source_files technologies.md attr_purpose_value "Frontend type system with React"
-17 52 1.0 label edge-591a21 edge_type provides source_files technologies.md
-18 29 1.0 label edge-5cec91 edge_type holds_contract source_files partners.md
-19 18 1.0 label edge-34513c edge_type involves_organization source_files partners.md attr_role_value partner
-19 17 1.0 label edge-9ff0cb edge_type involves_organization source_files partners.md attr_role_value partner
-19 22 1.0 label edge-62ae21 edge_type covers_project source_files partners.md
-19 23 1.0 label edge-875834 edge_type covers_project source_files partners.md
-20 1 1.0 label edge-079047 edge_type works_at source_files team.md attr_role_value "Site Reliability Engineer" attr_start_date_value "January 2023"
-20 8 1.0 label edge-5f6aa7 edge_type member_of source_files team.md
-20 17 1.0 label edge-460858 edge_type works_at source_files partners.md attr_role_value "DevOps Engineer" attr_start_date_value 2019 attr_end_date_value 2022
-20 18 1.0 label edge-7fd27f edge_type works_at source_files partners.md attr_start_date_value 2022
-20 21 1.0 label edge-f92d5f edge_type reports_to source_files partners.md
-20 23 1.0 label edge-0e1aa2 edge_type contributes_to source_files projects.md attr_role_value "Core Engineering Contributor" attr_contribution_type_value Engineering
-21 17 1.0 label edge-d9b19e edge_type works_at source_files partners.md attr_role_value "VP of Engineering"
-22 40 1.0 label edge-7c71e8 edge_type uses_technology source_files projects.md|technologies.md attr_purpose_value "Vector database for retrieval-augmented generation; Vector database for embedding storage and similarity search"
-22 48 1.0 label edge-459436 edge_type uses_technology source_files technologies.md attr_purpose_value "Custom ingestion layer implementation"
-22 44 1.0 label edge-cfc8e2 edge_type uses_technology source_files technologies.md
-22 43 1.0 label edge-10f2f3 edge_type uses_technology source_files technologies.md
-23 28 1.0 label edge-ee4394 edge_type depends_on source_files projects.md
-23 38 1.0 label edge-4a21fb edge_type uses_technology source_files projects.md|technologies.md attr_purpose_value "Source database system being migrated from"
-23 39 1.0 label edge-4334dd edge_type uses_technology source_files projects.md|technologies.md attr_purpose_value "Target database system for migration"
-25 1 1.0 label edge-d1a1b4 edge_type leads source_files team.md attr_role_value CEO attr_start_date_value 2015
-25 24 1.0 label edge-625cd5 edge_type works_at source_files partners.md attr_role_value "VP Engineering" attr_end_date_value 2015
-25 18 1.0 label edge-a2d368 edge_type works_at source_files partners.md attr_role_value CEO attr_start_date_value 2015
-26 27 1.0 label edge-bfb1eb edge_type provides source_files partners.md
-26 30 1.0 label edge-ff6ca5 edge_type has_contact source_files partners.md attr_contact_type_value "enterprise account manager"
-28 41 1.0 label edge-bedee6 edge_type uses_technology source_files projects.md|technologies.md attr_purpose_value "Backend for secrets management service; Secrets management"
-30 26 1.0 label edge-abcc9e edge_type works_at source_files partners.md attr_role_value "enterprise account manager"
-31 32 1.0 label edge-e6a525 edge_type provides source_files partners.md
-31 33 1.0 label edge-e272b2 edge_type has_contact source_files partners.md attr_contact_type_value "account manager"
-33 31 1.0 label edge-42d45c edge_type works_at source_files partners.md attr_role_value "account manager"
-34 1 1.0 label edge-ece6c4 edge_type works_at source_files team.md|technologies.md attr_role_value "Director of Engineering" attr_start_date_value 2018
-34 8 1.0 label edge-8c3e84 edge_type manages source_files team.md|technologies.md
-34 9 1.0 label edge-cff8ed edge_type manages source_files team.md
-34 25 1.0 label edge-9dc267 edge_type reports_to source_files team.md
-34 23 1.0 label edge-825578 edge_type contributes_to source_files projects.md attr_role_value Initiator attr_contribution_type_value "Project Initiation"
-35 1 1.0 label edge-0adce0 edge_type works_at source_files team.md|technologies.md attr_role_value "Senior Software Engineer" attr_start_date_value "March 2021"
-35 12 1.0 label edge-df9a75 edge_type leads source_files team.md|technologies.md
-35 23 1.0 label edge-8dbe79 edge_type contributes_to source_files projects.md attr_role_value "Core Engineering Contributor" attr_contribution_type_value Engineering
-35 22 1.0 label edge-ea8712 edge_type contributes_to source_files projects.md attr_role_value "Backend API Developer" attr_contribution_type_value "Backend Engineering"
-36 1 1.0 label edge-94a3a9 edge_type works_at source_files team.md|technologies.md attr_role_value CTO attr_start_date_value 2015
-36 10 1.0 label edge-5809d3 edge_type leads source_files projects.md
-36 11 1.0 label edge-8f0036 edge_type manages source_files team.md
-36 28 1.0 label edge-e68f52 edge_type contributes_to source_files projects.md|technologies.md attr_role_value "Project Owner; Project lead" attr_contribution_type_value "Ownership; Leadership"
-37 1 1.0 label edge-f8fd44 edge_type works_at source_files team.md|technologies.md attr_role_value "Principal Researcher"
-37 11 1.0 label edge-f4ef1d edge_type member_of source_files team.md|projects.md
-37 22 1.0 label edge-73bcce edge_type contributes_to source_files projects.md|technologies.md attr_role_value "Project Lead" attr_contribution_type_value Leadership
-42 17 1.0 label edge-6a0480 edge_type involves_organization source_files projects.md attr_role_value "Document Indexing Infrastructure Provider"
-42 22 1.0 label edge-e0dfbf edge_type covers_project source_files projects.md
+8 21 1.0 label edge-6fa176 edge_type owns source_files projects.md
+10 23 1.0 label edge-32a3bc edge_type owns source_files projects.md|partners.md
+13 45 1.0 label edge-651787 edge_type provides source_files technologies.md
+13 1 1.0 label edge-c9ccdc edge_type vendor_for source_files technologies.md
+16 1 1.0 label edge-ece6c4 edge_type works_at source_files team.md|projects.md|technologies.md attr_start_date_value 2018 attr_role_value "Director of Engineering"
+16 8 1.0 label edge-8c3e84 edge_type manages source_files team.md|technologies.md
+16 9 1.0 label edge-cff8ed edge_type manages source_files team.md
+16 29 1.0 label edge-9dc267 edge_type reports_to source_files team.md
+16 12 1.0 label edge-083f4a edge_type works_at source_files team.md attr_end_date_value 2018 attr_role_value "Staff Engineer"
+16 21 1.0 label edge-b6585c edge_type leads source_files projects.md attr_role_value initiator
+17 1 1.0 label edge-0adce0 edge_type works_at source_files team.md|projects.md|technologies.md attr_start_date_value "March 2021" attr_role_value "Senior Software Engineer"
+17 21 1.0 label edge-f77976 edge_type contributes_to source_files projects.md attr_role_value "core engineering contributor"
+17 22 1.0 label edge-9ca93e edge_type contributes_to source_files projects.md attr_role_value "backend API work"
+17 46 1.0 label edge-770457 edge_type manages source_files technologies.md
+18 1 1.0 label edge-079047 edge_type works_at source_files team.md|projects.md|partners.md attr_start_date_value "January 2023" attr_role_value "Site Reliability Engineer"
+18 8 1.0 label edge-5f6aa7 edge_type member_of source_files team.md
+18 13 1.0 label edge-f1b25e edge_type works_at source_files team.md|partners.md attr_start_date_value 2019 attr_end_date_value 2022 attr_role_value "DevOps Engineer"
+18 21 1.0 label edge-1bb309 edge_type contributes_to source_files projects.md attr_role_value "core engineering contributor"
+18 28 1.0 label edge-f92d5f edge_type reports_to source_files partners.md
+19 1 1.0 label edge-550da7 edge_type co_founded source_files team.md attr_role_value CTO attr_year_value 2015
+19 23 1.0 label edge-5d8c88 edge_type leads source_files projects.md|technologies.md attr_role_value "project owner"
+19 10 1.0 label edge-73ec0d edge_type manages source_files projects.md
+20 1 1.0 label edge-f8fd44 edge_type works_at source_files team.md|projects.md|technologies.md attr_role_value "Principal Researcher"
+20 15 1.0 label edge-283b79 edge_type works_at source_files team.md
+20 22 1.0 label edge-2433f1 edge_type contributes_to source_files technologies.md attr_role_value "Technology evaluator"
+20 11 1.0 label edge-439f54 edge_type manages source_files technologies.md
+21 23 1.0 label edge-629b4f edge_type depends_on source_files projects.md
+21 24 1.0 label edge-f50b01 edge_type uses_technology source_files projects.md|technologies.md
+21 25 1.0 label edge-554618 edge_type uses_technology source_files projects.md|partners.md|technologies.md
+21 38 1.0 label edge-e1f59d edge_type uses_technology source_files technologies.md
+21 40 1.0 label edge-97d81a edge_type uses_technology source_files technologies.md
+22 26 1.0 label edge-025633 edge_type uses_technology source_files projects.md|technologies.md
+22 41 1.0 label edge-ae6127 edge_type uses_technology source_files technologies.md
+22 42 1.0 label edge-576c0d edge_type uses_technology source_files technologies.md
+22 43 1.0 label edge-a61fe5 edge_type uses_technology source_files technologies.md
+22 44 1.0 label edge-b7af5c edge_type uses_technology source_files technologies.md
+22 38 1.0 label edge-51d314 edge_type uses_technology source_files technologies.md
+23 27 1.0 label edge-bedee6 edge_type uses_technology source_files projects.md|technologies.md
+23 31 1.0 label edge-e2f3fb edge_type uses_technology source_files partners.md
+23 40 1.0 label edge-37e61e edge_type uses_technology source_files technologies.md
+23 36 1.0 label edge-bde869 edge_type uses_technology source_files technologies.md
+23 37 1.0 label edge-31e6a2 edge_type uses_technology source_files technologies.md
+23 47 1.0 label edge-522413 edge_type uses_technology source_files technologies.md
+23 39 1.0 label edge-b6c74c edge_type uses_technology source_files technologies.md
+23 48 1.0 label edge-62bba2 edge_type uses_technology source_files technologies.md
+23 49 1.0 label edge-60a3ee edge_type uses_technology source_files technologies.md
+23 50 1.0 label edge-33b559 edge_type uses_technology source_files technologies.md
+28 13 1.0 label edge-8adddb edge_type works_at source_files partners.md attr_role_value "VP of Engineering"
+29 1 1.0 label edge-178bbc edge_type co_founded source_files team.md|partners.md attr_start_date_value 2015 attr_role_value CEO attr_year_value 2015
+29 14 1.0 label edge-f5f9c8 edge_type works_at source_files team.md|partners.md attr_end_date_value 2015 attr_role_value "VP Engineering"
+30 31 1.0 label edge-eace28 edge_type provides source_files partners.md
+30 1 1.0 label edge-30eedf edge_type vendor_for source_files partners.md
+33 30 1.0 label edge-c27b40 edge_type works_at source_files partners.md attr_role_value "enterprise account manager"
+33 1 1.0 label edge-c6dadc edge_type account_manager_for source_files partners.md
+34 1 1.0 label edge-1e5aed edge_type vendor_for source_files partners.md
+35 34 1.0 label edge-13584e edge_type works_at source_files partners.md attr_role_value "account manager"
+35 1 1.0 label edge-1b099b edge_type account_manager_for source_files partners.md

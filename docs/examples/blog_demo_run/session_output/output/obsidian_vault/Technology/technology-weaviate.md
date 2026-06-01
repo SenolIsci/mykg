@@ -9,13 +9,12 @@ type: Technology
 # Weaviate
 
 ## Attributes
-- **category**: Vector Database (1.0)
+- **type**: Vector Database (0.9)
 
 ## Relationships
 
 ### Incoming
-- [[RAG Pipeline]] — uses_technology (0.85)
-- [[AI Research Team]] — uses_technology (0.75)
+- [[Platform Secrets Service]] — uses_technology (0.0)
 
 ## Source Files
 - technologies.md

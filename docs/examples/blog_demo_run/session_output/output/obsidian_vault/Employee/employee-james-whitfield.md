@@ -11,14 +11,14 @@ type: Employee
 ## Attributes
 - **education**: PhD in Computer Science from Stanford (1.0)
 - **title**: CTO (1.0)
-- **join_date**: 2015 (0.9)
 
 ## Relationships
 
 ### Outgoing
 - [[Acme Corp]] — works_at (1.0)
-- [[Platform Team]] — manages (1.0)
-- [[AI Research Team]] — manages (1.0)
+- [[Acme Corp]] — co_founded (1.0)
+- [[Platform Team]] — manages (0.9)
+- [[AI Research Team]] — manages (0.9)
 
 ## Source Files
 - team.md

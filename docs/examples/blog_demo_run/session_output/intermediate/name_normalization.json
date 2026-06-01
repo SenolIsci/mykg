@@ -1,33 +1,33 @@
 {
   "metadata": {
-    "generated_at": "2026-06-01T21:48:44.945486+00:00",
+    "generated_at": "2026-06-01T21:54:32.094039+00:00",
     "input_name_count_by_type": {
-      "Organization": 5,
+      "Organization": 7,
       "Employee": 6,
-      "Team": 9,
-      "Company": 5,
-      "Partnership": 2,
+      "Team": 8,
       "Person": 9,
       "Project": 8,
-      "Product": 3,
-      "Contract": 1,
-      "Technology": 17
+      "Technology": 17,
+      "Product": 2,
+      "Agreement": 1
     },
-    "aliases_mapped": 9
+    "aliases_mapped": 8
   },
   "mappings": {
     "Team": {
       "AI Research team": "AI Research Team",
       "Platform team": "Platform Team",
-      "backend guild": "Backend Engineering Guild",
       "infrastructure team": "Infrastructure Team"
     },
     "Project": {
-      "DB Migration Project": "DB Migration",
-      "DB Migration project": "DB Migration",
-      "RAG Pipeline Project": "RAG Pipeline",
-      "Secrets Service project": "Platform Secrets Service",
-      "data lake migration": "DB Migration"
+      "DB Migration project": "DB Migration Project",
+      "DB Migration": "DB Migration Project",
+      "data lake migration": "DB Migration Project",
+      "RAG Pipeline": "RAG Pipeline Project",
+      "Secrets Service": "Platform Secrets Service"
     }
-  }
+  },
+  "validation_warnings": [
+    "Type 'Technology': canonical 'Amazon Web Services' not in inventory, dropping 'AWS'"
+  ]
 }

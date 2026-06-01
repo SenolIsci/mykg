@@ -8,17 +8,16 @@
       "parent": null,
       "attributes": [
         "name",
-        "description",
         "headquarters_location",
-        "type"
+        "industry",
+        "founding_year"
       ]
     },
     {
       "type": "Company",
       "parent": "Organization",
       "attributes": [
-        "founding_year",
-        "annual_revenue"
+        "annual_spend"
       ]
     },
     {
@@ -34,15 +33,16 @@
       "type": "Employee",
       "parent": "Person",
       "attributes": [
-        "title",
-        "join_date"
+        "join_date",
+        "title"
       ]
     },
     {
       "type": "Team",
-      "parent": "Organization",
+      "parent": null,
       "attributes": [
-        "focus_area",
+        "name",
+        "description",
         "member_count"
       ]
     },
@@ -51,8 +51,8 @@
       "parent": null,
       "attributes": [
         "name",
-        "description",
         "status",
+        "target_completion_date",
         "budget"
       ]
     },
@@ -61,7 +61,7 @@
       "parent": null,
       "attributes": [
         "name",
-        "category",
+        "type",
         "version"
       ]
     },
@@ -69,27 +69,16 @@
       "type": "Product",
       "parent": "Technology",
       "attributes": [
-        "vendor"
+        "description"
       ]
     },
     {
-      "type": "Partnership",
+      "type": "Agreement",
       "parent": null,
       "attributes": [
         "name",
         "type",
-        "start_date",
-        "scope"
-      ]
-    },
-    {
-      "type": "Contract",
-      "parent": null,
-      "attributes": [
-        "name",
-        "type",
-        "signed_date",
-        "value"
+        "start_date"
       ]
     }
   ],
@@ -99,15 +88,15 @@
       "domain": "Person",
       "range": "Organization",
       "attributes": [
-        "role",
         "start_date",
-        "end_date"
+        "end_date",
+        "role"
       ]
     },
     {
       "name": "manages",
       "domain": "Person",
-      "range": "Organization",
+      "range": "Team",
       "attributes": []
     },
     {
@@ -123,17 +112,24 @@
       "attributes": []
     },
     {
+      "name": "leads",
+      "domain": "Person",
+      "range": "Project",
+      "attributes": [
+        "role"
+      ]
+    },
+    {
       "name": "contributes_to",
       "domain": "Person",
       "range": "Project",
       "attributes": [
-        "role",
-        "contribution_type"
+        "role"
       ]
     },
     {
       "name": "owns",
-      "domain": "Organization",
+      "domain": "Team",
       "range": "Project",
       "attributes": []
     },
@@ -147,68 +143,53 @@
       "name": "uses_technology",
       "domain": "Project",
       "range": "Technology",
-      "attributes": [
-        "purpose"
-      ]
-    },
-    {
-      "name": "uses_technology",
-      "domain": "Team",
-      "range": "Technology",
-      "attributes": [
-        "purpose"
-      ]
+      "attributes": []
     },
     {
       "name": "provides",
-      "domain": "Company",
+      "domain": "Organization",
       "range": "Product",
       "attributes": []
     },
     {
-      "name": "partners_with",
-      "domain": "Company",
-      "range": "Company",
-      "attributes": []
-    },
-    {
-      "name": "governed_by",
-      "domain": "Partnership",
-      "range": "Contract",
-      "attributes": []
-    },
-    {
-      "name": "involves_organization",
-      "domain": "Partnership",
-      "range": "Company",
+      "name": "has_partnership",
+      "domain": "Organization",
+      "range": "Organization",
       "attributes": [
-        "role"
+        "type",
+        "start_date"
       ]
     },
     {
-      "name": "covers_project",
-      "domain": "Partnership",
-      "range": "Project",
+      "name": "vendor_for",
+      "domain": "Organization",
+      "range": "Organization",
       "attributes": []
     },
     {
-      "name": "has_contact",
-      "domain": "Company",
-      "range": "Person",
-      "attributes": [
-        "contact_type"
-      ]
-    },
-    {
-      "name": "holds_contract",
-      "domain": "Company",
-      "range": "Contract",
+      "name": "has_agreement",
+      "domain": "Organization",
+      "range": "Agreement",
       "attributes": []
     },
     {
-      "name": "leads",
+      "name": "account_manager_for",
       "domain": "Person",
       "range": "Organization",
+      "attributes": []
+    },
+    {
+      "name": "co_founded",
+      "domain": "Person",
+      "range": "Organization",
+      "attributes": [
+        "year"
+      ]
+    },
+    {
+      "name": "supports",
+      "domain": "Agreement",
+      "range": "Project",
       "attributes": []
     }
   ]

@@ -2,11 +2,11 @@
   "_fname": "technologies.md",
   "data": {
     "1": [
-      "company-acme-corp",
+      "organization-acme-corp",
       "technology-postgresql",
-      "project-db-migration",
       "technology-aws-aurora",
-      "project-rag-pipeline",
+      "project-db-migration-project",
+      "project-rag-pipeline-project",
       "technology-pinecone",
       "person-dr-yuna-park",
       "technology-weaviate",
@@ -24,15 +24,14 @@
       "technology-pytorch",
       "technology-hugging-face-transformers",
       "technology-aws-sagemaker",
-      "company-datasystems-inc",
+      "organization-datasystems-inc",
       "product-document-processing-pipeline",
-      "team-backend-engineering-guild",
       "person-alice-chen",
+      "team-backend-engineering-guild",
       "technology-fastapi",
       "technology-go",
       "technology-react",
-      "technology-typescript",
-      "organization-acme-corp"
+      "technology-typescript"
     ]
   }
 }

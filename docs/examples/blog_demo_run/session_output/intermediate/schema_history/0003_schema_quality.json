@@ -1,19 +1,22 @@
 {
   "seq": 3,
   "trigger": "schema_quality",
-  "timestamp": "2026-06-01T21:47:06Z",
-  "concepts_added": [],
-  "concepts_removed": [],
+  "timestamp": "2026-06-01T21:53:11Z",
+  "concepts_added": [
+    "Agreement"
+  ],
+  "concepts_removed": [
+    "Contract",
+    "Partnership"
+  ],
   "properties_added": [
-    "covers_project",
-    "involves_organization",
+    "has_agreement",
     "uses_technology"
   ],
   "properties_removed": [
-    "covers",
-    "involves",
+    "has_contract",
     "uses"
   ],
-  "concepts_total": 10,
+  "concepts_total": 9,
   "properties_total": 16
 }

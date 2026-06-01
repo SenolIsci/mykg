@@ -9,12 +9,12 @@ type: Technology
 # React
 
 ## Attributes
-- **category**: Frontend Framework (1.0)
+- **type**: Frontend Framework (0.95)
 
 ## Relationships
 
 ### Incoming
-- [[Backend Engineering Guild]] — uses_technology (0.9)
+- [[Platform Secrets Service]] — uses_technology (0.0)
 
 ## Source Files
 - technologies.md

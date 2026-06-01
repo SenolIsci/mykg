@@ -4,40 +4,45 @@
 {
   "nodes": [
     {
-      "id": "company-datasystems-inc",
-      "type": "Company",
-      "confidence": 1.0,
-      "attributes": {
-        "name": {"value": "DataSystems Inc", "confidence": 1.0},
-        "description": {"value": "data infrastructure company", "confidence": 1.0},
-        "headquarters_location": {"value": "San Francisco", "confidence": 1.0},
-        "type": {"value": "data infrastructure company", "confidence": 1.0},
-        "founding_year": {"value": null, "confidence": 0.0},
-        "annual_revenue": {"value": null, "confidence": 0.0}
-      }
-    },
-    {
-      "id": "company-acme-corp",
-      "type": "Company",
+      "id": "organization-acme-corp",
+      "type": "Organization",
       "confidence": 1.0,
       "attributes": {
         "name": {"value": "Acme Corp", "confidence": 1.0},
-        "description": {"value": null, "confidence": 0.0},
         "headquarters_location": {"value": null, "confidence": 0.0},
-        "type": {"value": null, "confidence": 0.0},
-        "founding_year": {"value": "2015", "confidence": 1.0},
-        "annual_revenue": {"value": null, "confidence": 0.0}
+        "industry": {"value": null, "confidence": 0.0},
+        "founding_year": {"value": null, "confidence": 0.0}
       }
     },
     {
-      "id": "partnership-acme-datasystems",
-      "type": "Partnership",
+      "id": "organization-datasystems-inc",
+      "type": "Organization",
       "confidence": 1.0,
       "attributes": {
-        "name": {"value": "Acme Corp - DataSystems Inc Strategic Partnership", "confidence": 0.9},
-        "type": {"value": "strategic partnership", "confidence": 1.0},
-        "start_date": {"value": "September 2025", "confidence": 1.0},
-        "scope": {"value": "co-develop document indexing and search infrastructure", "confidence": 1.0}
+        "name": {"value": "DataSystems Inc", "confidence": 1.0},
+        "headquarters_location": {"value": null, "confidence": 0.0},
+        "industry": {"value": "document indexing infrastructure", "confidence": 0.8},
+        "founding_year": {"value": null, "confidence": 0.0}
+      }
+    },
+    {
+      "id": "person-bob-martinez",
+      "type": "Person",
+      "confidence": 1.0,
+      "attributes": {
+        "name": {"value": "Bob Martinez", "confidence": 1.0},
+        "email": {"value": null, "confidence": 0.0},
+        "education": {"value": null, "confidence": 0.0}
+      }
+    },
+    {
+      "id": "person-alice-chen",
+      "type": "Person",
+      "confidence": 1.0,
+      "attributes": {
+        "name": {"value": "Alice Chen", "confidence": 1.0},
+        "email": {"value": null, "confidence": 0.0},
+        "education": {"value": null, "confidence": 0.0}
       }
     },
     {
@@ -51,13 +56,64 @@
       }
     },
     {
-      "id": "person-priya-nair",
+      "id": "person-james-whitfield",
       "type": "Person",
       "confidence": 1.0,
       "attributes": {
-        "name": {"value": "Dr. Priya Nair", "confidence": 1.0},
+        "name": {"value": "James Whitfield", "confidence": 1.0},
         "email": {"value": null, "confidence": 0.0},
         "education": {"value": null, "confidence": 0.0}
+      }
+    },
+    {
+      "id": "person-yuna-park",
+      "type": "Person",
+      "confidence": 1.0,
+      "attributes": {
+        "name": {"value": "Dr. Yuna Park", "confidence": 1.0},
+        "email": {"value": null, "confidence": 0.0},
+        "education": {"value": "doctorate", "confidence": 0.7}
+      }
+    },
+    {
+      "id": "team-infrastructure",
+      "type": "Team",
+      "confidence": 1.0,
+      "attributes": {
+        "name": {"value": "Infrastructure Team", "confidence": 1.0},
+        "description": {"value": "team responsible for infrastructure projects including database migration", "confidence": 0.8},
+        "member_count": {"value": null, "confidence": 0.0}
+      }
+    },
+    {
+      "id": "team-platform",
+      "type": "Team",
+      "confidence": 1.0,
+      "attributes": {
+        "name": {"value": "Platform Team", "confidence": 1.0},
+        "description": {"value": "team building platform services including secrets management", "confidence": 0.85},
+        "member_count": {"value": null, "confidence": 0.0}
+      }
+    },
+    {
+      "id": "team-ai-research",
+      "type": "Team",
+      "confidence": 1.0,
+      "attributes": {
+        "name": {"value": "AI Research Team", "confidence": 1.0},
+        "description": {"value": "team focused on AI research and development", "confidence": 0.8},
+        "member_count": {"value": null, "confidence": 0.0}
+      }
+    },
+    {
+      "id": "project-db-migration",
+      "type": "Project",
+      "confidence": 1.0,
+      "attributes": {
+        "name": {"value": "DB Migration Project", "confidence": 1.0},
+        "status": {"value": "in progress", "confidence": 1.0},
+        "target_completion_date": {"value": "end of Q3 2026", "confidence": 1.0},
+        "budget": {"value": "$120,000", "confidence": 1.0}
       }
     },
     {
@@ -66,341 +122,265 @@
       "confidence": 1.0,
       "attributes": {
         "name": {"value": "RAG Pipeline Project", "confidence": 1.0},
-        "description": {"value": "document indexing", "confidence": 1.0},
-        "status": {"value": "active", "confidence": 1.0},
+        "status": {"value": "design phase", "confidence": 1.0},
+        "target_completion_date": {"value": "Q4 2026", "confidence": 1.0},
         "budget": {"value": null, "confidence": 0.0}
       }
     },
     {
-      "id": "project-data-lake-migration",
-      "type": "Project",
-      "confidence": 0.9,
-      "attributes": {
-        "name": {"value": "data lake migration", "confidence": 0.9},
-        "description": {"value": null, "confidence": 0.0},
-        "status": {"value": "planned", "confidence": 1.0},
-        "budget": {"value": null, "confidence": 0.0}
-      }
-    },
-    {
-      "id": "company-novatech-inc",
-      "type": "Company",
-      "confidence": 1.0,
-      "attributes": {
-        "name": {"value": "NovaTech Inc", "confidence": 1.0},
-        "description": {"value": "SaaS company focused on developer tooling", "confidence": 1.0},
-        "headquarters_location": {"value": null, "confidence": 0.0},
-        "type": {"value": "SaaS company", "confidence": 1.0},
-        "founding_year": {"value": null, "confidence": 0.0},
-        "annual_revenue": {"value": null, "confidence": 0.0}
-      }
-    },
-    {
-      "id": "person-sandra-kim",
-      "type": "Person",
-      "confidence": 1.0,
-      "attributes": {
-        "name": {"value": "Sandra Kim", "confidence": 1.0},
-        "email": {"value": null, "confidence": 0.0},
-        "education": {"value": null, "confidence": 0.0}
-      }
-    },
-    {
-      "id": "company-hashicorp",
-      "type": "Company",
-      "confidence": 1.0,
-      "attributes": {
-        "name": {"value": "HashiCorp", "confidence": 1.0},
-        "description": {"value": null, "confidence": 0.0},
-        "headquarters_location": {"value": null, "confidence": 0.0},
-        "type": {"value": null, "confidence": 0.0},
-        "founding_year": {"value": null, "confidence": 0.0},
-        "annual_revenue": {"value": null, "confidence": 0.0}
-      }
-    },
-    {
-      "id": "product-vault",
-      "type": "Product",
-      "confidence": 1.0,
-      "attributes": {
-        "name": {"value": "Vault", "confidence": 1.0},
-        "category": {"value": null, "confidence": 0.0},
-        "version": {"value": null, "confidence": 0.0},
-        "vendor": {"value": "HashiCorp", "confidence": 1.0}
-      }
-    },
-    {
-      "id": "team-platform-team",
-      "type": "Team",
-      "confidence": 1.0,
-      "attributes": {
-        "name": {"value": "Platform team", "confidence": 1.0},
-        "description": {"value": null, "confidence": 0.0},
-        "headquarters_location": {"value": null, "confidence": 0.0},
-        "type": {"value": null, "confidence": 0.0},
-        "focus_area": {"value": null, "confidence": 0.0},
-        "member_count": {"value": null, "confidence": 0.0}
-      }
-    },
-    {
-      "id": "project-secrets-service",
+      "id": "project-platform-secrets-service",
       "type": "Project",
       "confidence": 1.0,
       "attributes": {
-        "name": {"value": "Secrets Service project", "confidence": 1.0},
-        "description": {"value": null, "confidence": 0.0},
-        "status": {"value": null, "confidence": 0.0},
+        "name": {"value": "Platform Secrets Service", "confidence": 1.0},
+        "status": {"value": "in progress", "confidence": 0.8},
+        "target_completion_date": {"value": "August 2026", "confidence": 1.0},
         "budget": {"value": null, "confidence": 0.0}
       }
     },
     {
-      "id": "contract-hashicorp-vault-license",
-      "type": "Contract",
+      "id": "technology-postgresql",
+      "type": "Technology",
       "confidence": 1.0,
       "attributes": {
-        "name": {"value": "Vault enterprise licence", "confidence": 1.0},
-        "type": {"value": "enterprise licence", "confidence": 1.0},
-        "signed_date": {"value": "Q1 2026", "confidence": 1.0},
-        "value": {"value": null, "confidence": 0.0}
+        "name": {"value": "PostgreSQL", "confidence": 1.0},
+        "type": {"value": "database", "confidence": 0.95},
+        "version": {"value": null, "confidence": 0.0}
       }
     },
     {
-      "id": "person-marcus-tan",
-      "type": "Person",
-      "confidence": 1.0,
-      "attributes": {
-        "name": {"value": "Marcus Tan", "confidence": 1.0},
-        "email": {"value": null, "confidence": 0.0},
-        "education": {"value": null, "confidence": 0.0}
-      }
-    },
-    {
-      "id": "company-aws",
-      "type": "Company",
-      "confidence": 1.0,
-      "attributes": {
-        "name": {"value": "Amazon Web Services", "confidence": 1.0},
-        "description": {"value": "cloud provider", "confidence": 1.0},
-        "headquarters_location": {"value": null, "confidence": 0.0},
-        "type": {"value": "cloud provider", "confidence": 1.0},
-        "founding_year": {"value": null, "confidence": 0.0},
-        "annual_revenue": {"value": null, "confidence": 0.0}
-      }
-    },
-    {
-      "id": "project-db-migration",
-      "type": "Project",
-      "confidence": 1.0,
-      "attributes": {
-        "name": {"value": "DB Migration project", "confidence": 1.0},
-        "description": {"value": "targets AWS Aurora", "confidence": 1.0},
-        "status": {"value": null, "confidence": 0.0},
-        "budget": {"value": null, "confidence": 0.0}
-      }
-    },
-    {
-      "id": "product-aws-aurora",
-      "type": "Product",
+      "id": "technology-aws-aurora",
+      "type": "Technology",
       "confidence": 1.0,
       "attributes": {
         "name": {"value": "AWS Aurora", "confidence": 1.0},
-        "category": {"value": null, "confidence": 0.0},
-        "version": {"value": null, "confidence": 0.0},
-        "vendor": {"value": "Amazon Web Services", "confidence": 1.0}
+        "type": {"value": "cloud database", "confidence": 0.95},
+        "version": {"value": null, "confidence": 0.0}
       }
     },
     {
-      "id": "person-lisa-huang",
-      "type": "Person",
+      "id": "technology-pinecone",
+      "type": "Technology",
       "confidence": 1.0,
       "attributes": {
-        "name": {"value": "Lisa Huang", "confidence": 1.0},
-        "email": {"value": null, "confidence": 0.0},
-        "education": {"value": null, "confidence": 0.0}
+        "name": {"value": "Pinecone", "confidence": 1.0},
+        "type": {"value": "vector database", "confidence": 1.0},
+        "version": {"value": null, "confidence": 0.0}
+      }
+    },
+    {
+      "id": "technology-hashicorp-vault",
+      "type": "Technology",
+      "confidence": 1.0,
+      "attributes": {
+        "name": {"value": "HashiCorp Vault", "confidence": 1.0},
+        "type": {"value": "secrets management", "confidence": 0.95},
+        "version": {"value": null, "confidence": 0.0}
       }
     }
   ],
   "edges": [
     {
       "id": "edge-001",
-      "type": "involves_organization",
-      "from": "partnership-acme-datasystems",
-      "to": "company-acme-corp",
+      "type": "owns",
+      "from": "team-infrastructure",
+      "to": "project-db-migration",
       "confidence": 1.0,
-      "attributes": {
-        "role": {"value": "partner", "confidence": 0.9}
-      }
+      "attributes": {}
     },
     {
       "id": "edge-002",
-      "type": "involves_organization",
-      "from": "partnership-acme-datasystems",
-      "to": "company-datasystems-inc",
-      "confidence": 1.0,
+      "type": "leads",
+      "from": "person-bob-martinez",
+      "to": "project-db-migration",
+      "confidence": 0.9,
       "attributes": {
-        "role": {"value": "partner", "confidence": 0.9}
+        "role": {"value": "initiator", "confidence": 0.85}
       }
     },
     {
       "id": "edge-003",
-      "type": "covers_project",
-      "from": "partnership-acme-datasystems",
-      "to": "project-rag-pipeline",
+      "type": "contributes_to",
+      "from": "person-alice-chen",
+      "to": "project-db-migration",
       "confidence": 1.0,
-      "attributes": {}
+      "attributes": {
+        "role": {"value": "core engineering contributor", "confidence": 1.0}
+      }
     },
     {
       "id": "edge-004",
-      "type": "covers_project",
-      "from": "partnership-acme-datasystems",
-      "to": "project-data-lake-migration",
-      "confidence": 0.9,
-      "attributes": {}
+      "type": "contributes_to",
+      "from": "person-carol-okafor",
+      "to": "project-db-migration",
+      "confidence": 1.0,
+      "attributes": {
+        "role": {"value": "core engineering contributor", "confidence": 1.0}
+      }
     },
     {
       "id": "edge-005",
-      "type": "works_at",
-      "from": "person-carol-okafor",
-      "to": "company-datasystems-inc",
+      "type": "depends_on",
+      "from": "project-db-migration",
+      "to": "project-platform-secrets-service",
       "confidence": 1.0,
-      "attributes": {
-        "role": {"value": "DevOps Engineer", "confidence": 1.0},
-        "start_date": {"value": "2019", "confidence": 1.0},
-        "end_date": {"value": "2022", "confidence": 1.0}
-      }
+      "attributes": {}
     },
     {
       "id": "edge-006",
-      "type": "works_at",
-      "from": "person-carol-okafor",
-      "to": "company-acme-corp",
+      "type": "uses_technology",
+      "from": "project-db-migration",
+      "to": "technology-postgresql",
       "confidence": 1.0,
-      "attributes": {
-        "role": {"value": null, "confidence": 0.0},
-        "start_date": {"value": "2022", "confidence": 0.8},
-        "end_date": {"value": null, "confidence": 0.0}
-      }
+      "attributes": {}
     },
     {
       "id": "edge-007",
-      "type": "reports_to",
-      "from": "person-carol-okafor",
-      "to": "person-priya-nair",
-      "confidence": 0.9,
+      "type": "uses_technology",
+      "from": "project-db-migration",
+      "to": "technology-aws-aurora",
+      "confidence": 1.0,
       "attributes": {}
     },
     {
       "id": "edge-008",
-      "type": "works_at",
-      "from": "person-priya-nair",
-      "to": "company-datasystems-inc",
+      "type": "leads",
+      "from": "person-yuna-park",
+      "to": "project-rag-pipeline",
       "confidence": 1.0,
       "attributes": {
-        "role": {"value": "VP of Engineering", "confidence": 1.0},
-        "start_date": {"value": null, "confidence": 0.0},
-        "end_date": {"value": null, "confidence": 0.0}
+        "role": {"value": "project lead", "confidence": 1.0}
       }
     },
     {
       "id": "edge-009",
-      "type": "works_at",
-      "from": "person-sandra-kim",
-      "to": "company-novatech-inc",
+      "type": "contributes_to",
+      "from": "person-alice-chen",
+      "to": "project-rag-pipeline",
       "confidence": 1.0,
       "attributes": {
-        "role": {"value": "VP Engineering", "confidence": 1.0},
-        "start_date": {"value": null, "confidence": 0.0},
-        "end_date": {"value": "2015", "confidence": 0.9}
+        "role": {"value": "backend API work", "confidence": 1.0}
       }
     },
     {
       "id": "edge-010",
-      "type": "works_at",
-      "from": "person-sandra-kim",
-      "to": "company-acme-corp",
+      "type": "uses_technology",
+      "from": "project-rag-pipeline",
+      "to": "technology-pinecone",
       "confidence": 1.0,
-      "attributes": {
-        "role": {"value": "CEO", "confidence": 1.0},
-        "start_date": {"value": "2015", "confidence": 1.0},
-        "end_date": {"value": null, "confidence": 0.0}
-      }
+      "attributes": {}
     },
     {
       "id": "edge-011",
-      "type": "provides",
-      "from": "company-hashicorp",
-      "to": "product-vault",
+      "type": "has_partnership",
+      "from": "organization-acme-corp",
+      "to": "organization-datasystems-inc",
       "confidence": 1.0,
-      "attributes": {}
+      "attributes": {
+        "type": {"value": "document indexing infrastructure provider", "confidence": 0.9},
+        "start_date": {"value": null, "confidence": 0.0}
+      }
     },
     {
       "id": "edge-012",
-      "type": "uses_technology",
-      "from": "team-platform-team",
-      "to": "product-vault",
-      "confidence": 0.9,
-      "attributes": {
-        "purpose": {"value": "Secrets Service project", "confidence": 0.9}
-      }
-    },
-    {
-      "id": "edge-013",
-      "type": "holds_contract",
-      "from": "company-acme-corp",
-      "to": "contract-hashicorp-vault-license",
+      "type": "owns",
+      "from": "team-platform",
+      "to": "project-platform-secrets-service",
       "confidence": 1.0,
       "attributes": {}
     },
     {
-      "id": "edge-014",
-      "type": "has_contact",
-      "from": "company-hashicorp",
-      "to": "person-marcus-tan",
+      "id": "edge-013",
+      "type": "leads",
+      "from": "person-james-whitfield",
+      "to": "project-platform-secrets-service",
       "confidence": 1.0,
       "attributes": {
-        "contact_type": {"value": "enterprise account manager", "confidence": 1.0}
+        "role": {"value": "project owner", "confidence": 1.0}
       }
+    },
+    {
+      "id": "edge-014",
+      "type": "uses_technology",
+      "from": "project-platform-secrets-service",
+      "to": "technology-hashicorp-vault",
+      "confidence": 1.0,
+      "attributes": {}
     },
     {
       "id": "edge-015",
-      "type": "works_at",
-      "from": "person-marcus-tan",
-      "to": "company-hashicorp",
+      "type": "member_of",
+      "from": "person-yuna-park",
+      "to": "team-ai-research",
       "confidence": 1.0,
-      "attributes": {
-        "role": {"value": "enterprise account manager", "confidence": 1.0},
-        "start_date": {"value": null, "confidence": 0.0},
-        "end_date": {"value": null, "confidence": 0.0}
-      }
+      "attributes": {}
     },
     {
       "id": "edge-016",
-      "type": "provides",
-      "from": "company-aws",
-      "to": "product-aws-aurora",
-      "confidence": 1.0,
+      "type": "manages",
+      "from": "person-james-whitfield",
+      "to": "team-platform",
+      "confidence": 0.85,
       "attributes": {}
     },
     {
       "id": "edge-017",
-      "type": "has_contact",
-      "from": "company-aws",
-      "to": "person-lisa-huang",
-      "confidence": 1.0,
+      "type": "works_at",
+      "from": "person-bob-martinez",
+      "to": "organization-acme-corp",
+      "confidence": 0.95,
       "attributes": {
-        "contact_type": {"value": "account manager", "confidence": 1.0}
+        "start_date": {"value": null, "confidence": 0.0},
+        "end_date": {"value": null, "confidence": 0.0},
+        "role": {"value": null, "confidence": 0.0}
       }
     },
     {
       "id": "edge-018",
       "type": "works_at",
-      "from": "person-lisa-huang",
-      "to": "company-aws",
-      "confidence": 1.0,
+      "from": "person-alice-chen",
+      "to": "organization-acme-corp",
+      "confidence": 0.95,
       "attributes": {
-        "role": {"value": "account manager", "confidence": 1.0},
         "start_date": {"value": null, "confidence": 0.0},
-        "end_date": {"value": null, "confidence": 0.0}
+        "end_date": {"value": null, "confidence": 0.0},
+        "role": {"value": "engineer", "confidence": 0.8}
+      }
+    },
+    {
+      "id": "edge-019",
+      "type": "works_at",
+      "from": "person-carol-okafor",
+      "to": "organization-acme-corp",
+      "confidence": 0.95,
+      "attributes": {
+        "start_date": {"value": null, "confidence": 0.0},
+        "end_date": {"value": null, "confidence": 0.0},
+        "role": {"value": "engineer", "confidence": 0.8}
+      }
+    },
+    {
+      "id": "edge-020",
+      "type": "works_at",
+      "from": "person-james-whitfield",
+      "to": "organization-acme-corp",
+      "confidence": 0.95,
+      "attributes": {
+        "start_date": {"value": null, "confidence": 0.0},
+        "end_date": {"value": null, "confidence": 0.0},
+        "role": {"value": "team lead", "confidence": 0.8}
+      }
+    },
+    {
+      "id": "edge-021",
+      "type": "works_at",
+      "from": "person-yuna-park",
+      "to": "organization-acme-corp",
+      "confidence": 0.95,
+      "attributes": {
+        "start_date": {"value": null, "confidence": 0.0},
+        "end_date": {"value": null, "confidence": 0.0},
+        "role": {"value": "researcher", "confidence": 0.8}
       }
     }
   ]

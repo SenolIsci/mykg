@@ -12,65 +12,62 @@
       "team-product-team",
       "team-platform-team",
       "team-ai-research-team",
-      "team-backend-engineering-guild",
       "organization-google",
       "organization-datasystems-inc",
       "organization-novatech-inc",
       "organization-deepmind"
     ]
   },
-  "partners.md": {
-    "1": [
-      "company-datasystems-inc",
-      "company-acme-corp",
-      "partnership-acme-corp-datasystems-inc-strategic-partnership",
-      "person-carol-okafor",
-      "person-dr-priya-nair",
-      "project-rag-pipeline",
-      "project-db-migration",
-      "company-novatech-inc",
-      "person-sandra-kim",
-      "company-hashicorp",
-      "product-vault",
-      "team-platform-team",
-      "project-platform-secrets-service",
-      "contract-vault-enterprise-licence",
-      "person-marcus-tan",
-      "company-amazon-web-services",
-      "project-db-migration",
-      "product-aws-aurora",
-      "person-lisa-huang"
-    ]
-  },
   "projects.md": {
     "1": [
       "organization-acme-corp",
-      "team-infrastructure-team",
-      "team-ai-research-team",
-      "team-platform-team",
+      "organization-datasystems-inc",
       "person-bob-martinez",
       "person-alice-chen",
       "person-carol-okafor",
       "person-james-whitfield",
       "person-dr-yuna-park",
-      "project-db-migration",
-      "project-rag-pipeline",
+      "team-infrastructure-team",
+      "team-platform-team",
+      "team-ai-research-team",
+      "project-db-migration-project",
+      "project-rag-pipeline-project",
       "project-platform-secrets-service",
       "technology-postgresql",
       "technology-aws-aurora",
       "technology-pinecone",
-      "technology-hashicorp-vault",
-      "company-datasystems-inc",
-      "partnership-datasystems-inc-rag-pipeline-partnership"
+      "technology-hashicorp-vault"
+    ]
+  },
+  "partners.md": {
+    "1": [
+      "organization-datasystems-inc",
+      "organization-acme-corp",
+      "person-carol-okafor",
+      "person-dr-priya-nair",
+      "project-rag-pipeline-project",
+      "project-db-migration-project",
+      "organization-novatech-inc",
+      "person-sandra-kim",
+      "organization-hashicorp",
+      "product-vault",
+      "team-platform-team",
+      "project-platform-secrets-service",
+      "agreement-vault-enterprise-licence",
+      "person-marcus-tan",
+      "organization-amazon-web-services",
+      "project-db-migration-project",
+      "technology-aws-aurora",
+      "person-lisa-huang"
     ]
   },
   "technologies.md": {
     "1": [
-      "company-acme-corp",
+      "organization-acme-corp",
       "technology-postgresql",
-      "project-db-migration",
       "technology-aws-aurora",
-      "project-rag-pipeline",
+      "project-db-migration-project",
+      "project-rag-pipeline-project",
       "technology-pinecone",
       "person-dr-yuna-park",
       "technology-weaviate",
@@ -88,15 +85,14 @@
       "technology-pytorch",
       "technology-hugging-face-transformers",
       "technology-aws-sagemaker",
-      "company-datasystems-inc",
+      "organization-datasystems-inc",
       "product-document-processing-pipeline",
-      "team-backend-engineering-guild",
       "person-alice-chen",
+      "team-backend-engineering-guild",
       "technology-fastapi",
       "technology-go",
       "technology-react",
-      "technology-typescript",
-      "organization-acme-corp"
+      "technology-typescript"
     ]
   }
 }

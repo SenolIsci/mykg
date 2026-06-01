@@ -10,7 +10,7 @@ type: Technology
 # HashiCorp Vault
 
 ## Attributes
-- **category**: Secrets Management (1.0)
+- **type**: secrets management (0.95)
 
 ## Relationships
 

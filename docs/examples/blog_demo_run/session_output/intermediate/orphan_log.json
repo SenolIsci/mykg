@@ -1,46 +1,79 @@
 [
   {
     "event": "orphan_edge_added",
-    "id": "edge-cfc8e2",
+    "id": "edge-bde869",
     "type": "uses_technology",
-    "from": "project-rag-pipeline",
-    "to": "technology-qdrant",
-    "confidence": 0.85,
-    "rationale": "Dr. Yuna Park evaluated Qdrant as one of three vector database options for the RAG Pipeline project before selecting Pinecone.",
-    "llm_confidence": 0.85,
-    "chunk_key": "technologies.md::1"
-  },
-  {
-    "event": "orphan_edge_added",
-    "id": "edge-10f2f3",
-    "type": "uses_technology",
-    "from": "project-rag-pipeline",
+    "from": "project-platform-secrets-service",
     "to": "technology-weaviate",
-    "confidence": 0.85,
-    "rationale": "Dr. Yuna Park evaluated Weaviate as one of three vector database options for the RAG Pipeline project before selecting Pinecone.",
-    "llm_confidence": 0.85,
+    "confidence": 0.0,
+    "rationale": "No relationship found between Platform Secrets Service and Weaviate in the source text.",
+    "llm_confidence": 0.0,
     "chunk_key": "technologies.md::1"
   },
   {
     "event": "orphan_edge_added",
-    "id": "edge-2a9123",
+    "id": "edge-31e6a2",
     "type": "uses_technology",
-    "from": "team-ai-research-team",
+    "from": "project-platform-secrets-service",
     "to": "technology-qdrant",
-    "confidence": 0.75,
-    "rationale": "The AI Research team led by Dr. Yuna Park evaluated Qdrant for the RAG Pipeline, indicating team-level technology assessment.",
-    "llm_confidence": 0.75,
+    "confidence": 0.0,
+    "rationale": "No relationship found between Platform Secrets Service and Qdrant in the source text.",
+    "llm_confidence": 0.0,
     "chunk_key": "technologies.md::1"
   },
   {
     "event": "orphan_edge_added",
-    "id": "edge-a9660b",
+    "id": "edge-522413",
     "type": "uses_technology",
-    "from": "team-ai-research-team",
-    "to": "technology-weaviate",
-    "confidence": 0.75,
-    "rationale": "The AI Research team led by Dr. Yuna Park evaluated Weaviate for the RAG Pipeline, indicating team-level technology assessment.",
-    "llm_confidence": 0.75,
+    "from": "project-platform-secrets-service",
+    "to": "technology-fastapi",
+    "confidence": 0.0,
+    "rationale": "No relationship found between Platform Secrets Service and FastAPI in the source text.",
+    "llm_confidence": 0.0,
+    "chunk_key": "technologies.md::1"
+  },
+  {
+    "event": "orphan_edge_added",
+    "id": "edge-b6c74c",
+    "type": "uses_technology",
+    "from": "project-platform-secrets-service",
+    "to": "technology-github-actions",
+    "confidence": 0.0,
+    "rationale": "No relationship found between Platform Secrets Service and GitHub Actions in the source text.",
+    "llm_confidence": 0.0,
+    "chunk_key": "technologies.md::1"
+  },
+  {
+    "event": "orphan_edge_added",
+    "id": "edge-62bba2",
+    "type": "uses_technology",
+    "from": "project-platform-secrets-service",
+    "to": "technology-go",
+    "confidence": 0.0,
+    "rationale": "No relationship found between Platform Secrets Service and Go in the source text.",
+    "llm_confidence": 0.0,
+    "chunk_key": "technologies.md::1"
+  },
+  {
+    "event": "orphan_edge_added",
+    "id": "edge-60a3ee",
+    "type": "uses_technology",
+    "from": "project-platform-secrets-service",
+    "to": "technology-react",
+    "confidence": 0.0,
+    "rationale": "No relationship found between Platform Secrets Service and React in the source text.",
+    "llm_confidence": 0.0,
+    "chunk_key": "technologies.md::1"
+  },
+  {
+    "event": "orphan_edge_added",
+    "id": "edge-33b559",
+    "type": "uses_technology",
+    "from": "project-platform-secrets-service",
+    "to": "technology-typescript",
+    "confidence": 0.0,
+    "rationale": "No relationship found between Platform Secrets Service and TypeScript in the source text.",
+    "llm_confidence": 0.0,
     "chunk_key": "technologies.md::1"
   },
   {
@@ -50,7 +83,7 @@
     "from": "employee-alice-chen",
     "to": "organization-acme-corp",
     "confidence": 1.0,
-    "rationale": "Alice Chen is explicitly stated to be a Senior Software Engineer at Acme Corp who joined in March 2021.",
+    "rationale": "The text explicitly states 'Alice Chen is a Senior Software Engineer at Acme Corp.'",
     "llm_confidence": 1.0,
     "chunk_key": "team.md::1"
   },
@@ -61,7 +94,7 @@
     "from": "employee-bob-martinez",
     "to": "organization-acme-corp",
     "confidence": 1.0,
-    "rationale": "Bob Martinez is the Director of Engineering at Acme Corp and has been with the company since 2018.",
+    "rationale": "The text states 'Bob Martinez is the Director of Engineering at Acme Corp.'",
     "llm_confidence": 1.0,
     "chunk_key": "team.md::1"
   },
@@ -72,7 +105,7 @@
     "from": "employee-bob-martinez",
     "to": "team-infrastructure-team",
     "confidence": 1.0,
-    "rationale": "The text states that Bob manages both the infrastructure team and the product team.",
+    "rationale": "The text states 'Bob manages both the infrastructure team and the product team.'",
     "llm_confidence": 1.0,
     "chunk_key": "team.md::1"
   },
@@ -83,7 +116,7 @@
     "from": "employee-bob-martinez",
     "to": "team-product-team",
     "confidence": 1.0,
-    "rationale": "The text explicitly states that Bob manages both the infrastructure team and the product team.",
+    "rationale": "The text states 'Bob manages both the infrastructure team and the product team.'",
     "llm_confidence": 1.0,
     "chunk_key": "team.md::1"
   },
@@ -94,7 +127,7 @@
     "from": "employee-bob-martinez",
     "to": "employee-sandra-kim",
     "confidence": 1.0,
-    "rationale": "Bob reports directly to the CEO, Sandra Kim, as stated in the text.",
+    "rationale": "The text states 'He reports directly to the CEO, Sandra Kim.'",
     "llm_confidence": 1.0,
     "chunk_key": "team.md::1"
   },
@@ -105,7 +138,7 @@
     "from": "employee-carol-okafor",
     "to": "organization-acme-corp",
     "confidence": 1.0,
-    "rationale": "Carol Okafor joined Acme Corp in January 2023 as a Site Reliability Engineer.",
+    "rationale": "The text states 'Carol Okafor joined Acme Corp in January 2023 as a Site Reliability Engineer.'",
     "llm_confidence": 1.0,
     "chunk_key": "team.md::1"
   },
@@ -116,18 +149,29 @@
     "from": "employee-carol-okafor",
     "to": "team-infrastructure-team",
     "confidence": 1.0,
-    "rationale": "Carol is explicitly stated to be a member of the infrastructure team led by Bob.",
+    "rationale": "The text states 'She is a member of the infrastructure team led by Bob.'",
     "llm_confidence": 1.0,
     "chunk_key": "team.md::1"
   },
   {
     "event": "orphan_edge_added",
-    "id": "edge-49e18d",
-    "type": "leads",
+    "id": "edge-504adb",
+    "type": "works_at",
     "from": "employee-sandra-kim",
     "to": "organization-acme-corp",
     "confidence": 1.0,
-    "rationale": "Sandra Kim is the CEO of Acme Corp and co-founded the company in 2015.",
+    "rationale": "The text states 'Sandra Kim is the CEO of Acme Corp.'",
+    "llm_confidence": 1.0,
+    "chunk_key": "team.md::1"
+  },
+  {
+    "event": "orphan_edge_added",
+    "id": "edge-f6784c",
+    "type": "co_founded",
+    "from": "employee-sandra-kim",
+    "to": "organization-acme-corp",
+    "confidence": 1.0,
+    "rationale": "The text states 'She co-founded the company in 2015 with James Whitfield.'",
     "llm_confidence": 1.0,
     "chunk_key": "team.md::1"
   },
@@ -138,7 +182,18 @@
     "from": "employee-james-whitfield",
     "to": "organization-acme-corp",
     "confidence": 1.0,
-    "rationale": "James Whitfield is the CTO of Acme Corp and co-founded the company with Sandra Kim in 2015.",
+    "rationale": "The text states 'James Whitfield is the CTO of Acme Corp.'",
+    "llm_confidence": 1.0,
+    "chunk_key": "team.md::1"
+  },
+  {
+    "event": "orphan_edge_added",
+    "id": "edge-2f8749",
+    "type": "co_founded",
+    "from": "employee-james-whitfield",
+    "to": "organization-acme-corp",
+    "confidence": 1.0,
+    "rationale": "The text states Sandra 'co-founded the company in 2015 with James Whitfield.'",
     "llm_confidence": 1.0,
     "chunk_key": "team.md::1"
   },
@@ -148,9 +203,9 @@
     "type": "manages",
     "from": "employee-james-whitfield",
     "to": "team-platform-team",
-    "confidence": 1.0,
-    "rationale": "James oversees the Platform team and the AI Research team as CTO.",
-    "llm_confidence": 1.0,
+    "confidence": 0.9,
+    "rationale": "The text states 'James oversees the Platform team and the AI Research team,' where oversees indicates management responsibility.",
+    "llm_confidence": 0.9,
     "chunk_key": "team.md::1"
   },
   {
@@ -159,9 +214,9 @@
     "type": "manages",
     "from": "employee-james-whitfield",
     "to": "team-ai-research-team",
-    "confidence": 1.0,
-    "rationale": "James oversees the Platform team and the AI Research team as stated in the text.",
-    "llm_confidence": 1.0,
+    "confidence": 0.9,
+    "rationale": "The text states 'James oversees the Platform team and the AI Research team,' where oversees indicates management responsibility.",
+    "llm_confidence": 0.9,
     "chunk_key": "team.md::1"
   },
   {
@@ -171,7 +226,7 @@
     "from": "employee-dr-yuna-park",
     "to": "organization-acme-corp",
     "confidence": 1.0,
-    "rationale": "Dr. Yuna Park is a Principal Researcher who leads the AI Research team at Acme Corp.",
+    "rationale": "The text states 'The AI Research team is led by Dr. Yuna Park, a Principal Researcher who joined from DeepMind,' implying she now works at Acme Corp.",
     "llm_confidence": 1.0,
     "chunk_key": "team.md::1"
   },
@@ -182,32 +237,8 @@
     "from": "employee-dr-yuna-park",
     "to": "team-ai-research-team",
     "confidence": 1.0,
-    "rationale": "The AI Research team is led by Dr. Yuna Park as explicitly stated in the text.",
+    "rationale": "The text states 'The AI Research team is led by Dr. Yuna Park,' indicating she manages this team.",
     "llm_confidence": 1.0,
     "chunk_key": "team.md::1"
-  },
-  {
-    "event": "orphan_edge_rejected",
-    "orphan_id": "organization-datasystems-inc",
-    "candidate_id": null,
-    "reason": "llm_rejected"
-  },
-  {
-    "event": "orphan_edge_rejected",
-    "orphan_id": "organization-deepmind",
-    "candidate_id": null,
-    "reason": "llm_rejected"
-  },
-  {
-    "event": "orphan_edge_rejected",
-    "orphan_id": "organization-google",
-    "candidate_id": null,
-    "reason": "llm_rejected"
-  },
-  {
-    "event": "orphan_edge_rejected",
-    "orphan_id": "organization-novatech-inc",
-    "candidate_id": null,
-    "reason": "llm_rejected"
   }
 ]

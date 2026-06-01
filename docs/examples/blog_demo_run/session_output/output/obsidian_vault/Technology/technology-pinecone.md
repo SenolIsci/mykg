@@ -10,12 +10,12 @@ type: Technology
 # Pinecone
 
 ## Attributes
-- **category**: Vector Database (1.0)
+- **type**: vector database (1.0)
 
 ## Relationships
 
 ### Incoming
-- [[RAG Pipeline]] — uses_technology (1.0)
+- [[RAG Pipeline Project]] — uses_technology (1.0)
 
 ## Source Files
 - projects.md

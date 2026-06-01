@@ -9,14 +9,12 @@ type: Technology
 # Python
 
 ## Attributes
-- **category**: Programming Language (1.0)
+- **type**: Programming Language (0.95)
 
 ## Relationships
 
 ### Incoming
-- [[AI Research Team]] — uses_technology (1.0)
-- [[RAG Pipeline]] — uses_technology (0.95)
-- [[Backend Engineering Guild]] — uses_technology (1.0)
+- [[RAG Pipeline Project]] — uses_technology (0.9)
 
 ## Source Files
 - technologies.md

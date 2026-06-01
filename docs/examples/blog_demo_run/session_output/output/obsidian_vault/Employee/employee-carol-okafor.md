@@ -9,8 +9,8 @@ type: Employee
 # Carol Okafor
 
 ## Attributes
-- **title**: Site Reliability Engineer (1.0)
 - **join_date**: January 2023 (1.0)
+- **title**: Site Reliability Engineer (1.0)
 
 ## Relationships
 

@@ -2,8 +2,8 @@
 confidence: 1.0
 id: project-platform-secrets-service
 sources:
-- partners.md
 - projects.md
+- partners.md
 - technologies.md
 type: Project
 ---
@@ -11,21 +11,29 @@ type: Project
 # Platform Secrets Service
 
 ## Attributes
-- **description**: Centralised secrets management service to replace ad-hoc use of environment variables; Adopting HashiCorp Vault for secrets management (1.0)
 - **status**: in progress (0.8)
+- **target_completion_date**: August 2026 (1.0)
 
 ## Relationships
 
 ### Outgoing
 - [[HashiCorp Vault]] — uses_technology (1.0)
+- [[Vault]] — uses_technology (0.9)
+- [[Kubernetes]] — uses_technology (0.7)
+- [[Weaviate]] — uses_technology (0.0)
+- [[Qdrant]] — uses_technology (0.0)
+- [[FastAPI]] — uses_technology (0.0)
+- [[GitHub Actions]] — uses_technology (0.0)
+- [[Go]] — uses_technology (0.0)
+- [[React]] — uses_technology (0.0)
+- [[TypeScript]] — uses_technology (0.0)
 
 ### Incoming
-- [[DB Migration]] — depends_on (1.0)
-- [[James Whitfield]] — contributes_to (1.0)
-- [[Platform Team]] — owns (1.0)
-- [[Acme Corp]] — owns (0.95)
+- [[DB Migration Project]] — depends_on (1.0)
+- [[Platform Team]] — owns (0.95)
+- [[James Whitfield]] — leads (1.0)
 
 ## Source Files
-- partners.md
 - projects.md
+- partners.md
 - technologies.md

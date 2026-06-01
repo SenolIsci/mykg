@@ -3,23 +3,22 @@
   "data": {
     "1": [
       "organization-acme-corp",
-      "team-infrastructure-team",
-      "team-ai-research-team",
-      "team-platform-team",
+      "organization-datasystems-inc",
       "person-bob-martinez",
       "person-alice-chen",
       "person-carol-okafor",
       "person-james-whitfield",
       "person-dr-yuna-park",
-      "project-db-migration",
-      "project-rag-pipeline",
+      "team-infrastructure-team",
+      "team-platform-team",
+      "team-ai-research-team",
+      "project-db-migration-project",
+      "project-rag-pipeline-project",
       "project-platform-secrets-service",
       "technology-postgresql",
       "technology-aws-aurora",
       "technology-pinecone",
-      "technology-hashicorp-vault",
-      "company-datasystems-inc",
-      "partnership-datasystems-inc-rag-pipeline-partnership"
+      "technology-hashicorp-vault"
     ]
   }
 }

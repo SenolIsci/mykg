@@ -9,8 +9,8 @@ type: Employee
 # Bob Martinez
 
 ## Attributes
-- **title**: Director of Engineering (1.0)
 - **join_date**: 2018 (1.0)
+- **title**: Director of Engineering (1.0)
 
 ## Relationships
 

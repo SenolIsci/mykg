@@ -10,12 +10,12 @@ type: Employee
 
 ## Attributes
 - **title**: CEO (1.0)
-- **join_date**: 2015 (0.9)
 
 ## Relationships
 
 ### Outgoing
-- [[Acme Corp]] — leads (1.0)
+- [[Acme Corp]] — works_at (1.0)
+- [[Acme Corp]] — co_founded (1.0)
 
 ### Incoming
 - [[Bob Martinez]] — reports_to (1.0)

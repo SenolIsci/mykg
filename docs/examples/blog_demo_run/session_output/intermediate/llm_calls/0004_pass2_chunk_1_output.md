@@ -9,9 +9,9 @@
       "confidence": 1.0,
       "attributes": {
         "name": {"value": "Acme Corp", "confidence": 1.0},
-        "description": {"value": "A company with engineering, leadership, and research teams", "confidence": 0.85},
         "headquarters_location": {"value": null, "confidence": 0.0},
-        "type": {"value": "Company", "confidence": 0.9}
+        "industry": {"value": null, "confidence": 0.0},
+        "founding_year": {"value": "2015", "confidence": 1.0}
       }
     },
     {
@@ -22,8 +22,8 @@
         "name": {"value": "Alice Chen", "confidence": 1.0},
         "email": {"value": "alice.chen@acme.com", "confidence": 1.0},
         "education": {"value": "BSc in Computer Science from MIT", "confidence": 1.0},
-        "title": {"value": "Senior Software Engineer", "confidence": 1.0},
-        "join_date": {"value": "March 2021", "confidence": 1.0}
+        "join_date": {"value": "March 2021", "confidence": 1.0},
+        "title": {"value": "Senior Software Engineer", "confidence": 1.0}
       }
     },
     {
@@ -34,8 +34,8 @@
         "name": {"value": "Bob Martinez", "confidence": 1.0},
         "email": {"value": null, "confidence": 0.0},
         "education": {"value": null, "confidence": 0.0},
-        "title": {"value": "Director of Engineering", "confidence": 1.0},
-        "join_date": {"value": "2018", "confidence": 1.0}
+        "join_date": {"value": "2018", "confidence": 1.0},
+        "title": {"value": "Director of Engineering", "confidence": 1.0}
       }
     },
     {
@@ -46,8 +46,8 @@
         "name": {"value": "Carol Okafor", "confidence": 1.0},
         "email": {"value": null, "confidence": 0.0},
         "education": {"value": null, "confidence": 0.0},
-        "title": {"value": "Site Reliability Engineer", "confidence": 1.0},
-        "join_date": {"value": "January 2023", "confidence": 1.0}
+        "join_date": {"value": "January 2023", "confidence": 1.0},
+        "title": {"value": "Site Reliability Engineer", "confidence": 1.0}
       }
     },
     {
@@ -58,8 +58,8 @@
         "name": {"value": "Sandra Kim", "confidence": 1.0},
         "email": {"value": null, "confidence": 0.0},
         "education": {"value": null, "confidence": 0.0},
-        "title": {"value": "CEO", "confidence": 1.0},
-        "join_date": {"value": "2015", "confidence": 0.9}
+        "join_date": {"value": null, "confidence": 0.0},
+        "title": {"value": "CEO", "confidence": 1.0}
       }
     },
     {
@@ -70,8 +70,8 @@
         "name": {"value": "James Whitfield", "confidence": 1.0},
         "email": {"value": null, "confidence": 0.0},
         "education": {"value": "PhD in Computer Science from Stanford", "confidence": 1.0},
-        "title": {"value": "CTO", "confidence": 1.0},
-        "join_date": {"value": "2015", "confidence": 0.9}
+        "join_date": {"value": null, "confidence": 0.0},
+        "title": {"value": "CTO", "confidence": 1.0}
       }
     },
     {
@@ -82,8 +82,8 @@
         "name": {"value": "Dr. Yuna Park", "confidence": 1.0},
         "email": {"value": null, "confidence": 0.0},
         "education": {"value": null, "confidence": 0.0},
-        "title": {"value": "Principal Researcher", "confidence": 1.0},
-        "join_date": {"value": null, "confidence": 0.0}
+        "join_date": {"value": null, "confidence": 0.0},
+        "title": {"value": "Principal Researcher", "confidence": 1.0}
       }
     },
     {
@@ -92,11 +92,8 @@
       "confidence": 1.0,
       "attributes": {
         "name": {"value": "infrastructure team", "confidence": 1.0},
-        "description": {"value": "Responsible for cloud operations, CI/CD pipelines, and on-call rotations", "confidence": 1.0},
-        "headquarters_location": {"value": null, "confidence": 0.0},
-        "type": {"value": "Engineering Team", "confidence": 0.85},
-        "focus_area": {"value": "cloud operations, CI/CD pipelines, and on-call rotations", "confidence": 1.0},
-        "member_count": {"value": 5, "confidence": 1.0}
+        "description": {"value": "responsible for cloud operations, CI/CD pipelines, and on-call rotations", "confidence": 1.0},
+        "member_count": {"value": "5", "confidence": 1.0}
       }
     },
     {
@@ -104,11 +101,8 @@
       "type": "Team",
       "confidence": 0.9,
       "attributes": {
-        "name": {"value": "product team", "confidence": 0.9},
-        "description": {"value": "Product development team managed by Bob Martinez", "confidence": 0.8},
-        "headquarters_location": {"value": null, "confidence": 0.0},
-        "type": {"value": "Product Team", "confidence": 0.85},
-        "focus_area": {"value": null, "confidence": 0.0},
+        "name": {"value": "product team", "confidence": 1.0},
+        "description": {"value": null, "confidence": 0.0},
         "member_count": {"value": null, "confidence": 0.0}
       }
     },
@@ -118,10 +112,7 @@
       "confidence": 1.0,
       "attributes": {
         "name": {"value": "Platform team", "confidence": 1.0},
-        "description": {"value": "Platform team overseen by James Whitfield", "confidence": 0.85},
-        "headquarters_location": {"value": null, "confidence": 0.0},
-        "type": {"value": "Engineering Team", "confidence": 0.85},
-        "focus_area": {"value": "Platform", "confidence": 0.8},
+        "description": {"value": null, "confidence": 0.0},
         "member_count": {"value": null, "confidence": 0.0}
       }
     },
@@ -131,68 +122,52 @@
       "confidence": 1.0,
       "attributes": {
         "name": {"value": "AI Research team", "confidence": 1.0},
-        "description": {"value": "Research team focused on retrieval-augmented generation (RAG) and knowledge graph applications", "confidence": 1.0},
-        "headquarters_location": {"value": null, "confidence": 0.0},
-        "type": {"value": "Research Team", "confidence": 0.95},
-        "focus_area": {"value": "retrieval-augmented generation (RAG) and knowledge graph applications", "confidence": 1.0},
-        "member_count": {"value": null, "confidence": 0.0}
-      }
-    },
-    {
-      "id": "team-backend-guild",
-      "type": "Team",
-      "confidence": 0.85,
-      "attributes": {
-        "name": {"value": "backend guild", "confidence": 0.85},
-        "description": {"value": "Backend engineering guild led by Alice Chen", "confidence": 0.8},
-        "headquarters_location": {"value": null, "confidence": 0.0},
-        "type": {"value": "Guild", "confidence": 0.75},
-        "focus_area": {"value": "Backend engineering", "confidence": 0.8},
+        "description": {"value": "current focus is on retrieval-augmented generation (RAG) and knowledge graph applications", "confidence": 1.0},
         "member_count": {"value": null, "confidence": 0.0}
       }
     },
     {
       "id": "organization-google",
       "type": "Organization",
-      "confidence": 0.9,
+      "confidence": 1.0,
       "attributes": {
-        "name": {"value": "Google", "confidence": 0.9},
-        "description": {"value": "Former employer of Bob Martinez", "confidence": 0.7},
+        "name": {"value": "Google", "confidence": 1.0},
         "headquarters_location": {"value": null, "confidence": 0.0},
-        "type": {"value": "Technology Company", "confidence": 0.8}
+        "industry": {"value": null, "confidence": 0.0},
+        "founding_year": {"value": null, "confidence": 0.0}
       }
     },
     {
       "id": "organization-datasystems-inc",
       "type": "Organization",
-      "confidence": 0.9,
+      "confidence": 1.0,
       "attributes": {
-        "name": {"value": "DataSystems Inc", "confidence": 0.9},
-        "description": {"value": "Former employer of Carol Okafor", "confidence": 0.7},
+        "name": {"value": "DataSystems Inc", "confidence": 1.0},
         "headquarters_location": {"value": null, "confidence": 0.0},
-        "type": {"value": "Technology Company", "confidence": 0.75}
+        "industry": {"value": null, "confidence": 0.0},
+        "founding_year": {"value": null, "confidence": 0.0}
       }
     },
     {
       "id": "organization-novatech-inc",
       "type": "Organization",
-      "confidence": 0.9,
+      "confidence": 1.0,
       "attributes": {
-        "name": {"value": "NovaTech Inc", "confidence": 0.9},
-        "description": {"value": "Former employer of Sandra Kim", "confidence": 0.7},
+        "name": {"value": "NovaTech Inc", "confidence": 1.0},
         "headquarters_location": {"value": null, "confidence": 0.0},
-        "type": {"value": "Technology Company", "confidence": 0.75}
+        "industry": {"value": null, "confidence": 0.0},
+        "founding_year": {"value": null, "confidence": 0.0}
       }
     },
     {
       "id": "organization-deepmind",
       "type": "Organization",
-      "confidence": 0.9,
+      "confidence": 1.0,
       "attributes": {
-        "name": {"value": "DeepMind", "confidence": 0.9},
-        "description": {"value": "Former employer of Dr. Yuna Park", "confidence": 0.7},
+        "name": {"value": "DeepMind", "confidence": 1.0},
         "headquarters_location": {"value": null, "confidence": 0.0},
-        "type": {"value": "AI Research Organization", "confidence": 0.85}
+        "industry": {"value": null, "confidence": 0.0},
+        "founding_year": {"value": null, "confidence": 0.0}
       }
     }
   ],
@@ -204,41 +179,73 @@
       "to": "organization-acme-corp",
       "confidence": 1.0,
       "attributes": {
-        "role": {"value": "Senior Software Engineer", "confidence": 1.0},
         "start_date": {"value": "March 2021", "confidence": 1.0},
-        "end_date": {"value": null, "confidence": 0.0}
+        "end_date": {"value": null, "confidence": 0.0},
+        "role": {"value": "Senior Software Engineer", "confidence": 1.0}
       }
     },
     {
       "id": "edge-002",
-      "type": "member_of",
-      "from": "person-alice-chen",
-      "to": "team-backend-guild",
-      "confidence": 0.9,
-      "attributes": {}
-    },
-    {
-      "id": "edge-003",
-      "type": "leads",
-      "from": "person-alice-chen",
-      "to": "team-backend-guild",
-      "confidence": 0.95,
-      "attributes": {}
-    },
-    {
-      "id": "edge-004",
       "type": "works_at",
       "from": "person-bob-martinez",
       "to": "organization-acme-corp",
       "confidence": 1.0,
       "attributes": {
-        "role": {"value": "Director of Engineering", "confidence": 1.0},
         "start_date": {"value": "2018", "confidence": 1.0},
-        "end_date": {"value": null, "confidence": 0.0}
+        "end_date": {"value": null, "confidence": 0.0},
+        "role": {"value": "Director of Engineering", "confidence": 1.0}
+      }
+    },
+    {
+      "id": "edge-003",
+      "type": "works_at",
+      "from": "person-carol-okafor",
+      "to": "organization-acme-corp",
+      "confidence": 1.0,
+      "attributes": {
+        "start_date": {"value": "January 2023", "confidence": 1.0},
+        "end_date": {"value": null, "confidence": 0.0},
+        "role": {"value": "Site Reliability Engineer", "confidence": 1.0}
+      }
+    },
+    {
+      "id": "edge-004",
+      "type": "works_at",
+      "from": "person-sandra-kim",
+      "to": "organization-acme-corp",
+      "confidence": 1.0,
+      "attributes": {
+        "start_date": {"value": null, "confidence": 0.0},
+        "end_date": {"value": null, "confidence": 0.0},
+        "role": {"value": "CEO", "confidence": 1.0}
       }
     },
     {
       "id": "edge-005",
+      "type": "works_at",
+      "from": "person-james-whitfield",
+      "to": "organization-acme-corp",
+      "confidence": 1.0,
+      "attributes": {
+        "start_date": {"value": null, "confidence": 0.0},
+        "end_date": {"value": null, "confidence": 0.0},
+        "role": {"value": "CTO", "confidence": 1.0}
+      }
+    },
+    {
+      "id": "edge-006",
+      "type": "works_at",
+      "from": "person-yuna-park",
+      "to": "organization-acme-corp",
+      "confidence": 1.0,
+      "attributes": {
+        "start_date": {"value": null, "confidence": 0.0},
+        "end_date": {"value": null, "confidence": 0.0},
+        "role": {"value": "Principal Researcher", "confidence": 1.0}
+      }
+    },
+    {
+      "id": "edge-007",
       "type": "manages",
       "from": "person-bob-martinez",
       "to": "team-infrastructure-team",
@@ -246,32 +253,12 @@
       "attributes": {}
     },
     {
-      "id": "edge-006",
+      "id": "edge-008",
       "type": "manages",
       "from": "person-bob-martinez",
       "to": "team-product-team",
       "confidence": 1.0,
       "attributes": {}
-    },
-    {
-      "id": "edge-007",
-      "type": "reports_to",
-      "from": "person-bob-martinez",
-      "to": "person-sandra-kim",
-      "confidence": 1.0,
-      "attributes": {}
-    },
-    {
-      "id": "edge-008",
-      "type": "works_at",
-      "from": "person-carol-okafor",
-      "to": "organization-acme-corp",
-      "confidence": 1.0,
-      "attributes": {
-        "role": {"value": "Site Reliability Engineer", "confidence": 1.0},
-        "start_date": {"value": "January 2023", "confidence": 1.0},
-        "end_date": {"value": null, "confidence": 0.0}
-      }
     },
     {
       "id": "edge-009",
@@ -283,79 +270,79 @@
     },
     {
       "id": "edge-010",
-      "type": "works_at",
-      "from": "person-sandra-kim",
-      "to": "organization-acme-corp",
-      "confidence": 1.0,
-      "attributes": {
-        "role": {"value": "CEO", "confidence": 1.0},
-        "start_date": {"value": "2015", "confidence": 0.9},
-        "end_date": {"value": null, "confidence": 0.0}
-      }
-    },
-    {
-      "id": "edge-011",
-      "type": "leads",
-      "from": "person-sandra-kim",
-      "to": "organization-acme-corp",
+      "type": "reports_to",
+      "from": "person-bob-martinez",
+      "to": "person-sandra-kim",
       "confidence": 1.0,
       "attributes": {}
     },
     {
+      "id": "edge-011",
+      "type": "co_founded",
+      "from": "person-sandra-kim",
+      "to": "organization-acme-corp",
+      "confidence": 1.0,
+      "attributes": {
+        "year": {"value": "2015", "confidence": 1.0}
+      }
+    },
+    {
       "id": "edge-012",
-      "type": "works_at",
+      "type": "co_founded",
       "from": "person-james-whitfield",
       "to": "organization-acme-corp",
       "confidence": 1.0,
       "attributes": {
-        "role": {"value": "CTO", "confidence": 1.0},
-        "start_date": {"value": "2015", "confidence": 0.9},
-        "end_date": {"value": null, "confidence": 0.0}
+        "year": {"value": "2015", "confidence": 1.0}
       }
     },
     {
       "id": "edge-013",
-      "type": "manages",
-      "from": "person-james-whitfield",
-      "to": "team-platform-team",
-      "confidence": 0.95,
-      "attributes": {}
+      "type": "works_at",
+      "from": "person-bob-martinez",
+      "to": "organization-google",
+      "confidence": 0.9,
+      "attributes": {
+        "start_date": {"value": null, "confidence": 0.0},
+        "end_date": {"value": "2018", "confidence": 0.8},
+        "role": {"value": "Staff Engineer", "confidence": 1.0}
+      }
     },
     {
       "id": "edge-014",
-      "type": "manages",
-      "from": "person-james-whitfield",
-      "to": "team-ai-research-team",
-      "confidence": 0.95,
-      "attributes": {}
+      "type": "works_at",
+      "from": "person-carol-okafor",
+      "to": "organization-datasystems-inc",
+      "confidence": 0.9,
+      "attributes": {
+        "start_date": {"value": null, "confidence": 0.0},
+        "end_date": {"value": "January 2023", "confidence": 0.8},
+        "role": {"value": "DevOps Engineer", "confidence": 1.0}
+      }
     },
     {
       "id": "edge-015",
       "type": "works_at",
-      "from": "person-yuna-park",
-      "to": "organization-acme-corp",
-      "confidence": 1.0,
+      "from": "person-sandra-kim",
+      "to": "organization-novatech-inc",
+      "confidence": 0.9,
       "attributes": {
-        "role": {"value": "Principal Researcher", "confidence": 1.0},
         "start_date": {"value": null, "confidence": 0.0},
-        "end_date": {"value": null, "confidence": 0.0}
+        "end_date": {"value": null, "confidence": 0.0},
+        "role": {"value": "VP Engineering", "confidence": 1.0}
       }
     },
     {
       "id": "edge-016",
-      "type": "leads",
+      "type": "works_at",
       "from": "person-yuna-park",
-      "to": "team-ai-research-team",
-      "confidence": 1.0,
-      "attributes": {}
-    },
-    {
-      "id": "edge-017",
-      "type": "member_of",
-      "from": "person-yuna-park",
-      "to": "team-ai-research-team",
-      "confidence": 1.0,
-      "attributes": {}
+      "to": "organization-deepmind",
+      "confidence": 0.9,
+      "attributes": {
+        "start_date": {"value": null, "confidence": 0.0},
+        "end_date": {"value": null, "confidence": 0.0},
+        "role": {"value": null, "confidence": 0.0}
+      }
     }
   ]
 }

@@ -9,13 +9,14 @@ type: Technology
 # Kubernetes
 
 ## Attributes
-- **category**: Container Orchestration (1.0)
-- **version**: EKS (0.9)
+- **type**: Container Orchestration (0.95)
+- **version**: EKS (0.8)
 
 ## Relationships
 
 ### Incoming
-- [[Infrastructure Team]] — uses_technology (1.0)
+- [[Platform Secrets Service]] — uses_technology (0.7)
+- [[DB Migration Project]] — uses_technology (0.65)
 
 ## Source Files
 - technologies.md

@@ -9,12 +9,12 @@ type: Technology
 # GitHub Actions
 
 ## Attributes
-- **category**: CI/CD (1.0)
+- **type**: CI/CD (0.95)
 
 ## Relationships
 
 ### Incoming
-- [[Infrastructure Team]] — uses_technology (1.0)
+- [[Platform Secrets Service]] — uses_technology (0.0)
 
 ## Source Files
 - technologies.md

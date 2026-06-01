@@ -6,16 +6,16 @@
       "chunk_idx": 1,
       "is_blank_response": false,
       "orphan_ids": [
+        "technology-fastapi",
+        "technology-github-actions",
+        "technology-go",
         "technology-qdrant",
+        "technology-react",
+        "technology-typescript",
         "technology-weaviate"
       ],
       "connected_ids": [
-        "team-backend-engineering-guild",
-        "project-platform-secrets-service",
-        "team-infrastructure-team",
-        "team-ai-research-team",
-        "project-rag-pipeline",
-        "project-db-migration"
+        "project-platform-secrets-service"
       ]
     },
     {
@@ -29,18 +29,18 @@
         "employee-carol-okafor",
         "employee-dr-yuna-park",
         "employee-james-whitfield",
-        "employee-sandra-kim",
-        "organization-datasystems-inc",
-        "organization-deepmind",
-        "organization-google",
-        "organization-novatech-inc"
+        "employee-sandra-kim"
       ],
       "connected_ids": [
+        "organization-novatech-inc",
         "team-product-team",
         "team-infrastructure-team",
-        "team-ai-research-team",
+        "organization-datasystems-inc",
         "organization-acme-corp",
-        "team-platform-team"
+        "team-platform-team",
+        "organization-google",
+        "organization-deepmind",
+        "team-ai-research-team"
       ]
     }
   ],

@@ -6,12 +6,12 @@
     {
       "type": "Organization",
       "parent": null,
-      "attributes": ["name", "description", "headquarters_location", "type"]
+      "attributes": ["name", "headquarters_location", "industry", "founding_year"]
     },
     {
       "type": "Company",
       "parent": "Organization",
-      "attributes": ["founding_year", "annual_revenue"]
+      "attributes": ["annual_spend"]
     },
     {
       "type": "Person",
@@ -21,37 +21,37 @@
     {
       "type": "Employee",
       "parent": "Person",
-      "attributes": ["title", "join_date"]
+      "attributes": ["join_date", "title"]
     },
     {
       "type": "Team",
-      "parent": "Organization",
-      "attributes": ["name", "focus_area", "member_count"]
+      "parent": null,
+      "attributes": ["name", "description", "member_count"]
     },
     {
       "type": "Project",
       "parent": null,
-      "attributes": ["name", "description", "status", "budget", "target_date"]
+      "attributes": ["name", "status", "target_completion_date", "budget"]
     },
     {
       "type": "Technology",
       "parent": null,
-      "attributes": ["name", "category", "version"]
+      "attributes": ["name", "type", "version"]
     },
     {
       "type": "Product",
       "parent": "Technology",
-      "attributes": ["vendor"]
+      "attributes": []
     },
     {
       "type": "Partnership",
       "parent": null,
-      "attributes": ["name", "type", "start_date", "scope"]
+      "attributes": ["name", "type", "start_date"]
     },
     {
       "type": "Contract",
       "parent": null,
-      "attributes": ["name", "type", "signed_date", "value"]
+      "attributes": ["name", "type", "signed_date"]
     }
   ],
   "properties": [
@@ -59,7 +59,7 @@
       "name": "works_at",
       "domain": "Employee",
       "range": "Company",
-      "attributes": ["role", "start_date", "end_date"]
+      "attributes": ["start_date", "end_date", "role"]
     },
     {
       "name": "manages",
@@ -80,16 +80,16 @@
       "attributes": []
     },
     {
+      "name": "leads",
+      "domain": "Employee",
+      "range": "Project",
+      "attributes": ["role"]
+    },
+    {
       "name": "contributes_to",
       "domain": "Employee",
       "range": "Project",
-      "attributes": ["role", "contribution_type"]
-    },
-    {
-      "name": "owns",
-      "domain": "Employee",
-      "range": "Project",
-      "attributes": []
+      "attributes": ["role"]
     },
     {
       "name": "owns",
@@ -107,12 +107,6 @@
       "name": "uses",
       "domain": "Project",
       "range": "Technology",
-      "attributes": ["purpose"]
-    },
-    {
-      "name": "uses",
-      "domain": "Team",
-      "range": "Technology",
       "attributes": []
     },
     {
@@ -122,45 +116,39 @@
       "attributes": []
     },
     {
-      "name": "partners_with",
+      "name": "has_partnership",
+      "domain": "Company",
+      "range": "Company",
+      "attributes": ["type", "start_date"]
+    },
+    {
+      "name": "vendor_for",
       "domain": "Company",
       "range": "Company",
       "attributes": []
     },
     {
-      "name": "governed_by",
-      "domain": "Partnership",
+      "name": "has_contract",
+      "domain": "Company",
       "range": "Contract",
       "attributes": []
     },
     {
-      "name": "involves",
-      "domain": "Partnership",
+      "name": "account_manager_for",
+      "domain": "Employee",
       "range": "Company",
-      "attributes": ["role"]
+      "attributes": []
     },
     {
-      "name": "covers",
+      "name": "co_founded",
+      "domain": "Person",
+      "range": "Company",
+      "attributes": ["year"]
+    },
+    {
+      "name": "supports",
       "domain": "Partnership",
       "range": "Project",
-      "attributes": []
-    },
-    {
-      "name": "has_contact",
-      "domain": "Company",
-      "range": "Employee",
-      "attributes": ["contact_type"]
-    },
-    {
-      "name": "holds_contract",
-      "domain": "Company",
-      "range": "Contract",
-      "attributes": []
-    },
-    {
-      "name": "leads",
-      "domain": "Employee",
-      "range": "Organization",
       "attributes": []
     }
   ]

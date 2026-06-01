@@ -12,9 +12,7 @@ type: Person
 
 ### Outgoing
 - [[Amazon Web Services]] — works_at (1.0)
-
-### Incoming
-- [[Amazon Web Services]] — has_contact (1.0)
+- [[Acme Corp]] — account_manager_for (1.0)
 
 ## Source Files
 - partners.md

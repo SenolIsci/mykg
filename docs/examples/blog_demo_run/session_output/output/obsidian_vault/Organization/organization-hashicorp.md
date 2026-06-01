@@ -1,9 +1,9 @@
 ---
 confidence: 1.0
-id: company-hashicorp
+id: organization-hashicorp
 sources:
 - partners.md
-type: Company
+type: Organization
 ---
 
 # HashiCorp
@@ -12,7 +12,7 @@ type: Company
 
 ### Outgoing
 - [[Vault]] — provides (1.0)
-- [[Marcus Tan]] — has_contact (1.0)
+- [[Acme Corp]] — vendor_for (1.0)
 
 ### Incoming
 - [[Marcus Tan]] — works_at (1.0)

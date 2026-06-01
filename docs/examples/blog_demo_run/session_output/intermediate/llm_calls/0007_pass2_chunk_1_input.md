@@ -91,49 +91,45 @@ not present in the prior record.
 SCHEMA
 ======
 Concept types:
-  - Organization: attributes = ['name', 'description', 'headquarters_location', 'type']
-    Outgoing edges: owns → Project
-    Incoming edges: Person → works_at, Person → manages, Person → leads
-  - Company: attributes = ['name', 'description', 'headquarters_location', 'type', 'founding_year', 'annual_revenue']
-    Outgoing edges: provides → Product, partners_with → Company, has_contact → Person, holds_contract → Contract
-    Incoming edges: Company → partners_with, Partnership → involves_organization
+  - Organization: attributes = ['name', 'headquarters_location', 'industry', 'founding_year']
+    Outgoing edges: provides → Product, has_partnership → Organization, vendor_for → Organization, has_agreement → Agreement
+    Incoming edges: Person → works_at, Organization → has_partnership, Organization → vendor_for, Person → account_manager_for, Person → co_founded
+  - Company: attributes = ['name', 'headquarters_location', 'industry', 'founding_year', 'annual_spend']
   - Person: attributes = ['name', 'email', 'education']
-    Outgoing edges: works_at → Organization, manages → Organization, member_of → Team, reports_to → Person, contributes_to → Project, leads → Organization
-    Incoming edges: Person → reports_to, Company → has_contact
-  - Employee: attributes = ['name', 'email', 'education', 'title', 'join_date']
-  - Team: attributes = ['name', 'description', 'headquarters_location', 'type', 'focus_area', 'member_count']
-    Outgoing edges: uses_technology → Technology
-    Incoming edges: Person → member_of
-  - Project: attributes = ['name', 'description', 'status', 'budget']
+    Outgoing edges: works_at → Organization, manages → Team, member_of → Team, reports_to → Person, leads → Project, contributes_to → Project, account_manager_for → Organization, co_founded → Organization
+    Incoming edges: Person → reports_to
+  - Employee: attributes = ['name', 'email', 'education', 'join_date', 'title']
+  - Team: attributes = ['name', 'description', 'member_count']
+    Outgoing edges: owns → Project
+    Incoming edges: Person → manages, Person → member_of
+  - Project: attributes = ['name', 'status', 'target_completion_date', 'budget']
     Outgoing edges: depends_on → Project, uses_technology → Technology
-    Incoming edges: Person → contributes_to, Organization → owns, Project → depends_on, Partnership → covers_project
-  - Technology: attributes = ['name', 'category', 'version']
-    Incoming edges: Project → uses_technology, Team → uses_technology
-  - Product: attributes = ['name', 'category', 'version', 'vendor']
-    Incoming edges: Company → provides
-  - Partnership: attributes = ['name', 'type', 'start_date', 'scope']
-    Outgoing edges: governed_by → Contract, involves_organization → Company, covers_project → Project
-  - Contract: attributes = ['name', 'type', 'signed_date', 'value']
-    Incoming edges: Partnership → governed_by, Company → holds_contract
+    Incoming edges: Person → leads, Person → contributes_to, Team → owns, Project → depends_on, Agreement → supports
+  - Technology: attributes = ['name', 'type', 'version']
+    Incoming edges: Project → uses_technology
+  - Product: attributes = ['name', 'type', 'version', 'description']
+    Incoming edges: Organization → provides
+  - Agreement: attributes = ['name', 'type', 'start_date']
+    Outgoing edges: supports → Project
+    Incoming edges: Organization → has_agreement
 
 Relationship types:
-  - works_at (Person → Organization): edge attributes = ['role', 'start_date', 'end_date']
-  - manages (Person → Organization): edge attributes = []
+  - works_at (Person → Organization): edge attributes = ['start_date', 'end_date', 'role']
+  - manages (Person → Team): edge attributes = []
   - member_of (Person → Team): edge attributes = []
   - reports_to (Person → Person): edge attributes = []
-  - contributes_to (Person → Project): edge attributes = ['role', 'contribution_type']
-  - owns (Organization → Project): edge attributes = []
+  - leads (Person → Project): edge attributes = ['role']
+  - contributes_to (Person → Project): edge attributes = ['role']
+  - owns (Team → Project): edge attributes = []
   - depends_on (Project → Project): edge attributes = []
-  - uses_technology (Project → Technology): edge attributes = ['purpose']
-  - uses_technology (Team → Technology): edge attributes = ['purpose']
-  - provides (Company → Product): edge attributes = []
-  - partners_with (Company → Company): edge attributes = []
-  - governed_by (Partnership → Contract): edge attributes = []
-  - involves_organization (Partnership → Company): edge attributes = ['role']
-  - covers_project (Partnership → Project): edge attributes = []
-  - has_contact (Company → Person): edge attributes = ['contact_type']
-  - holds_contract (Company → Contract): edge attributes = []
-  - leads (Person → Organization): edge attributes = []
+  - uses_technology (Project → Technology): edge attributes = []
+  - provides (Organization → Product): edge attributes = []
+  - has_partnership (Organization → Organization): edge attributes = ['type', 'start_date']
+  - vendor_for (Organization → Organization): edge attributes = []
+  - has_agreement (Organization → Agreement): edge attributes = []
+  - account_manager_for (Person → Organization): edge attributes = []
+  - co_founded (Person → Organization): edge attributes = ['year']
+  - supports (Agreement → Project): edge attributes = []
 
 DOCUMENT
 ========

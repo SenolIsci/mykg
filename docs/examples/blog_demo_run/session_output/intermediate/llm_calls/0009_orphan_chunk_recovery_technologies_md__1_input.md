@@ -20,37 +20,36 @@ Return ONLY the JSON array — no markdown, no extra keys.
 
 ORPHAN NODES (find relationships for these)
 ============================================
+  - id: technology-fastapi, type: Technology, name: FastAPI
+  - id: technology-github-actions, type: Technology, name: GitHub Actions
+  - id: technology-go, type: Technology, name: Go
   - id: technology-qdrant, type: Technology, name: Qdrant
+  - id: technology-react, type: Technology, name: React
+  - id: technology-typescript, type: Technology, name: TypeScript
   - id: technology-weaviate, type: Technology, name: Weaviate
 
 ALREADY-CONNECTED GRAPH NODES (cross-reference targets)
 =========================================================
-  - id: team-backend-engineering-guild, type: Team, name: Backend Engineering Guild
   - id: project-platform-secrets-service, type: Project, name: Platform Secrets Service
-  - id: team-infrastructure-team, type: Team, name: Infrastructure Team
-  - id: team-ai-research-team, type: Team, name: AI Research Team
-  - id: project-rag-pipeline, type: Project, name: RAG Pipeline
-  - id: project-db-migration, type: Project, name: DB Migration
 
 SCHEMA PROPERTIES
 =================
   - works_at (Person → Organization)
-  - manages (Person → Organization)
+  - manages (Person → Team)
   - member_of (Person → Team)
   - reports_to (Person → Person)
+  - leads (Person → Project)
   - contributes_to (Person → Project)
-  - owns (Organization → Project)
+  - owns (Team → Project)
   - depends_on (Project → Project)
   - uses_technology (Project → Technology)
-  - uses_technology (Team → Technology)
-  - provides (Company → Product)
-  - partners_with (Company → Company)
-  - governed_by (Partnership → Contract)
-  - involves_organization (Partnership → Company)
-  - covers_project (Partnership → Project)
-  - has_contact (Company → Person)
-  - holds_contract (Company → Contract)
-  - leads (Person → Organization)
+  - provides (Organization → Product)
+  - has_partnership (Organization → Organization)
+  - vendor_for (Organization → Organization)
+  - has_agreement (Organization → Agreement)
+  - account_manager_for (Person → Organization)
+  - co_founded (Person → Organization)
+  - supports (Agreement → Project)
 
 CHUNK SOURCE TEXT
 =================

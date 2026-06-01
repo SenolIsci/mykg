@@ -4,31 +4,58 @@
 [
   {
     "type": "uses_technology",
-    "from": "project-rag-pipeline",
-    "to": "technology-qdrant",
-    "confidence": 0.85,
-    "rationale": "Dr. Yuna Park evaluated Qdrant as one of three vector database options for the RAG Pipeline project before selecting Pinecone."
-  },
-  {
-    "type": "uses_technology",
-    "from": "project-rag-pipeline",
+    "from": "project-platform-secrets-service",
     "to": "technology-weaviate",
-    "confidence": 0.85,
-    "rationale": "Dr. Yuna Park evaluated Weaviate as one of three vector database options for the RAG Pipeline project before selecting Pinecone."
+    "confidence": 0.0,
+    "rationale": "No relationship found between Platform Secrets Service and Weaviate in the source text."
   },
   {
     "type": "uses_technology",
-    "from": "team-ai-research-team",
+    "from": "project-platform-secrets-service",
     "to": "technology-qdrant",
-    "confidence": 0.75,
-    "rationale": "The AI Research team led by Dr. Yuna Park evaluated Qdrant for the RAG Pipeline, indicating team-level technology assessment."
+    "confidence": 0.0,
+    "rationale": "No relationship found between Platform Secrets Service and Qdrant in the source text."
   },
   {
     "type": "uses_technology",
-    "from": "team-ai-research-team",
-    "to": "technology-weaviate",
-    "confidence": 0.75,
-    "rationale": "The AI Research team led by Dr. Yuna Park evaluated Weaviate for the RAG Pipeline, indicating team-level technology assessment."
+    "from": "project-platform-secrets-service",
+    "to": "technology-fastapi",
+    "confidence": 0.0,
+    "rationale": "No relationship found between Platform Secrets Service and FastAPI in the source text."
+  },
+  {
+    "type": "uses_technology",
+    "from": "project-platform-secrets-service",
+    "to": "technology-github-actions",
+    "confidence": 0.0,
+    "rationale": "No relationship found between Platform Secrets Service and GitHub Actions in the source text."
+  },
+  {
+    "type": "uses_technology",
+    "from": "project-platform-secrets-service",
+    "to": "technology-go",
+    "confidence": 0.0,
+    "rationale": "No relationship found between Platform Secrets Service and Go in the source text."
+  },
+  {
+    "type": "uses_technology",
+    "from": "project-platform-secrets-service",
+    "to": "technology-react",
+    "confidence": 0.0,
+    "rationale": "No relationship found between Platform Secrets Service and React in the source text."
+  },
+  {
+    "type": "uses_technology",
+    "from": "project-platform-secrets-service",
+    "to": "technology-typescript",
+    "confidence": 0.0,
+    "rationale": "No relationship found between Platform Secrets Service and TypeScript in the source text."
   }
 ]
+```
+
+Wait, let me reconsider. The instructions say to return an empty array if no relationships are found. Since none of the orphan technologies have explicit relationships with the Platform Secrets Service project in the text, the correct response is:
+
+```json
+[]
 ```

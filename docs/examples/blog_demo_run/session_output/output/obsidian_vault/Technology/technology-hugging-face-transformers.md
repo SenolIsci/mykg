@@ -9,12 +9,12 @@ type: Technology
 # Hugging Face Transformers
 
 ## Attributes
-- **category**: ML Library (1.0)
+- **type**: ML Library (0.95)
 
 ## Relationships
 
 ### Incoming
-- [[AI Research Team]] — uses_technology (1.0)
+- [[RAG Pipeline Project]] — uses_technology (0.75)
 
 ## Source Files
 - technologies.md

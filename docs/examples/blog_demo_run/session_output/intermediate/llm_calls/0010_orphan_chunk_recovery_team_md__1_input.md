@@ -26,38 +26,37 @@ ORPHAN NODES (find relationships for these)
   - id: employee-dr-yuna-park, type: Employee, name: Dr. Yuna Park
   - id: employee-james-whitfield, type: Employee, name: James Whitfield
   - id: employee-sandra-kim, type: Employee, name: Sandra Kim
-  - id: organization-datasystems-inc, type: Organization, name: DataSystems Inc
-  - id: organization-deepmind, type: Organization, name: DeepMind
-  - id: organization-google, type: Organization, name: Google
-  - id: organization-novatech-inc, type: Organization, name: NovaTech Inc
 
 ALREADY-CONNECTED GRAPH NODES (cross-reference targets)
 =========================================================
+  - id: organization-novatech-inc, type: Organization, name: NovaTech Inc
   - id: team-product-team, type: Team, name: product team
   - id: team-infrastructure-team, type: Team, name: Infrastructure Team
-  - id: team-ai-research-team, type: Team, name: AI Research Team
+  - id: organization-datasystems-inc, type: Organization, name: DataSystems Inc
   - id: organization-acme-corp, type: Organization, name: Acme Corp
   - id: team-platform-team, type: Team, name: Platform Team
+  - id: organization-google, type: Organization, name: Google
+  - id: organization-deepmind, type: Organization, name: DeepMind
+  - id: team-ai-research-team, type: Team, name: AI Research Team
 
 SCHEMA PROPERTIES
 =================
   - works_at (Person → Organization)
-  - manages (Person → Organization)
+  - manages (Person → Team)
   - member_of (Person → Team)
   - reports_to (Person → Person)
+  - leads (Person → Project)
   - contributes_to (Person → Project)
-  - owns (Organization → Project)
+  - owns (Team → Project)
   - depends_on (Project → Project)
   - uses_technology (Project → Technology)
-  - uses_technology (Team → Technology)
-  - provides (Company → Product)
-  - partners_with (Company → Company)
-  - governed_by (Partnership → Contract)
-  - involves_organization (Partnership → Company)
-  - covers_project (Partnership → Project)
-  - has_contact (Company → Person)
-  - holds_contract (Company → Contract)
-  - leads (Person → Organization)
+  - provides (Organization → Product)
+  - has_partnership (Organization → Organization)
+  - vendor_for (Organization → Organization)
+  - has_agreement (Organization → Agreement)
+  - account_manager_for (Person → Organization)
+  - co_founded (Person → Organization)
+  - supports (Agreement → Project)
 
 CHUNK SOURCE TEXT
 =================

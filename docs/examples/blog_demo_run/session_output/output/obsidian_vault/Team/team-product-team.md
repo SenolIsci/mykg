@@ -8,10 +8,6 @@ type: Team
 
 # product team
 
-## Attributes
-- **description**: Product development team managed by Bob Martinez (0.8)
-- **type**: Product Team (0.85)
-
 ## Relationships
 
 ### Incoming
