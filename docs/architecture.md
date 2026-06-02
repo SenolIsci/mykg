@@ -37,6 +37,8 @@ This document explains how **myKG** works at a conceptual level: the pipelines, 
 
 Both pipelines run as a sequence of named steps. All intermediate state is written to disk after every step, so any step can be re-entered without repeating upstream work.
 
+The LLM layer is provider-pluggable: six adapters ship out of the box (Anthropic, OpenAI, Ollama, OpenRouter, Claude CLI, and **Agent**). The Agent provider is unusual — instead of calling an HTTP API or a subprocess, it writes LLM tasks to a session-local inbox folder and polls an outbox for answers supplied by a Claude Code skill running on the user's side. The 12 pipeline steps and the orchestrator do not know which adapter is active.
+
 <p align="center">
   <img src="diagrams/system-overview.png" width="80%" style="vertical-align:middle;">
 </p>
@@ -293,7 +295,7 @@ The pipeline applies two tiers of automatic correction before asking for human i
 
 ## LLM Provider Support
 
-The pipeline is fully decoupled from any specific LLM provider. A single abstract adapter interface — accepting a system prompt and a user prompt, returning a string — is all that pipeline logic depends on. Five provider implementations ship out of the box:
+The pipeline is fully decoupled from any specific LLM provider. A single abstract adapter interface — accepting a system prompt and a user prompt, returning a string — is all that pipeline logic depends on. Six provider implementations ship out of the box:
 
 | Provider | Notes |
 |---|---|
@@ -302,8 +304,19 @@ The pipeline is fully decoupled from any specific LLM provider. A single abstrac
 | Ollama | Local inference; no API key required |
 | OpenRouter | Access many models via a single API key |
 | Claude CLI | Uses the `claude -p` subprocess; no API key; billing via Claude Pro/Max plan; serial only |
+| Agent (Claude Code skill) | LLM answers produced by a Claude Code skill via filesystem inbox/outbox; pipeline is otherwise unchanged. See [`docs/agent-mode.md`](agent-mode.md) |
 
 All provider parameters — model, context window, token limits, timeout, base URL — are set in `mykg_config.yaml`. There are no hardcoded defaults in adapter code. A 429 rate-limit response is treated as a misconfiguration signal (reduce worker count), not a transient error to silently retry indefinitely.
+
+### Agent provider — adapter that polls a filesystem
+
+The Agent provider is the sixth `LLMAdapter` subclass, not a fork of the orchestrator. The 12 pipeline steps, all 14 LLM call sites, every `prompts/*.txt` template, and the `ThreadPoolExecutor` parallelism in `pass1` / `pass2` / `orphan_connect` are unchanged. Only the implementation of `LLMAdapter.complete(system, user) → str` differs: instead of making an HTTP request, it writes a JSON task envelope to disk and polls for the response. This keeps the entire correctness story of mykg's deterministic pipeline — re-entry, sentinel-based completion checks, retry-once + LLM feedback — applicable verbatim to agent mode.
+
+The request/response contract lives entirely on the filesystem under each session's `intermediate/` directory. The adapter writes `agent_inbox/<task_id>.task.json` (containing the system prompt, user prompt, step name, and a context label) atomically via the `.tmp` + `rename` pattern. The skill on the other side reads the task, dispatches a subagent, and writes the answer envelope to `agent_outbox/<task_id>.answer.json` — again atomically. After the answer file is fully renamed, the skill creates a zero-byte sentinel at `agent_outbox/<task_id>.done`. The adapter polls only for the sentinel, never for the answer file, so it can never observe a half-written response.
+
+The `task_id` is `sha256(system + user + context_label)`, computed deterministically. Identical inputs produce identical IDs, so a duplicate `complete()` call within a session short-circuits to the existing answer file with no inbox write and no skill dispatch. Re-runs after a partial crash automatically resume from whatever answers are already on disk — the same content-addressed property the rest of mykg's intermediate state relies on.
+
+`ThreadPoolExecutor` parallelism is preserved transparently. With `pass2.max_workers: 8`, eight pipeline threads each call `adapter.complete()` simultaneously; each thread writes its own task to the inbox and independently polls for its own `.done` sentinel. The skill drains them in parallel waves — up to `pass2.max_workers` subagents per wave, dispatched in a single Claude Code response so they run concurrently. From the orchestrator's perspective the only observable difference vs. an HTTP adapter is wall-clock latency.
 
 ---
 
@@ -319,6 +332,7 @@ All provider parameters — model, context window, token limits, timeout, base U
 | **Session isolation** | Each run lives in a timestamped folder containing its own inputs, intermediate state, outputs, and logs | Runs never interfere; any run can be resumed or re-entered independently without touching other sessions |
 | **Single config file** | `mykg_config.yaml` is the sole source of truth for all parameters | No hardcoded literals in pipeline or adapter code; switching provider, model, or tuning parameters requires only a config change |
 | **Pydantic for all data models** | All structured data between pipeline stages uses Pydantic BaseModel | Free JSON serialization, field validation, and type coercion at every pipeline boundary |
+| **Filesystem-backed agent provider** | Sixth `LLMAdapter` subclass that writes JSON tasks to a session-local inbox and polls a `.done` sentinel | Lets a Claude Code skill — or any other host with file access — supply LLM answers without modifying the 12-step pipeline, the orchestrator, or any of the 14 LLM call sites. The contract is JSON files on disk; testable with a mock drainer in `tmp_path` |
 
 ### Schema and Ontology
 

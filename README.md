@@ -185,6 +185,78 @@ profiles:
 
 ---
 
+## Claude Code skill as backend (agent mode)
+
+Agent mode is a different way to run myKG inside Claude Code: instead of `claude -p` subprocesses, the pipeline writes LLM tasks to a session-local inbox folder and a Claude Code **skill** dispatches subagents to answer them. Pick agent mode over `claude-cli` when you want parallel subagent dispatch from inside an active Claude Code session.
+
+### Why pick agent mode
+
+- **No API key needed.** Uses your existing Claude Pro/Max plan via the skill subagents — same as `claude-cli`, but without invoking the `claude -p` binary.
+- **Inspectable LLM I/O.** Every prompt lands as `intermediate/agent_inbox/<id>.task.json` and every answer as `intermediate/agent_outbox/<id>.answer.json`. Replay or edit any step by hand.
+- **Parallel by default.** The skill dispatches up to `pass2.max_workers` subagents per wave in a single message — not serial like `claude-cli`. Pass-2 chunks complete in parallel waves.
+
+### Install the skill
+
+```bash
+pip install mykg          # or: uv tool install mykg
+
+# Symlink the bundled skill into your Claude Code skills folder
+ln -s "$(python -c 'import mykg, pathlib; print(pathlib.Path(mykg.__file__).parent / "data" / "skills" / "mykg")')" ~/.claude/skills/mykg
+
+# Restart Claude Code (or re-open the project) so the skill loader picks up the new entry
+```
+
+### Configure the profile
+
+```bash
+mykg init --profile agent-claude-code
+```
+
+This writes a `mykg_config.yaml` with `profile: agent-claude-code` selected. The `agent:` block configures the inbox/outbox paths and poll interval:
+
+```yaml
+profile: agent-claude-code
+
+profiles:
+  agent-claude-code:
+    provider: agent
+    agent:
+      inbox_dir: agent_inbox        # relative to <session>/intermediate/
+      outbox_dir: agent_outbox
+      poll_interval_seconds: 2
+    pipeline:
+      pass2:
+        max_workers: 8              # how many subagents the skill dispatches per wave
+```
+
+### Invoke from inside Claude Code
+
+In an active Claude Code session, type:
+
+```
+/mykg ./my_notes                              # fresh run on a Markdown corpus
+/mykg ./my_notes --review                     # pause after Pass 1 for schema review
+/mykg --session 2026-06-02T17-30-00 --continue   # resume a session that hit the wave budget
+```
+
+### What the skill does on screen
+
+1. Confirms `mykg_config.yaml` has `profile: agent-claude-code` — aborts with a clear message if not.
+2. Launches `mykg extract-graph` in the background via `nohup` so it survives the skill turn.
+3. Watches `<session>/intermediate/agent_inbox/` for `*.task.json` files.
+4. Dispatches one Agent-tool subagent per unanswered task (parallel calls in one message, up to `pass2.max_workers` per wave).
+5. Exits when the pipeline subprocess exits, when `output/knowledge_graph.ttl` appears, or after **20 watch waves** — at which point it tells you to re-invoke `/mykg --session <name> --continue`.
+
+### Limitations and notes
+
+- The skill is bounded at **20 waves per invocation** to avoid runaway Claude Code sessions. Long pipelines may need multiple `/mykg --session <name> --continue` invocations.
+- The pipeline subprocess survives via `nohup`, so closing your Claude Code session does not kill it — the run continues in the background and you can re-attach by re-invoking the skill with `--continue`.
+- For non-Claude-Code hosts (Copilot CLI, Cursor, custom scripts), nothing prevents you from writing your own drainer against the same `agent_inbox`/`agent_outbox` contract — the protocol is just JSON files on disk.
+
+Full design and contract: [docs/agent-mode.md](docs/agent-mode.md). Skill source: [src/mykg/data/skills/mykg/SKILL.md](src/mykg/data/skills/mykg/SKILL.md).
+
+---
+
 ## Configuration
 
 All configuration lives in a single `mykg_config.yaml` file discovered automatically from the working directory (or any parent). There are no hardcoded defaults in the code — the YAML is the sole source of truth.
