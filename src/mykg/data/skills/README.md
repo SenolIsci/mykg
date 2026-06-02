@@ -8,28 +8,29 @@ This is the skill side of agent mode. The mykg pipeline writes LLM tasks to a se
 
 ## Install
 
-```bash
-# Symlink the bundled skill into your Claude Code skills folder
-ln -s "$(python -c 'import mykg, pathlib; print(pathlib.Path(mykg.__file__).parent / "data" / "skills" / "mykg")')" ~/.claude/skills/mykg
-
-# Restart Claude Code (or re-open the project) so the skill loader picks it up
-```
-
-If you cloned the repo from source instead of `pip install`:
+`mykg init` does both jobs: select the agent profile and copy the bundled skill into your Claude Code skills folder.
 
 ```bash
-ln -s "$(pwd)/src/mykg/data/skills/mykg" ~/.claude/skills/mykg
-```
-
----
-
-## Activate agent mode
-
-The skill only does useful work when `mykg_config.yaml` selects the agent profile:
-
-```bash
+pip install mykg
 mykg init --profile agent-claude-code
+# ...then restart Claude Code so the skill loader picks up the new entry.
 ```
+
+The wizard copies `data/skills/mykg/` into `~/.claude/skills/mykg/` (honoring `$CLAUDE_CONFIG_DIR` if set) and writes a `.mykg_skill_version` stamp file so future invocations can detect drift.
+
+**Upgrade after `pip install -U mykg`:**
+
+```bash
+mykg init --reinstall-skill
+```
+
+This re-copies the bundled skill on top of whatever is currently installed, atomically (write to `.tmp` then `os.replace`). The flag is also accepted alongside `--profile agent-claude-code` for a one-shot fresh install + force-refresh.
+
+**Why copy instead of symlink?** Symlinks fail on Windows without Developer Mode, dangle if mykg is uninstalled, and don't sync through OneDrive. A copy is portable, decoupled from the package, and survives `pip uninstall mykg`. The cost — live edits to the bundled skill don't auto-propagate — only matters for mykg developers, who can pass `--reinstall-skill` to refresh between edits.
+
+### Activate agent mode
+
+The skill only does useful work when `mykg_config.yaml` selects the agent profile. `mykg init --profile agent-claude-code` does this in one step:
 
 This writes the profile shown below. The `agent:` block configures the inbox/outbox paths and poll interval; the `pipeline.pass2.max_workers` value sets how many subagents the skill dispatches per wave:
 

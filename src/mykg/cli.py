@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -114,10 +115,43 @@ _PROFILE_META = {
 @click.option(
     "--api-key", default=None, help="API key to write to .env.mykg (skips interactive prompt)"
 )
-def init_config(force: bool, profile: str | None, model: str | None, api_key: str | None) -> None:
+@click.option(
+    "--reinstall-skill",
+    is_flag=True,
+    default=False,
+    help=(
+        "Re-install the bundled Claude Code skill into ~/.claude/skills/mykg, "
+        "overwriting any existing copy. Use after `pip install -U mykg` to "
+        "refresh a stale install. Only meaningful with --profile agent-claude-code."
+    ),
+)
+def init_config(
+    force: bool,
+    profile: str | None,
+    model: str | None,
+    api_key: str | None,
+    reinstall_skill: bool,
+) -> None:
     """Create mykg_config.yaml and optionally configure LLM provider, model, and API key."""
     dest = Path.cwd() / "mykg_config.yaml"
     if dest.exists() and not force:
+        # Short-circuit: --reinstall-skill on an existing agent-mode config refreshes the
+        # bundled skill without touching the config. The canonical upgrade flow after
+        # `pip install -U mykg`.
+        if reinstall_skill:
+            try:
+                existing = dest.read_text()
+            except OSError:
+                existing = ""
+            if "profile: agent-claude-code" in existing:
+                _install_agent_skill(force=True)
+                return
+            click.echo(
+                "--reinstall-skill is only meaningful when the active profile is "
+                "`agent-claude-code`. mykg_config.yaml uses a different profile; "
+                "skipping skill refresh."
+            )
+            return
         click.echo("mykg_config.yaml already exists. Use --force to overwrite.")
         return
 
@@ -169,7 +203,7 @@ def init_config(force: bool, profile: str | None, model: str | None, api_key: st
     # --- API key setup -------------------------------------------------------
     if meta["key_var"] is None:
         click.echo(f"No API key required for '{profile}'.")
-        _print_next_steps(profile)
+        _print_next_steps(profile, reinstall_skill=reinstall_skill)
         return
 
     env_file = Path.cwd() / ".env.mykg"
@@ -202,7 +236,7 @@ def init_config(force: bool, profile: str | None, model: str | None, api_key: st
         else:
             click.echo(f"Skipped — set {var} in .env.mykg before running.")
 
-    _print_next_steps(profile)
+    _print_next_steps(profile, reinstall_skill=reinstall_skill)
 
 
 def _patch_profile_model(content: str, profile: str, model: str) -> str:
@@ -233,17 +267,39 @@ def _write_env_key(env_file: Path, var: str, value: str) -> None:
     env_file.write_text("\n".join(lines) + "\n")
 
 
-def _install_agent_skill() -> None:
-    """Symlink the bundled mykg skill into ~/.claude/skills/mykg.
+_SKILL_VERSION_STAMP = ".mykg_skill_version"
 
-    If a link or directory already lives at the target, leave it alone and
-    just tell the user. Honest about every outcome — no silent overwrites.
+
+def _claude_skills_dir() -> Path:
+    """Return the user-level Claude Code skills folder.
+
+    Honors $CLAUDE_CONFIG_DIR if set (graphify-style override), otherwise
+    falls back to ~/.claude/skills.
+    """
+    override = os.environ.get("CLAUDE_CONFIG_DIR")
+    base = Path(override) if override else Path.home() / ".claude"
+    return base / "skills"
+
+
+def _install_agent_skill(*, force: bool = False) -> None:
+    """Copy the bundled mykg skill into ~/.claude/skills/mykg.
+
+    Uses graphify v8's atomic install pattern: copy to ``<target>.tmp``, then
+    ``os.replace`` over the final destination. A ``.mykg_skill_version`` stamp
+    file is written next to the skill so a future ``mykg init`` invocation can
+    detect a stale install (package upgraded but skill not refreshed).
+
+    Symlinks are intentionally NOT used — they break on Windows without
+    Developer Mode, dangle if mykg is uninstalled, and don't sync through
+    OneDrive. ``--reinstall-skill`` (force=True) is the canonical refresh
+    path after ``pip install -U mykg``.
     """
     import mykg
 
     source = Path(mykg.__file__).parent / "data" / "skills" / "mykg"
-    target_dir = Path.home() / ".claude" / "skills"
+    target_dir = _claude_skills_dir()
     target = target_dir / "mykg"
+    stamp = target / _SKILL_VERSION_STAMP
 
     if not source.is_dir():
         click.echo(f"\n[skill] WARNING: bundled skill not found at {source}; skipping install.")
@@ -253,30 +309,84 @@ def _install_agent_skill() -> None:
         target_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         click.echo(f"\n[skill] Could not create {target_dir}: {exc}")
-        click.echo(f"        Symlink manually: ln -s {source} {target}")
+        click.echo(f"        Copy manually: cp -R {source} {target}")
         return
 
-    if target.is_symlink() or target.exists():
-        existing = target.resolve() if target.exists() else None
-        if existing == source.resolve():
-            click.echo(f"\n[skill] Already installed at {target} → {source}")
-        else:
-            click.echo(f"\n[skill] {target} already exists (points to {existing}).")
-            click.echo(f"        Leaving it untouched. Remove it and re-run if you want")
-            click.echo(f"        the bundled skill instead:  rm {target}")
+    # Pre-existing target: decide between idempotent skip, version warning, or refusal.
+    if target.exists() or target.is_symlink():
+        if target.is_symlink():
+            # Legacy installs created a symlink; replace it on --force.
+            if not force:
+                click.echo(
+                    f"\n[skill] {target} is a legacy symlink. Re-run with --reinstall-skill "
+                    "to replace it with a copy (the new default — safer on Windows / "
+                    "OneDrive / after `pip uninstall mykg`)."
+                )
+                return
+        elif stamp.is_file():
+            try:
+                installed_version = stamp.read_text().strip()
+            except OSError:
+                installed_version = "(unreadable)"
+            if installed_version == mykg.__version__ and not force:
+                click.echo(
+                    f"\n[skill] Already installed at {target} (version {installed_version})."
+                )
+                return
+            if installed_version != mykg.__version__ and not force:
+                click.echo(
+                    f"\n[skill] {target} is from mykg {installed_version}, package is "
+                    f"{mykg.__version__}. Re-run with --reinstall-skill to update."
+                )
+                return
+        elif not force:
+            click.echo(
+                f"\n[skill] {target} already exists but has no version stamp — it may be a "
+                "hand-edited copy. Leaving it untouched. Re-run with --reinstall-skill to "
+                f"overwrite, or remove it manually: rm -rf {target}"
+            )
+            return
+
+    # Atomic copy: write to <target>.tmp, then os.replace.
+    tmp = target.with_name(target.name + ".tmp")
+    try:
+        if tmp.exists() or tmp.is_symlink():
+            if tmp.is_symlink() or tmp.is_file():
+                tmp.unlink()
+            else:
+                shutil.rmtree(tmp)
+        shutil.copytree(source, tmp)
+    except OSError as exc:
+        click.echo(f"\n[skill] Failed to copy {source} → {tmp}: {exc}")
+        click.echo(f"        Copy manually: cp -R {source} {target}")
         return
 
     try:
-        target.symlink_to(source, target_is_directory=True)
+        if target.exists() or target.is_symlink():
+            if target.is_symlink() or target.is_file():
+                target.unlink()
+            else:
+                shutil.rmtree(target)
+        os.replace(tmp, target)
     except OSError as exc:
-        click.echo(f"\n[skill] Failed to symlink {target} → {source}: {exc}")
-        click.echo(f"        Symlink manually: ln -s {source} {target}")
+        click.echo(f"\n[skill] Failed to install {tmp} → {target}: {exc}")
+        shutil.rmtree(tmp, ignore_errors=True)
         return
 
-    click.echo(f"\n[skill] Installed: {target} → {source}")
+    try:
+        (target / _SKILL_VERSION_STAMP).write_text(mykg.__version__)
+    except OSError as exc:
+        click.echo(f"[skill] Warning: could not write version stamp: {exc}")
+
+    click.echo(f"\n[skill] Installed: {target} (version {mykg.__version__})")
 
 
-def _print_next_steps(profile: str) -> None:
+def _print_next_steps(profile: str, *, reinstall_skill: bool = False) -> None:
+    if reinstall_skill and profile != "agent-claude-code":
+        click.echo(
+            "\n[skill] --reinstall-skill ignored: only meaningful with --profile agent-claude-code."
+        )
+
     click.echo("\nNext steps:")
     click.echo("  mykg extract-graph <your_notes_directory>/")
     if profile == "ollama-local":
@@ -286,11 +396,12 @@ def _print_next_steps(profile: str) -> None:
             "  (make sure the claude CLI is installed: npm install -g @anthropic-ai/claude-code)"
         )
     elif profile == "agent-claude-code":
-        _install_agent_skill()
+        _install_agent_skill(force=reinstall_skill)
         click.echo("\nThen, in Claude Code:")
         click.echo("  1. Restart the app so the skill loader picks up the new entry.")
         click.echo("  2. Type:  /mykg <your_notes_directory>")
-        click.echo("\nSee docs/agent-mode.md for the full inbox/outbox contract.")
+        click.echo("\nUpgrade later with:  mykg init --reinstall-skill")
+        click.echo("See docs/agent-mode.md for the full inbox/outbox contract.")
 
 
 @cli.command("extract-graph")

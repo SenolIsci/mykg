@@ -621,24 +621,25 @@ Agent mode is a different way to run myKG inside Claude Code: instead of `claude
 - **Inspectable LLM I/O.** Every prompt lands as `intermediate/agent_inbox/<id>.task.json` and every answer as `intermediate/agent_outbox/<id>.answer.json`. Replay or edit any step by hand.
 - **Parallel by default.** The skill dispatches up to `pass2.max_workers` subagents per wave in a single message — not serial like `claude-cli`. Pass-2 chunks complete in parallel waves.
 
-#### Install the skill
+#### Install and configure
 
 ```bash
 pip install mykg          # or: uv tool install mykg
-
-# Symlink the bundled skill into your Claude Code skills folder
-ln -s "$(python -c 'import mykg, pathlib; print(pathlib.Path(mykg.__file__).parent / "data" / "skills" / "mykg")')" ~/.claude/skills/mykg
-
-# Restart Claude Code (or re-open the project) so the skill loader picks up the new entry
+mykg init --profile agent-claude-code
+# ...then restart Claude Code so the skill loader picks up the new entry.
 ```
 
-#### Configure the profile
+`mykg init --profile agent-claude-code` writes `mykg_config.yaml` *and* copies the bundled skill into `~/.claude/skills/mykg` (honoring `$CLAUDE_CONFIG_DIR` if set). A `.mykg_skill_version` stamp file is written next to the skill so future runs can detect drift.
+
+**Upgrade after `pip install -U mykg`:**
 
 ```bash
-mykg init --profile agent-claude-code
+mykg init --reinstall-skill
 ```
 
-This writes a `mykg_config.yaml` with `profile: agent-claude-code` selected. The `agent:` block configures the inbox/outbox paths and poll interval:
+This atomically refreshes the bundled skill (copy to `.tmp` → `os.replace`) without touching your `mykg_config.yaml`. The copy-based install is deliberately not a symlink — symlinks fail on Windows without Developer Mode, dangle if mykg is uninstalled, and don't sync through OneDrive. The cost (live edits don't auto-propagate) only matters for mykg developers, who pass `--reinstall-skill` between edits.
+
+The `agent:` block in the generated `mykg_config.yaml` configures the inbox/outbox paths and poll interval:
 
 ```yaml
 profile: agent-claude-code
