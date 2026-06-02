@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import mykg.config as _cfg
@@ -10,11 +11,18 @@ if TYPE_CHECKING:
     from mykg.llm.error_gate import ErrorGate
 
 
-def load_adapter(_raw: dict | None = None, error_gate: ErrorGate | None = None) -> LLMAdapter:
+def load_adapter(
+    _raw: dict | None = None,
+    error_gate: ErrorGate | None = None,
+    intermediate_dir: Path | None = None,
+) -> LLMAdapter:
     """Build an LLM adapter from mykg_config.yaml.
 
     mykg_config.yaml is loaded by mykg.config at import time via auto-discovery.
     _raw is an escape hatch for tests that need to supply a custom config dict.
+
+    intermediate_dir is required only when provider == "agent" — the agent
+    adapter writes to <intermediate>/<inbox_dir>/ and <intermediate>/<outbox_dir>/.
     """
     cfg = _raw if _raw is not None else _cfg.RAW
     provider = cfg.get("provider", "")
@@ -96,6 +104,37 @@ def load_adapter(_raw: dict | None = None, error_gate: ErrorGate | None = None) 
             timeout=section["timeout"],
             model=section.get("model", "auto"),
             effort=section.get("effort", "auto"),
+            error_gate=error_gate,
+        )
+
+    if provider == "agent":
+        from mykg.llm.agent_adapter import AgentAdapter
+
+        agent_section = cfg.get("agent")
+        if agent_section is None:
+            raise ValueError(
+                "provider 'agent' requires an 'agent:' block in the active profile "
+                "(set inbox_dir, outbox_dir, poll_interval_seconds)"
+            )
+
+        if intermediate_dir is None:
+            raise ValueError(
+                "provider 'agent' requires intermediate_dir to be supplied to "
+                "load_adapter() — pass the session's intermediate path"
+            )
+
+        inbox_name = agent_section.get("inbox_dir", _cfg.AGENT_INBOX_DIR)
+        outbox_name = agent_section.get("outbox_dir", _cfg.AGENT_OUTBOX_DIR)
+        poll_interval = agent_section.get(
+            "poll_interval_seconds", _cfg.AGENT_POLL_INTERVAL_SECONDS
+        )
+
+        return AgentAdapter(
+            inbox_dir=Path(intermediate_dir) / inbox_name,
+            outbox_dir=Path(intermediate_dir) / outbox_name,
+            poll_interval=poll_interval,
+            timeout=section["timeout"],
+            max_tokens=section["max_output_tokens"],
             error_gate=error_gate,
         )
 
