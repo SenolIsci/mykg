@@ -2,7 +2,7 @@
 # myKG — Knowledge Graph Extractor
 # =============================================================================
 # ACTIVE PROFILE — change this one line to switch provider and all settings.
-# Available: ollama-local | anthropic-claude | openai | openrouter-free | claude-cli
+# Available: ollama-local | anthropic-claude | openai | openrouter-free | claude-cli | agent-claude-code
 # =============================================================================
 profile: openrouter-free
 
@@ -683,3 +683,126 @@ profiles:
         surgical_top_k_chunks_per_property: 0  # 0 = no cap; >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
         human_review: false             # pause for human review of merged schema; overridden by --human-review CLI flag
         orphan_pass_max_restarts: 1     # max schema-gap restart loops during merge orphan pass (0 = disabled)
+
+  # ---------------------------------------------------------------------------
+  agent-claude-code:
+  # Agent mode (D49) — LLM answers are produced by a Claude Code skill via a
+  # filesystem inbox/outbox. The pipeline writes a task envelope to
+  # intermediate/<inbox_dir>/, the skill drains the inbox using subagents, and
+  # writes <id>.answer.json + <id>.done to intermediate/<outbox_dir>/.
+  #
+  # Install the skill once:
+  #   ln -s "$(pwd)/src/mykg/data/skills/mykg" ~/.claude/skills/mykg
+  # Then in Claude Code:  /mykg <input_dir>
+  #
+  # No API key required — the skill uses the host coding assistant's own
+  # reasoning. See docs/agent-mode.md for the full contract.
+  # ---------------------------------------------------------------------------
+    provider: agent
+    llm_retry:
+      max_retries: 1
+    llm:
+      max_output_tokens: 10000  # passed through to the task envelope; the skill enforces it
+      timeout: 1800             # seconds the pipeline will wait for a .done sentinel
+      retry_429_max: 0          # agent provider does not hit API rate limits
+      retry_429_base_delay: 2.0
+    agent:
+      inbox_dir: agent_inbox            # relative to session intermediate/
+      outbox_dir: agent_outbox          # relative to session intermediate/
+      poll_interval_seconds: 2          # how often the adapter checks for the .done sentinel
+    pipeline:
+      ingest:
+        max_workers: 8
+      preprocess:
+        enabled: true
+        subdir: _preprocessed
+        extra_args: []
+        timeout_seconds: 1800
+        uv_path: uv
+        uv_python_version: "3.12"
+        mineru_spec: mineru[all]
+        install_timeout_seconds: 1800
+        extensions:
+          - .pdf
+          - .docx
+          - .doc
+          - .pptx
+          - .png
+          - .jpg
+          - .jpeg
+          - .html
+          - .htm
+      chunking:
+        window_tokens: 2500
+        overlap_tokens: 250
+        tiktoken_encoding: cl100k_base
+      pass1:
+        batch_token_target: 10000
+        max_workers: 4                # the skill dispatches up to this many subagents per wave
+        per_file_batching: false
+      pass2:
+        max_workers: 4
+        stateful_chunks: true
+        prep_mode: batch_chunks
+        concat_batch_token_target: 10000
+        batch_token_target: 10000
+        batch_per_file: false
+        batch_retry_max: 1
+      normalize_names:
+        enabled: true
+        max_names_per_type: 2000
+      orphan_pass:
+        enabled: true
+        min_cooccurrence: 1
+        top_k_per_orphan: 5
+        confidence_base: 0.5
+        confidence_weight: 0.5
+        max_workers: 4
+        schema_max_restarts: 0
+        excerpt_window: 4000
+        excerpt_context: 1500
+        excerpt_max_total: 16000
+        blank_recovery_enabled: true
+        connected_sample_size: 200
+      assembly:
+        confidence_agg: mean
+        edge_id_prefix: "edge-"
+        edge_id_hex_length: 6
+        edge_dedup_separator: "|"
+        confidence_fallback: 0.0
+        confidence_scalar_omitted: 0.5
+      export:
+        schema_namespace: "http://mykg.local/schema/"
+        data_namespace: "http://mykg.local/data/"
+        rdf_namespace: "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+        rdfs_namespace: "http://www.w3.org/2000/01/rdf-schema#"
+        schema_prefix_label: ex
+        data_prefix_label: data
+        comment_width: 42
+        skos_namespace: "http://www.w3.org/2004/02/skos/core#"
+        networkx_enabled: true
+        obsidian_enabled: false
+        obsidian_vault_dir: obsidian_vault
+      error_gate:
+        enabled: false
+        threshold: 3
+      feedback:
+        max_file_chars: 64000
+      paths:
+        output_dir: output
+        intermediate_dir: intermediate
+        sessions_dir: sessions
+      output:
+        json_indent: 2
+      logging:
+        max_bytes: 10485760
+        backup_count: 3
+        capture_prompts: true
+        error_output_max_chars: 500
+      report:
+        enabled: true
+      merge_graphs:
+        reextraction_strategy: none
+        surgical_top_k_chunks_per_property: 0
+        human_review: false
+        orphan_pass_max_restarts: 0

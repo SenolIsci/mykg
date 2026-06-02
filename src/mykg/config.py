@@ -66,6 +66,8 @@ def _apply_profile(raw: dict) -> dict:
         result["llm"] = profile["llm"]
     if "llm_retry" in profile:
         result["llm_retry"] = profile["llm_retry"]
+    if "agent" in profile:
+        result["agent"] = profile["agent"]
     return result
 
 
@@ -256,3 +258,14 @@ MERGE_SURGICAL_TOP_K_CHUNKS_PER_PROPERTY: int = _get_opt(
     "merge_graphs", "surgical_top_k_chunks_per_property", 0
 )
 MERGE_ORPHAN_SCHEMA_MAX_RESTARTS: int = _get_opt("merge_graphs", "orphan_pass_max_restarts", 1)
+
+# ---------------------------------------------------------------------------
+# Agent provider (D49) — inbox/outbox filesystem contract with host skill
+# ---------------------------------------------------------------------------
+# These are only consumed when the active profile sets `provider: agent`.
+# Defaults are used when the active profile has no `agent:` block (other
+# providers do not need them).
+_agent = RAW.get("agent") or {}
+AGENT_INBOX_DIR: str = _agent.get("inbox_dir", "agent_inbox")
+AGENT_OUTBOX_DIR: str = _agent.get("outbox_dir", "agent_outbox")
+AGENT_POLL_INTERVAL_SECONDS: float = float(_agent.get("poll_interval_seconds", 2))

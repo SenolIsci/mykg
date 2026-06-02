@@ -211,6 +211,7 @@ The wizard walks you through three prompts:
 | Ollama | `ollama-local` | — | Local inference, no key needed |
 | OpenRouter | `openrouter-free` | `OPENROUTER_API_KEY` | Access many models via one key |
 | Claude CLI | `claude-cli` | — | Uses `claude -p` subprocess; serial only |
+| Agent (Claude Code skill) | `agent-claude-code` | — | LLM answers come from a Claude Code skill via filesystem inbox/outbox — see [docs/agent-mode.md](docs/agent-mode.md) |
 
 Switch provider by setting `profile:` at the top of [`mykg_config.yaml`](mykg_config.yaml).
 

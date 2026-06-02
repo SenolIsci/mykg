@@ -390,7 +390,7 @@ def extract_graph(
     error_gate = (
         ErrorGate(threshold=_cfg().ERROR_GATE_THRESHOLD) if _cfg().ERROR_GATE_ENABLED else None
     )
-    adapter = load_adapter(error_gate=error_gate)
+    adapter = load_adapter(error_gate=error_gate, intermediate_dir=intermediate_dir)
     logging.getLogger(__name__).info("LLM endpoint: %s", adapter.endpoint_label())
 
     base = None
@@ -573,7 +573,7 @@ def merge_graphs(
     if from_step:
         _delete_merge_from_step(from_step, intermediate_dir, output_dir)
 
-    adapter = load_adapter()
+    adapter = load_adapter(intermediate_dir=intermediate_dir)
 
     base = None
     if base_schema:
