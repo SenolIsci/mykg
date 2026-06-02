@@ -318,6 +318,8 @@ The `task_id` is `sha256(system + user + context_label)`, computed deterministic
 
 `ThreadPoolExecutor` parallelism is preserved transparently. With `pass2.max_workers: 8`, eight pipeline threads each call `adapter.complete()` simultaneously; each thread writes its own task to the inbox and independently polls for its own `.done` sentinel. The skill drains them in parallel waves — up to `pass2.max_workers` subagents per wave, dispatched in a single Claude Code response so they run concurrently. From the orchestrator's perspective the only observable difference vs. an HTTP adapter is wall-clock latency.
 
+The Claude Code skill in `src/mykg/data/skills/mykg/SKILL.md` exposes a single slash command — `/mykg` — that takes free-form intent. The skill parses intent, builds the matching `mykg` CLI command from live `--help` output, optionally confirms with the user, and (for `extract-graph`) runs the inbox/outbox watch loop. Adding a new flag to a mykg subcommand requires no skill changes; the skill discovers flags from `--help`. `mykg init` is intentionally not wrapped (interactive). `mykg merge-graphs` is planned for a follow-up because it has its own LLM-bearing flow that needs a dedicated watch loop.
+
 ---
 
 ## Key Design Decisions
