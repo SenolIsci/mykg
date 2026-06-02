@@ -679,7 +679,7 @@ profiles:
       report:
         enabled: true           # generate walkthrough.md after each extract run; set false to skip
       merge_graphs:
-        reextraction_strategy: full  # none | surgical | full — controls re-extraction when merged schema has new properties absent from a source session
+        reextraction_strategy: surgical  # none | surgical | full — controls re-extraction when merged schema has new properties absent from a source session
         surgical_top_k_chunks_per_property: 0  # 0 = no cap; >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
         human_review: false             # pause for human review of merged schema; overridden by --human-review CLI flag
         orphan_pass_max_restarts: 1     # max schema-gap restart loops during merge orphan pass (0 = disabled)
@@ -700,10 +700,10 @@ profiles:
   # ---------------------------------------------------------------------------
     provider: agent
     llm_retry:
-      max_retries: 1
+      max_retries: 0
     llm:
-      max_output_tokens: 10000  # passed through to the task envelope; the skill enforces it
-      timeout: 1800             # seconds the pipeline will wait for a .done sentinel
+      max_output_tokens: 20000  # passed through to the task envelope; the skill enforces it
+      timeout: 180             # seconds the pipeline will wait for a .done sentinel
       retry_429_max: 0          # agent provider does not hit API rate limits
       retry_429_base_delay: 2.0
     agent:
@@ -733,19 +733,19 @@ profiles:
           - .html
           - .htm
       chunking:
-        window_tokens: 2500
-        overlap_tokens: 250
+        window_tokens: 25000
+        overlap_tokens: 2500
         tiktoken_encoding: cl100k_base
       pass1:
-        batch_token_target: 10000
-        max_workers: 4                # the skill dispatches up to this many subagents per wave
+        batch_token_target: 15000
+        max_workers: 2                # the skill dispatches up to this many subagents per wave
         per_file_batching: false
       pass2:
-        max_workers: 4
+        max_workers: 2
         stateful_chunks: true
         prep_mode: batch_chunks
-        concat_batch_token_target: 10000
-        batch_token_target: 10000
+        concat_batch_token_target: 15000
+        batch_token_target: 15000
         batch_per_file: false
         batch_retry_max: 1
       normalize_names:
@@ -802,7 +802,7 @@ profiles:
       report:
         enabled: true
       merge_graphs:
-        reextraction_strategy: none
+        reextraction_strategy: surgical  # none | surgical | full — controls re-extraction when merged schema has new properties absent from a source session
         surgical_top_k_chunks_per_property: 0
         human_review: false
         orphan_pass_max_restarts: 0
