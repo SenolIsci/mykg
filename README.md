@@ -231,13 +231,24 @@ profiles:
 
 ### Invoke from inside Claude Code
 
-In an active Claude Code session, type:
+The skill exposes one slash command — `/mykg` — that accepts free-form intent. You describe what you want; the skill figures out which `mykg` CLI command to run, reads the live `--help` to validate flags, confirms expensive actions, and (for `extract-graph`) drains the LLM inbox in parallel waves.
 
-```
-/mykg ./my_notes                              # fresh run on a Markdown corpus
-/mykg ./my_notes --review                     # pause after Pass 1 for schema review
-/mykg --session 2026-06-02T17-30-00 --continue   # resume a session that hit the wave budget
-```
+Examples:
+
+| You type | The skill runs |
+| --- | --- |
+| `/mykg extract ./docs` | `mykg extract-graph ./docs` |
+| `/mykg ./docs` | `mykg extract-graph ./docs` (legacy positional alias) |
+| `/mykg extract ./docs with human review` | `mykg extract-graph ./docs --review` |
+| `/mykg append the new notes in ./docs` | `mykg extract-graph ./docs --append --session <latest>` |
+| `/mykg resume the last session` | `mykg extract-graph --session <latest>` |
+| `/mykg approve the schema` | `mykg approve-schema --session <latest>` |
+| `/mykg make a walkthrough` | `mykg walkthrough --session <latest>` |
+| `/mykg convert pdfs in ./inbox to ./md` | `mykg parse-docs --input ./inbox --output ./md` |
+
+Any flag mykg accepts on the CLI works here too — the skill reads `--help` rather than maintaining its own list, so `--from-step orphan_connect`, `--workers 8`, `--obsidian-vault`, etc. all flow through.
+
+`mykg init` and `mykg merge-graphs` are intentionally not wrapped: init is interactive (run from a shell once per machine), and merge-graphs has additional design questions and will be added in a follow-up.
 
 ### What the skill does on screen
 

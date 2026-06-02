@@ -1,76 +1,87 @@
 ---
 name: mykg
-description: Run the mykg knowledge-graph extractor in agent mode. Launches the mykg pipeline as a subprocess against a directory of Markdown files, then watches an inbox folder for LLM tasks and dispatches subagents to answer them. Use whenever the user types `/mykg <input_dir>` or asks to extract a knowledge graph in agent mode.
+description: Run mykg knowledge-graph commands inside Claude Code from one slash command `/mykg`. The user describes intent in natural language (extract, append, resume, approve, walkthrough, parse-docs); the skill parses intent, builds the right `mykg` CLI command from the live `--help` output, confirms, runs it, and drives the inbox/outbox watch loop for LLM-bearing commands (extract-graph). Excludes `mykg init` (interactive shell command) and `mykg merge-graphs` (follow-up planning).
 ---
 
-# mykg — agent mode runner
+# mykg — single slash command, intent-driven CLI dispatcher
 
-This skill drives the **mykg** knowledge-graph extractor when the active profile is `agent-claude-code`. In that profile, `mykg` does not call any LLM API directly — instead it writes task envelopes to a session-local `intermediate/agent_inbox/` directory and polls for `.done` sentinels in `intermediate/agent_outbox/`. This skill is the agent on the other side of that contract: it watches the inbox, dispatches one Agent-tool subagent per task, and writes the answers back.
+This skill is the agent-mode driver for **mykg**. The user types `/mykg <free text>` describing what they want; the skill parses the intent, assembles the matching `mykg` CLI command (with live `--help` as ground truth for flags), confirms expensive actions, and executes. For LLM-bearing subcommands (`extract-graph`), it then drives the inbox/outbox watch loop. For synchronous subcommands (`walkthrough`, `approve-schema`, `parse-docs`), it shells out and reports.
 
-The pipeline code, the orchestrator, all prompts, and all 12 pipeline steps are **unchanged**. Only the LLM delivery mechanism is different.
-
----
-
-## When to invoke
-
-Trigger this skill when the user:
-
-- types `/mykg <input_dir>` to start a fresh run on a Markdown corpus
-- types `/mykg --session <name> --continue` to resume a session whose pipeline subprocess died or whose 20-wave budget was exhausted
-- asks to "run mykg in agent mode" or "extract a knowledge graph using subagents"
-
-Do **not** invoke this skill when the user wants a normal API-backed run (`provider: anthropic`, `openai`, etc.) — for those, the user runs `mykg extract-graph` themselves directly.
+The pipeline code, the orchestrator, all prompts, all 12 pipeline steps, and the inbox/outbox contract are **unchanged**. This skill only changes how `mykg` is invoked from inside Claude Code.
 
 ---
 
-## CLI reference
+## When to invoke — intent examples
 
-The mykg CLI has 6 subcommands. The skill normally only needs `extract-graph`, but the table is here for forwarding flags accurately.
+Trigger this skill whenever the user types `/mykg <anything>`. Map the intent to a `mykg` CLI command using the table below as a guide; for anything not covered, fall back to the closest match and confirm before running.
 
-| Subcommand | Purpose | Key flags |
-| --- | --- | --- |
-| `mykg init` | Create a starter `mykg_config.yaml` in the current directory. | `--force`, `--profile <name>`, `--model <id>`, `--api-key <key>` |
-| `mykg extract-graph <input_dir>` | Run the 12-step pipeline on a Markdown corpus. | `--session <name>`, `--from-step <step>`, `--review`, `--base-schema <ttl>`, `--thesaurus <ttl>`, `--workers <N>`, `--confidence-agg mean\|max`, `--append`, `--obsidian-vault`, `--verbose`, `--log-file <path>`, `--output-dir <path>`, `--intermediate-dir <path>` |
-| `mykg approve-schema` | Release the human-review gate after editing `schema.json`. | `--session <name>`, `--intermediate-dir <path>`, `--verbose`, `--log-file <path>` |
-| `mykg walkthrough <session-name>` | Re-generate `walkthrough.md` for an existing session. | `--log-file <path>` |
-| `mykg merge-graphs <session-a> <session-b>` | Merge two completed sessions into a new unified session. | `--from-step <step>`, `--session-name <name>`, `--verbose`, `--log-file <path>`, `--base-schema <ttl>`, `--thesaurus <ttl>`, `--human-review` |
-| `mykg parse-docs <input> <output>` | Convert PDFs/DOCX/images to Markdown via MinerU. | passes through extra args to mineru |
-
-Pipeline step names (for `--from-step`): `preprocess`, `ingest`, `pass1`, `schema_validate`, `human_review`, `schema_flatten`, `pass2`, `normalize_names`, `assemble`, `orphan_score`, `orphan_connect`, `validate_graph`.
-
----
-
-## What you do — overview
-
-1. **Parse the user's invocation.** Determine `input_dir`, optional `--session <name>`, and any pass-through flags from the `/mykg ...` arguments.
-2. **Confirm agent mode is active.** Check that `mykg_config.yaml` has `profile: agent-claude-code` (or instruct the user to change it). If not, abort with a clear message.
-3. **Launch the pipeline.** Run `mykg extract-graph` in the background via `nohup` so it survives this skill turn. Capture the session directory.
-4. **Watch the inbox.** Loop scanning `<session>/intermediate/agent_inbox/`, dispatch one Agent-tool subagent per unanswered task (parallel calls in one response, up to the configured worker count), sleep 2 seconds between waves.
-5. **Exit cleanly.** Stop when the pipeline subprocess exits, when `output/knowledge_graph.ttl` appears, or after **20 watch waves**. If the pipeline is still running after 20 waves, tell the user to re-invoke `/mykg --session <name> --continue` to resume.
+| User typed | Skill should run |
+| --- | --- |
+| `/mykg extract this folder` (when cwd contains md files) | `mykg extract-graph .` (fresh session) |
+| `/mykg ./docs` | `mykg extract-graph ./docs` (legacy positional alias still works) |
+| `/mykg extract ./docs with human review` | `mykg extract-graph ./docs --review` |
+| `/mykg append the new notes in ./docs` | `mykg extract-graph ./docs --append --session <auto-detect-most-recent>` |
+| `/mykg resume the last session` | `mykg extract-graph --session <most-recent>` (no input dir; resumes existing) |
+| `/mykg approve the schema` | `mykg approve-schema --session <most-recent>` |
+| `/mykg make a walkthrough` | `mykg walkthrough --session <most-recent>` |
+| `/mykg make a walkthrough for 2026-06-02T17-30-00` | `mykg walkthrough --session 2026-06-02T17-30-00` |
+| `/mykg convert pdfs in ./inbox to ./md` | `mykg parse-docs --input ./inbox --output ./md` |
+| `/mykg from-step orphan_connect on the last session` | `mykg extract-graph --session <most-recent> --from-step orphan_connect` |
+| `/mykg init` | refuse: "Run `mykg init` from a shell — it is interactive." |
+| `/mykg merge sessions A and B` | refuse: "Skill support for `mykg merge-graphs` is planned in a follow-up. Run from a shell." |
 
 ---
 
-## Step 1 — parse the invocation
+## Discovering CLI flags
 
-The user typed something like one of:
+The skill MUST NOT hand-code flag tables. The single source of truth is the live `--help` output. Once at the top of each skill turn, run the help commands for the subcommands you might dispatch and cache the output in shell variables for the rest of the turn:
 
-```
-/mykg ./docs
-/mykg ~/notes --review --workers 8
-/mykg --session 2026-06-02T17-30-00 --continue
-/mykg ./corpus --from-step pass2 --session 2026-06-02T17-30-00
+```bash
+EXTRACT_HELP=$(uv run mykg extract-graph --help 2>&1)
+WALKTHROUGH_HELP=$(uv run mykg walkthrough --help 2>&1)
+APPROVE_HELP=$(uv run mykg approve-schema --help 2>&1)
+PARSE_HELP=$(uv run mykg parse-docs --help 2>&1)
 ```
 
-Extract:
-- `INPUT_DIR` (or empty for `--continue`)
-- `SESSION_NAME` (from `--session`)
-- `EXTRA_FLAGS` (everything else — forward verbatim)
+Use these cached values to:
+- validate that any flag the user mentioned actually exists,
+- complain if the user typed a non-existent flag,
+- automatically pick up new flags (e.g. tomorrow a `--use-cache` flag is added) with zero skill changes.
 
 ---
 
-## Step 2 — confirm active profile
+## Stage 1 — parse intent
 
-Run this Bash block to verify `agent-claude-code` is the active profile:
+From the user's `/mykg <free text>` message extract:
+
+1. **Verb** — extract / append / approve / walkthrough / parse / resume / init / merge → maps to a CLI subcommand (or to a refusal).
+2. **Input dir** — the path the user named, or `.` if they said "this folder", or absent for session-only commands.
+3. **Session** — resolved in order:
+   1. If the user typed `--session <name>` or "session <name>", use it.
+   2. Else, if the previous skill turn produced a session and the user's intent is "approve", "walkthrough", "resume", "append", or "from-step", use that previous session.
+   3. Else, list sessions under `$SESSIONS_DIR` (read `sessions_dir` from `mykg_config.yaml`, default `sessions`) sorted by mtime; pick the most recent.
+   4. If no session exists and the command needs one, fail clearly: "No existing sessions under `$SESSIONS_DIR`. Run `/mykg extract <dir>` first."
+4. **Flags** — anything the user named that maps to a flag the cached `--help` confirms (`--review`, `--append`, `--from-step <step>`, `--workers <N>`, `--obsidian-vault`, `--base-schema`, `--thesaurus`, `--verbose`, `--confidence-agg`, etc.). Forward verbatim.
+
+`extract-graph` without `--append` or `--from-step` does not need a pre-existing session — it auto-creates one.
+
+---
+
+## Stage 2 — confirm intent before running
+
+For destructive or expensive actions (anything that calls LLMs, anything `--from-step`, anything `--append`), restate the parsed command in one line and ask the user to confirm:
+
+```
+About to run: uv run mykg extract-graph ./docs --append --session 2026-06-02T17-30-00
+
+Reply "yes" to run, or correct me.
+```
+
+For obviously safe actions (`walkthrough`, `parse-docs`), skip the confirmation and run.
+
+---
+
+## Stage 3 — verify agent mode is active
 
 ```bash
 grep -E '^profile:\s' mykg_config.yaml
@@ -78,19 +89,22 @@ grep -E '^profile:\s' mykg_config.yaml
 
 The output must be `profile: agent-claude-code`. If it is not, stop and tell the user:
 
-> Active profile is not `agent-claude-code`. Edit `mykg_config.yaml` and set `profile: agent-claude-code`, then re-run `/mykg`.
+> Active profile is not `agent-claude-code`. Edit `mykg_config.yaml` and set `profile: agent-claude-code`, or run `mykg <subcommand>` from a shell directly.
 
 ---
 
-## Step 3 — launch the pipeline (fresh run)
+## Stage 4 — execute
 
-For a fresh run (no `--session` or `--session` but no existing session dir), launch:
+Three execution paths depending on the subcommand the parser landed on.
+
+### Stage 4a — LLM-bearing path (`extract-graph`)
+
+For a fresh run:
 
 ```bash
 SESSIONS_DIR=$(grep -E '^\s+sessions_dir:' mykg_config.yaml | head -1 | awk '{print $2}' || echo sessions)
 mkdir -p "$SESSIONS_DIR"
 
-# Auto-generated session timestamp; mykg will pick the same name and create the dir.
 nohup uv run mykg extract-graph "$INPUT_DIR" $EXTRA_FLAGS \
   > /tmp/mykg_run.out 2>&1 &
 echo $! > /tmp/mykg.pid
@@ -106,7 +120,7 @@ for i in $(seq 1 30); do
 done
 ```
 
-For a `--continue` run on an existing session:
+For a resume / append / from-step run on an existing session:
 
 ```bash
 SESSION_ROOT="$SESSIONS_DIR/$SESSION_NAME"
@@ -120,16 +134,12 @@ echo $! > /tmp/mykg.pid
 ```
 
 Capture:
-- `SESSION_ROOT` — the absolute path of the session directory.
+- `SESSION_ROOT` — absolute path of the session directory.
 - `INBOX_DIR=$SESSION_ROOT/intermediate/agent_inbox`
 - `OUTBOX_DIR=$SESSION_ROOT/intermediate/agent_outbox`
 - `MYKG_PID=$(cat /tmp/mykg.pid)`
 
----
-
-## Step 4 — the watch loop
-
-This is the main body. Up to **20 waves**, each wave does:
+Then enter the watch loop. Up to **20 waves**, each wave does:
 
 1. Scan the inbox for `*.task.json` files that do **not** have a matching `.done` in the outbox.
 2. For each task (up to `MAX_TASKS_PER_WAVE = 8`), make one Agent-tool subagent call **in parallel within a single message**.
@@ -147,7 +157,7 @@ ls -1 "$INBOX_DIR"/*.task.json 2>/dev/null | while read TASK_PATH; do
 done | head -8
 ```
 
-For every line printed above, **dispatch one Agent tool call** using the subagent prompt template below. All dispatches in a single wave **must go in the same assistant message** so they run in parallel.
+For every line printed above, **dispatch one Agent tool call** using the subagent prompt template at the bottom of this file. All dispatches in a single wave **must go in the same assistant message** so they run in parallel.
 
 Between waves:
 
@@ -165,13 +175,76 @@ sleep 2
 
 Track the wave count yourself. After 20 waves, tell the user:
 
-> Watch budget exhausted after 20 waves. Pipeline is still running (PID `$MYKG_PID`). Re-invoke `/mykg --session <name> --continue` to keep draining the inbox.
+> Watch budget exhausted after 20 waves. Pipeline is still running (PID `$MYKG_PID`). Re-invoke `/mykg resume the last session` (or `/mykg --session <name> --continue`) to keep draining the inbox.
+
+### Stage 4b — synchronous path (`walkthrough`, `approve-schema`, `parse-docs`)
+
+These subcommands do not write to the inbox. Run them in the foreground and report the resulting file path.
+
+**`walkthrough`:**
+
+```bash
+uv run mykg walkthrough $ARGS
+echo "Walkthrough: $SESSION_ROOT/walkthrough.md"
+```
+
+**`approve-schema`:**
+
+```bash
+uv run mykg approve-schema $ARGS
+echo "Approved: $SESSION_ROOT/intermediate/schema_approved.flag"
+```
+
+**`parse-docs`:**
+
+```bash
+uv run mykg parse-docs $ARGS
+echo "Converted markdown under: $OUTPUT_DIR"
+```
+
+Capture stdout/stderr; surface any non-zero exit to the user verbatim.
+
+### Stage 4c — refused (`init`, `merge-graphs`)
+
+- `/mykg init` → reply: "Run `mykg init` from a shell. It is interactive."
+- `/mykg merge ...` → reply: "Skill support is planned in a follow-up. Run from a shell."
+
+Do not dispatch anything.
 
 ---
 
-## Step 5 — subagent prompt template
+## Stage 5 — final report
 
-Each Agent-tool dispatch in step 4 uses **exactly this prompt** (substitute `$TASK_PATH` and `$OUTBOX_DIR`):
+When the loop exits (or the synchronous command returns), print:
+
+```bash
+echo "Session:  $SESSION_ROOT"
+echo "PID:      $MYKG_PID (alive: $(kill -0 $MYKG_PID 2>/dev/null && echo yes || echo no))"
+echo "Inbox:    $(ls -1 $INBOX_DIR/*.task.json 2>/dev/null | wc -l) total tasks"
+echo "Answered: $(ls -1 $OUTBOX_DIR/*.done 2>/dev/null | wc -l)"
+if [ -f "$SESSION_ROOT/output/knowledge_graph.ttl" ]; then
+  echo "Output:   $SESSION_ROOT/output/knowledge_graph.ttl"
+fi
+```
+
+For synchronous paths, just print the produced file path.
+
+---
+
+## Notes for the implementer
+
+- **Atomicity matters (LLM-bearing path).** Always write `<id>.answer.json.tmp` then `mv` it to the final name *before* touching `<id>.done`. The adapter polls the `.done` sentinel, not the answer file.
+- **Caching is automatic.** If you accidentally answer the same task twice the second write overwrites — the adapter only reads the most recent answer once `.done` exists.
+- **Do not validate.** The pipeline has its own retry + LLM-feedback path. If your JSON is malformed, the pipeline catches it and dispatches a corrective task on its own.
+- **Stay parallel (LLM-bearing path).** Within a wave, multiple Agent-tool calls in one assistant message run concurrently. Sequential dispatch defeats the purpose.
+- **Stay bounded.** 20 waves is a hard limit. If a run needs more, the user re-invokes `/mykg resume the last session`.
+- **Synchronous paths are trivial.** No atomicity or parallelism concerns; just shell out and report.
+
+---
+
+## Subagent prompt template
+
+Each Agent-tool dispatch in Stage 4a uses **exactly this prompt** (substitute `$TASK_PATH` and `$OUTBOX_DIR`):
 
 ```
 You are an mykg agent-mode worker. Your only job is to answer the LLM task in
@@ -219,29 +292,3 @@ feedback path and will repair downstream. Never leave a task unanswered: a
 missing `.done` sentinel will block the pipeline until its 1800-second
 timeout.
 ```
-
----
-
-## Step 6 — final report
-
-When the loop exits, print:
-
-```bash
-echo "Session:  $SESSION_ROOT"
-echo "PID:      $MYKG_PID (alive: $(kill -0 $MYKG_PID 2>/dev/null && echo yes || echo no))"
-echo "Inbox:    $(ls -1 $INBOX_DIR/*.task.json 2>/dev/null | wc -l) total tasks"
-echo "Answered: $(ls -1 $OUTBOX_DIR/*.done 2>/dev/null | wc -l)"
-if [ -f "$SESSION_ROOT/output/knowledge_graph.ttl" ]; then
-  echo "Output:   $SESSION_ROOT/output/knowledge_graph.ttl"
-fi
-```
-
----
-
-## Notes for the implementer
-
-- **Atomicity matters.** Always write `<id>.answer.json.tmp` then `mv` it to the final name *before* touching `<id>.done`. The adapter polls the `.done` sentinel, not the answer file.
-- **Caching is automatic.** If you accidentally answer the same task twice the second write overwrites — the adapter only reads the most recent answer once `.done` exists.
-- **Do not validate.** The pipeline has its own retry + LLM-feedback path. If your JSON is malformed, the pipeline catches it and dispatches a corrective task on its own.
-- **Stay parallel.** Within a wave, multiple Agent-tool calls in one assistant message run concurrently. Sequential dispatch defeats the purpose.
-- **Stay bounded.** 20 waves is a hard limit. If a run needs more, the user re-invokes `/mykg --session <name> --continue`.

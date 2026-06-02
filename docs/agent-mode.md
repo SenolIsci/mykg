@@ -116,7 +116,7 @@ To resume after a 20-wave timeout, re-invoke:
 /mykg --session 2026-06-02T17-30-00 --continue
 ```
 
-The full skill body lives in `src/mykg/data/skills/mykg/SKILL.md`. It includes a CLI reference table for all six `mykg` subcommands and the exact subagent prompt template.
+The full skill body lives in `src/mykg/data/skills/mykg/SKILL.md`. It exposes one slash command — `/mykg` — that accepts free-form intent (extract, append, resume, approve, walkthrough, parse-docs). The skill parses the intent, builds the matching `mykg` CLI command from live `--help` output, and for LLM-bearing commands drives the inbox/outbox watch loop. `mykg init` is intentionally not wrapped (run from a shell). `mykg merge-graphs` is parked for a follow-up round.
 
 ---
 
