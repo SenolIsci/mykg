@@ -145,9 +145,9 @@ mykg init --profile openrouter-free --model google/llama-4-maverick --api-key sk
 
 The wizard walks you through three prompts:
 
-1. **Profile** — choose your LLM provider (OpenRouter, Anthropic, OpenAI, Ollama, Claude CLI)
-2. **Model** — accept the default or type any model slug for that provider
-3. **API key** — paste your key (skipped for Ollama)
+1. **Profile** — choose your LLM provider (OpenRouter, Anthropic, OpenAI, Ollama, Claude CLI, or Agent / Claude Code skill)
+2. **Model** — accept the default or type any model slug for that provider *(skipped in agent mode — the host Claude Code session is the LLM)*
+3. **API key** — paste your key (skipped for Ollama, Claude CLI, and agent mode)
 
 ### LLM Providers
 

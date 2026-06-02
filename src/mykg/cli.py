@@ -93,6 +93,13 @@ _PROFILE_META = {
         "key_url": None,
         "default_model": "sonnet",
     },
+    "agent-claude-code": {
+        "label": "Agent (Claude Code skill — runs inside this session, no API key)",
+        "key_var": None,
+        "key_hint": None,
+        "key_url": None,
+        "default_model": None,  # agent mode has no model concept — the host is the LLM
+    },
 }
 
 
@@ -138,7 +145,7 @@ def init_config(force: bool, profile: str | None, model: str | None, api_key: st
     meta = _PROFILE_META[profile]
 
     # --- Model selection -----------------------------------------------------
-    if model is None:
+    if model is None and meta["default_model"] is not None:
         default_model = meta["default_model"]
         model_input = click.prompt(
             "Model name (press Enter for default)",
@@ -235,6 +242,17 @@ def _print_next_steps(profile: str) -> None:
         click.echo(
             "  (make sure the claude CLI is installed: npm install -g @anthropic-ai/claude-code)"
         )
+    elif profile == "agent-claude-code":
+        click.echo("\nAgent mode requires the bundled Claude Code skill:")
+        click.echo("  1. Symlink it into your Claude Code skills folder:")
+        click.echo(
+            "       ln -s \"$(python -c 'import mykg, pathlib; "
+            "print(pathlib.Path(mykg.__file__).parent / \"data\" / \"skills\" / \"mykg\")')\" "
+            "~/.claude/skills/mykg"
+        )
+        click.echo("  2. Restart Claude Code so the skill loader picks it up.")
+        click.echo("  3. Then in Claude Code, type:  /mykg <your_notes_directory>")
+        click.echo("\nSee docs/agent-mode.md for the full inbox/outbox contract.")
 
 
 @cli.command("extract-graph")
