@@ -209,6 +209,164 @@ def test_adapter_passes_prompts_to_record(tmp_path):
     assert captured.get("user_prompt") == "USER PROMPT"
 
 
+def test_setup_with_no_log_file_adds_no_file_handler(tmp_path):
+    """setup(log_file=None) attaches only a stdout handler; _llm_handler and _prompt_dir reset."""
+    import logging
+
+    import mykg.logging as mykg_logging
+
+    mykg_logging.setup(log_file=None)
+    root = logging.getLogger()
+    file_handlers = [
+        h for h in root.handlers if isinstance(h, logging.handlers.RotatingFileHandler)
+    ]
+    assert file_handlers == []
+    assert mykg_logging._llm_handler is None
+    assert mykg_logging._llm_log_path is None
+    assert mykg_logging._prompt_dir is None
+
+
+def test_color_formatter_wraps_known_levels():
+    """_ColorFormatter wraps messages for known log levels with ANSI codes."""
+    from mykg.logging import LOG_FORMAT, _ColorFormatter
+
+    fmt = _ColorFormatter(LOG_FORMAT)
+    record = logging.makeLogRecord(
+        {"name": "x", "levelname": "INFO", "levelno": logging.INFO, "msg": "hello"}
+    )
+    out = fmt.format(record)
+    # ANSI reset is appended when a known color is matched
+    assert out.endswith("\033[0m")
+    assert "hello" in out
+
+
+def test_color_formatter_no_color_for_unknown_level():
+    """_ColorFormatter does not wrap when levelname is not in _LEVEL_COLORS."""
+    from mykg.logging import LOG_FORMAT, _ColorFormatter
+
+    fmt = _ColorFormatter(LOG_FORMAT)
+    record = logging.makeLogRecord(
+        {"name": "x", "levelname": "TRACE", "levelno": 5, "msg": "hello"}
+    )
+    out = fmt.format(record)
+    assert "\033[" not in out  # no ANSI escape sequence
+
+
+def test_setup_creates_prompt_dir_when_capture_prompts_enabled(tmp_path):
+    """setup() creates intermediate/llm_calls/ when LOG_CAPTURE_PROMPTS is True."""
+    from unittest.mock import patch
+
+    import mykg.logging as mykg_logging
+
+    log_file = tmp_path / "run.log"
+    with patch("mykg.config.LOG_CAPTURE_PROMPTS", True):
+        mykg_logging.setup(log_file=log_file)
+    assert mykg_logging._prompt_dir is not None
+    assert mykg_logging._prompt_dir.exists()
+    assert mykg_logging._prompt_dir.name == "llm_calls"
+
+
+def test_setup_no_prompt_dir_when_capture_prompts_disabled(tmp_path):
+    """setup() leaves _prompt_dir None when LOG_CAPTURE_PROMPTS is False."""
+    from unittest.mock import patch
+
+    import mykg.logging as mykg_logging
+
+    log_file = tmp_path / "run.log"
+    with patch("mykg.config.LOG_CAPTURE_PROMPTS", False):
+        mykg_logging.setup(log_file=log_file)
+    assert mykg_logging._prompt_dir is None
+
+
+def test_write_prompt_files_noop_when_dir_is_none(tmp_path):
+    """write_prompt_files is a no-op when _prompt_dir is None."""
+    import mykg.logging as mykg_logging
+
+    mykg_logging.setup(log_file=None)
+    assert mykg_logging._prompt_dir is None
+    # Must not raise nor write anything
+    mykg_logging.write_prompt_files(
+        n=1,
+        context_label="x",
+        system_prompt="s",
+        user_prompt="u",
+        response="r",
+    )
+
+
+def test_record_llm_call_invalid_token_type_returns_silently(tmp_path):
+    """record_llm_call returns silently when token counts can't be coerced to int."""
+    from unittest.mock import patch
+
+    import mykg.logging as mykg_logging
+
+    log_file = tmp_path / "run.log"
+    with patch("mykg.config.LOG_LLM_LOG", True):
+        mykg_logging.setup(log_file=log_file)
+    before_counter = mykg_logging._call_counter
+
+    # Pass a non-coercible value to trigger the (TypeError, ValueError) branch
+    mykg_logging.record_llm_call(
+        provider="p",
+        model="m",
+        context_label="ctx",
+        input_tokens="not-a-number",  # type: ignore[arg-type]
+        output_tokens=5,
+        duration_s=0.1,
+    )
+    # Counter must not have advanced
+    assert mykg_logging._call_counter == before_counter
+
+
+def test_record_llm_call_status_code_and_error_branches(tmp_path):
+    """record_llm_call adds status_code/error fields when provided."""
+    from unittest.mock import patch
+
+    import mykg.logging as mykg_logging
+
+    log_file = tmp_path / "run.log"
+    with patch("mykg.config.LOG_LLM_LOG", True):
+        mykg_logging.setup(log_file=log_file)
+
+    mykg_logging.record_llm_call(
+        provider="p",
+        model="m",
+        context_label="ctx-err",
+        input_tokens=0,
+        output_tokens=0,
+        duration_s=0.0,
+        status_code=429,
+        error="rate-limited",
+    )
+    # Flush handler so the entry hits disk
+    mykg_logging._llm_handler.flush()
+    contents = (tmp_path / "llm.log").read_text(encoding="utf-8")
+    assert '"status_code": 429' in contents
+    assert '"error": "rate-limited"' in contents
+
+
+def test_record_llm_call_noop_when_handler_is_none(tmp_path):
+    """record_llm_call short-circuits when LOG_LLM_LOG is False (no _llm_handler)."""
+    from unittest.mock import patch
+
+    import mykg.logging as mykg_logging
+
+    log_file = tmp_path / "run.log"
+    # With LOG_LLM_LOG False (the default), _llm_handler should be None
+    with patch("mykg.config.LOG_LLM_LOG", False):
+        mykg_logging.setup(log_file=log_file)
+    assert mykg_logging._llm_handler is None
+    # Should be a clean no-op
+    mykg_logging.record_llm_call(
+        provider="p",
+        model="m",
+        context_label="ctx",
+        input_tokens=1,
+        output_tokens=1,
+        duration_s=0.1,
+    )
+
+
 def test_call_counter_increments_per_call(tmp_path):
     """record_llm_call increments the global counter for each call."""
     from unittest.mock import patch
