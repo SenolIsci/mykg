@@ -34,21 +34,27 @@ def test_rotating_handler_respects_config(tmp_path):
 
 def test_llm_log_handler_is_rotating(tmp_path):
     """setup() must install a RotatingFileHandler for llm.log."""
+    from unittest.mock import patch
+
     import mykg.logging as mykg_logging
 
     log_file = tmp_path / "run.log"
-    mykg_logging.setup(log_file=log_file)
+    with patch("mykg.config.LOG_LLM_LOG", True):
+        mykg_logging.setup(log_file=log_file)
     assert mykg_logging._llm_handler is not None
     assert isinstance(mykg_logging._llm_handler, logging.handlers.RotatingFileHandler)
 
 
 def test_llm_log_handler_respects_config(tmp_path):
     """llm.log RotatingFileHandler must use LOG_MAX_BYTES and LOG_BACKUP_COUNT."""
+    from unittest.mock import patch
+
     import mykg.logging as mykg_logging
     from mykg import config
 
     log_file = tmp_path / "run.log"
-    mykg_logging.setup(log_file=log_file)
+    with patch("mykg.config.LOG_LLM_LOG", True):
+        mykg_logging.setup(log_file=log_file)
     h = mykg_logging._llm_handler
     assert h.maxBytes == config.LOG_MAX_BYTES
     assert h.backupCount == config.LOG_BACKUP_COUNT
@@ -56,10 +62,13 @@ def test_llm_log_handler_respects_config(tmp_path):
 
 def test_llm_log_rotates_on_size(tmp_path):
     """record_llm_call must rotate llm.log when it exceeds maxBytes."""
+    from unittest.mock import patch
+
     import mykg.logging as mykg_logging
 
     log_file = tmp_path / "run.log"
-    mykg_logging.setup(log_file=log_file)
+    with patch("mykg.config.LOG_LLM_LOG", True):
+        mykg_logging.setup(log_file=log_file)
 
     # Shrink the handler's limit to 200 bytes so rotation happens quickly
     mykg_logging._llm_handler.maxBytes = 200
@@ -207,7 +216,8 @@ def test_call_counter_increments_per_call(tmp_path):
     import mykg.logging as mykg_logging
 
     log_file = tmp_path / "run.log"
-    mykg_logging.setup(log_file=log_file)
+    with patch("mykg.config.LOG_LLM_LOG", True):
+        mykg_logging.setup(log_file=log_file)
     mykg_logging._call_counter = 0
     mykg_logging._prompt_dir = tmp_path / "llm_calls"
     mykg_logging._prompt_dir.mkdir(exist_ok=True)
