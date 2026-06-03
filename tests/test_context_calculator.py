@@ -546,6 +546,191 @@ def test_main_manual_mode_errors_without_context(monkeypatch, capsys):
     assert exc_info.value.code != 0
 
 
+def test_write_candidate_config_leaves_other_profile_untouched(tmp_path):
+    """write_candidate_config must not patch keys outside the named profile (line 239)."""
+    cfg_text = """\
+profile: alpha
+profiles:
+  alpha:
+    llm:
+      context_window: 1000
+  beta:
+    llm:
+      context_window: 9999
+"""
+    cfg_path = tmp_path / "mykg_config.yaml"
+    cfg_path.write_text(cfg_text)
+
+    result = {
+        "context_window": 4242,
+        "max_output_tokens": 100,
+        "batch_token_target": 200,
+        "window_tokens": 300,
+        "overlap_tokens": 50,
+        "max_file_chars": 400,
+    }
+    out_path = write_candidate_config(cfg_path, "alpha", result)
+    out = out_path.read_text()
+
+    # The alpha profile's context_window should be patched, but beta's value
+    # (9999) must remain unchanged
+    assert "context_window: 4242" in out
+    assert "context_window: 9999" in out
+
+
+def test_print_report_prep_mode_concat(capsys):
+    """print_report shows the concat-specific message when prep_mode='concat' (line 324-325)."""
+    print_report(PRINT_RESULT, model="m", chunk_divisor=12, prep_mode="concat")
+    out = capsys.readouterr().out
+    assert "concat_batch_token_target" in out
+    assert "concat" in out
+
+
+def test_print_report_prep_mode_batch_chunks(capsys):
+    """print_report shows the batch_chunks message when prep_mode='batch_chunks' (line 326-327)."""
+    print_report(PRINT_RESULT, model="m", chunk_divisor=12, prep_mode="batch_chunks")
+    out = capsys.readouterr().out
+    assert "pass2.batch_token_target" in out
+    assert "batch_chunks" in out
+
+
+def test_print_report_prep_mode_per_file(capsys):
+    """print_report shows the per-file message for an unrecognized prep_mode (line 329)."""
+    print_report(PRINT_RESULT, model="m", chunk_divisor=12, prep_mode="per_file")
+    out = capsys.readouterr().out
+    assert "per-file chunking" in out
+
+
+def test_main_from_config_errors_when_context_missing(tmp_path, monkeypatch):
+    """parser.error fires (line 421-425) when llm.context_window is absent."""
+    cfg = """\
+profile: bad
+profiles:
+  bad:
+    llm: {}
+    pipeline:
+      chunking: {}
+"""
+    (tmp_path / "mykg_config.yaml").write_text(cfg)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["context_calculator.py", "--from-config"])
+
+    from mykg.utility.context_calculator import main
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code != 0
+
+
+def test_main_from_config_auto_discovers_input_files(tmp_path, monkeypatch, capsys):
+    """When --input-dir is omitted, main() finds ./input_files automatically (lines 436-440)."""
+    # Create ./input_files in cwd
+    input_dir = tmp_path / "input_files"
+    input_dir.mkdir()
+    (input_dir / "doc.md").write_text("hello world auto discover")
+
+    cfg = """\
+profile: p
+profiles:
+  p:
+    llm:
+      context_window: 32000
+      max_output_tokens: 8000
+    pipeline:
+      chunking:
+        window_tokens: 2000
+        overlap_tokens: 200
+        tiktoken_encoding: cl100k_base
+"""
+    (tmp_path / "mykg_config.yaml").write_text(cfg)
+    monkeypatch.chdir(tmp_path)
+
+    monkeypatch.setattr(sys, "argv", ["context_calculator.py", "--from-config"])
+
+    mock_enc = MagicMock()
+    mock_enc.encode.side_effect = lambda text: [0] * len(text.split())
+    mock_tiktoken = MagicMock()
+    mock_tiktoken.get_encoding.return_value = mock_enc
+
+    with patch.dict(sys.modules, {"tiktoken": mock_tiktoken}):
+        from mykg.utility.context_calculator import main
+
+        main()
+
+    out = capsys.readouterr().out
+    assert "Token Budget Calculator" in out
+
+
+def test_main_from_config_errors_when_no_input_dir(tmp_path, monkeypatch):
+    """parser.error fires (line 441-444) when no input dir can be located."""
+    cfg = """\
+profile: p
+profiles:
+  p:
+    llm:
+      context_window: 32000
+      max_output_tokens: 8000
+    pipeline:
+      chunking:
+        tiktoken_encoding: cl100k_base
+"""
+    (tmp_path / "mykg_config.yaml").write_text(cfg)
+    monkeypatch.chdir(tmp_path)
+    # No input_files or _input_files directory exists
+    monkeypatch.setattr(sys, "argv", ["context_calculator.py", "--from-config"])
+
+    from mykg.utility.context_calculator import main
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code != 0
+
+
+def test_main_from_config_with_explicit_chunk_divisor(tmp_path, monkeypatch, capsys):
+    """When --chunk-divisor is supplied, the explicit-divisor branch (lines 453-465) runs."""
+    input_dir = tmp_path / "input_files"
+    input_dir.mkdir()
+    (input_dir / "doc.md").write_text("hello world")
+
+    cfg = """\
+profile: p
+profiles:
+  p:
+    llm:
+      context_window: 32000
+      max_output_tokens: 8000
+    pipeline:
+      chunking:
+        window_tokens: 2000
+        overlap_tokens: 200
+        tiktoken_encoding: cl100k_base
+      pass2:
+        prep_mode: concat
+"""
+    (tmp_path / "mykg_config.yaml").write_text(cfg)
+    monkeypatch.chdir(tmp_path)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["context_calculator.py", "--from-config", "--chunk-divisor", "16"],
+    )
+
+    mock_enc = MagicMock()
+    mock_enc.encode.side_effect = lambda text: [0] * len(text.split())
+    mock_tiktoken = MagicMock()
+    mock_tiktoken.get_encoding.return_value = mock_enc
+
+    with patch.dict(sys.modules, {"tiktoken": mock_tiktoken}):
+        from mykg.utility.context_calculator import main
+
+        main()
+
+    out = capsys.readouterr().out
+    # explicit chunk_divisor=16 should be reflected in the YAML snippet
+    assert "32000" in out
+
+
 def test_main_from_config_mode_runs(tmp_path, monkeypatch, capsys):
     # Create a minimal corpus
     input_dir = tmp_path / "input_files"

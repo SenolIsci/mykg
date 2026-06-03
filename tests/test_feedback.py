@@ -159,6 +159,82 @@ def test_fix_normalization_raises_on_bad_structure(tmp_path):
     assert result["mappings"]["Person"]["Alice"] == "Alice Smith"
 
 
+def test_fix_schema_deletes_stale_flattened_file(tmp_path):
+    """_fix_schema deletes flattened_schema.json when it exists (lines 68-70)."""
+    ctx = _make_ctx(tmp_path)
+    (ctx.intermediate_dir / "schema.json").write_text(
+        json.dumps({"concepts": [], "properties": []})
+    )
+    # Pre-create a stale flattened_schema.json — _fix_schema must delete it
+    flattened_path = ctx.intermediate_dir / "flattened_schema.json"
+    flattened_path.write_text("{}")
+    assert flattened_path.exists()
+
+    corrected = {
+        "concepts": [{"type": "Person", "parent": None, "attributes": ["name"]}],
+        "properties": [],
+    }
+    ctx.adapter.complete.return_value = json.dumps(corrected)
+
+    apply("schema_validate", "some rdfs error", ctx)
+
+    # File must have been removed because schema was corrected
+    assert not flattened_path.exists()
+
+
+def test_fix_orphan_connect_writes_corrected_connections(tmp_path):
+    """_fix_orphan_connect writes corrected JSON to orphan_connections.json (lines 135-158)."""
+    ctx = _make_ctx(tmp_path)
+
+    # Set up candidates + a stale connections file
+    candidates = {"groups": [{"filename": "f.md", "chunk_idx": 0, "orphan_ids": ["x"]}]}
+    (ctx.intermediate_dir / "orphan_candidates.json").write_text(json.dumps(candidates))
+    stale = {"edge-bad": {"type": "wrong", "from": "x", "to": "y"}}
+    connections_path = ctx.intermediate_dir / "orphan_connections.json"
+    connections_path.write_text(json.dumps(stale))
+
+    corrected = {
+        "edge-good": {
+            "type": "knows",
+            "from": "x",
+            "to": "y",
+            "confidence": 0.8,
+            "method": "orphan_inferred",
+        }
+    }
+    ctx.adapter.complete.return_value = json.dumps(corrected)
+
+    result = apply("orphan_connect", "edge type 'wrong' not in schema", ctx)
+    assert result is True
+
+    written = json.loads(connections_path.read_text())
+    assert "edge-good" in written
+    assert written["edge-good"]["type"] == "knows"
+
+
+def test_fix_orphan_connect_no_existing_candidates_or_connections(tmp_path):
+    """_fix_orphan_connect tolerates missing candidates/connections files (defaults '{}')."""
+    ctx = _make_ctx(tmp_path)
+    # Neither orphan_candidates.json nor orphan_connections.json exists
+
+    corrected = {"edge-1": {"type": "knows", "from": "a", "to": "b", "confidence": 0.5}}
+    ctx.adapter.complete.return_value = json.dumps(corrected)
+
+    apply("orphan_connect", "some error", ctx)
+
+    out = json.loads((ctx.intermediate_dir / "orphan_connections.json").read_text())
+    assert "edge-1" in out
+
+
+def test_fix_orphan_connect_raises_on_non_dict(tmp_path):
+    """_fix_orphan_connect raises ValueError when LLM returns non-dict JSON."""
+    ctx = _make_ctx(tmp_path)
+    ctx.adapter.complete.return_value = json.dumps(["not", "a", "dict"])
+
+    with pytest.raises(ValueError, match="invalid orphan_connections structure"):
+        apply("orphan_connect", "some error", ctx)
+
+
 def test_orchestrator_llm_correction_false_when_no_handler(tmp_path):
     """pipeline_state.json must not record llm_correction_applied=True when no handler ran."""
     import json as _json

@@ -237,3 +237,141 @@ def test_orphan_connect_empty_candidates(tmp_path):
     assert connections_path.exists()
     connections = json.loads(connections_path.read_text())
     assert connections == {}
+
+
+# ---------------------------------------------------------------------------
+# Extended Unit 11 — step_orphan_connect coverage
+# ---------------------------------------------------------------------------
+
+
+def test_orphan_connect_schema_gap_with_max_restarts_zero(tmp_path, monkeypatch):
+    """When ORPHAN_SCHEMA_MAX_RESTARTS=0, schema-gap orphan triggers no LLM call."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "ORPHAN_SCHEMA_MAX_RESTARTS", 0)
+
+    ctx = _make_ctx(tmp_path)
+    candidates = {
+        "groups": [
+            {
+                "chunk_key": "doc.md::1",
+                "filename": "doc.md",
+                "chunk_idx": 1,
+                "is_blank_response": False,
+                "orphan_ids": ["person-bob"],
+                "connected_ids": [],
+            }
+        ],
+        "schema_gap_orphans": [],
+    }
+    (ctx.intermediate_dir / "orphan_candidates.json").write_text(json.dumps(candidates))
+    (ctx.intermediate_dir / "nodes.json").write_text(json.dumps(NODES))
+    (ctx.intermediate_dir / "schema.json").write_text(json.dumps(SCHEMA))
+    (ctx.intermediate_dir / "edge_metadata.json").write_text(json.dumps({}))
+
+    with patch("mykg.orphan_connector.llm_complete_with_retry") as mock_llm:
+        # Only one call expected: orphan confirmation. Schema proposal skipped.
+        mock_llm.return_value = json.dumps([])  # no edges confirmed
+        run_orphan_connect(ctx)
+
+    # schema_gap_proposals.json must exist with empty new_properties
+    proposals_path = ctx.intermediate_dir / "schema_gap_proposals.json"
+    assert proposals_path.exists()
+    proposals = json.loads(proposals_path.read_text())
+    assert proposals == {"new_properties": []}
+
+
+def test_orphan_connect_schema_gap_raises_schema_updated(tmp_path, monkeypatch):
+    """Valid schema additions from LLM -> SchemaUpdatedError."""
+    import mykg.config as cfg
+
+    from mykg.orchestrator import SchemaUpdatedError
+
+    monkeypatch.setattr(cfg, "ORPHAN_SCHEMA_MAX_RESTARTS", 1)
+
+    ctx = _make_ctx(tmp_path)
+    candidates = {
+        "groups": [
+            {
+                "chunk_key": "doc.md::1",
+                "filename": "doc.md",
+                "chunk_idx": 1,
+                "is_blank_response": False,
+                "orphan_ids": ["person-bob"],
+                "connected_ids": [],
+            }
+        ],
+        "schema_gap_orphans": [],
+    }
+    (ctx.intermediate_dir / "orphan_candidates.json").write_text(json.dumps(candidates))
+    (ctx.intermediate_dir / "nodes.json").write_text(json.dumps(NODES))
+    (ctx.intermediate_dir / "schema.json").write_text(json.dumps(SCHEMA))
+    (ctx.intermediate_dir / "edge_metadata.json").write_text(json.dumps({}))
+
+    with patch("mykg.orphan_connector.llm_complete_with_retry") as mock_llm:
+        mock_llm.side_effect = [
+            json.dumps([]),  # no edges from chunk recovery
+            json.dumps(
+                {
+                    "new_properties": [
+                        {
+                            "name": "new_relates_to",
+                            "domain": "Person",
+                            "range": "Person",
+                            "attributes": [],
+                        }
+                    ]
+                }
+            ),
+        ]
+        import pytest as _pytest
+
+        with _pytest.raises(SchemaUpdatedError) as exc_info:
+            run_orphan_connect(ctx)
+
+        assert "new_relates_to" in exc_info.value.new_property_names
+
+
+def test_orphan_connect_incremental_preserves_prior(tmp_path):
+    """Incremental sweep should retain prior orphan_connections.json edges."""
+    ctx = _make_ctx(tmp_path)
+    ctx.orphan_incremental = True
+    candidates = {
+        "groups": [
+            {
+                "chunk_key": "doc.md::1",
+                "filename": "doc.md",
+                "chunk_idx": 1,
+                "is_blank_response": False,
+                "orphan_ids": ["person-bob"],
+                "connected_ids": ["person-alice"],
+            }
+        ],
+        "schema_gap_orphans": [],
+    }
+    (ctx.intermediate_dir / "orphan_candidates.json").write_text(json.dumps(candidates))
+    (ctx.intermediate_dir / "nodes.json").write_text(json.dumps(NODES))
+    (ctx.intermediate_dir / "schema.json").write_text(json.dumps(SCHEMA))
+    (ctx.intermediate_dir / "edge_metadata.json").write_text(json.dumps({}))
+
+    # Pre-existing connection for person-bob
+    prior = {
+        "edge-prior": {
+            "type": "works_at",
+            "from": "person-bob",
+            "to": "org-acme",
+            "confidence": 0.7,
+        }
+    }
+    (ctx.intermediate_dir / "orphan_connections.json").write_text(json.dumps(prior))
+
+    with patch("mykg.orphan_connector.llm_complete_with_retry") as mock_llm:
+        # No new edges; schema gap returns nothing
+        mock_llm.return_value = json.dumps([])
+        run_orphan_connect(ctx)
+
+    connections = json.loads((ctx.intermediate_dir / "orphan_connections.json").read_text())
+    assert "edge-prior" in connections
+    orphan_log = json.loads((ctx.intermediate_dir / "orphan_log.json").read_text())
+    # retained event present
+    assert any(e["event"] == "orphan_edge_retained" for e in orphan_log)

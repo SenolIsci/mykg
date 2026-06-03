@@ -375,3 +375,203 @@ def test_coerce_attr_scalar_uses_fallback():
     result = _coerce_attr("raw_string")
     assert result["value"] == "raw_string"
     assert result["confidence"] == _cfg.CONFIDENCE_FALLBACK
+
+
+# ---------------------------------------------------------------------------
+# Extended Unit 12 — assembler edge paths
+# ---------------------------------------------------------------------------
+
+
+def test_node_dedup_confidence_one_string_concat():
+    """Two sources with confidence=1.0 different strings concatenate with '; '."""
+    from mykg.assembler import deduplicate_nodes
+
+    raw = {
+        "a.md": {
+            "nodes": [
+                {
+                    "id": "person-alice",
+                    "type": "Person",
+                    "confidence": 1.0,
+                    "attributes": {"role": {"value": "engineer", "confidence": 1.0}},
+                }
+            ],
+            "edges": [],
+        },
+        "b.md": {
+            "nodes": [
+                {
+                    "id": "person-alice",
+                    "type": "Person",
+                    "confidence": 1.0,
+                    "attributes": {"role": {"value": "manager", "confidence": 1.0}},
+                }
+            ],
+            "edges": [],
+        },
+    }
+    nodes, merge_log = deduplicate_nodes(raw)
+    assert len(nodes) == 1
+    val = nodes[0]["attributes"]["role"]["value"]
+    assert "engineer" in val and "manager" in val and ";" in val
+    assert merge_log and "concatenated_attributes" in merge_log[0]
+
+
+def test_edge_dedup_confidence_one_string_concat():
+    """Edge attribute concat when both have confidence=1.0 with different strings."""
+    from mykg.assembler import deduplicate_edges
+
+    raw = {
+        "a.md": {
+            "nodes": [],
+            "edges": [
+                {
+                    "type": "works_at",
+                    "from": "p-1",
+                    "to": "o-1",
+                    "confidence": 1.0,
+                    "attributes": {"role": {"value": "engineer", "confidence": 1.0}},
+                }
+            ],
+        },
+        "b.md": {
+            "nodes": [],
+            "edges": [
+                {
+                    "type": "works_at",
+                    "from": "p-1",
+                    "to": "o-1",
+                    "confidence": 1.0,
+                    "attributes": {"role": {"value": "manager", "confidence": 1.0}},
+                }
+            ],
+        },
+    }
+    edges, merge_log = deduplicate_edges(raw)
+    edge = next(iter(edges.values()))
+    val = edge["attributes"]["role"]["value"]
+    assert "engineer" in val and "manager" in val and ";" in val
+    assert merge_log and "concatenated_attributes" in merge_log[0]
+
+
+def test_node_dedup_alias_union():
+    """Aliases from two sources are unioned (D29)."""
+    from mykg.assembler import deduplicate_nodes
+
+    raw = {
+        "a.md": {
+            "nodes": [
+                {
+                    "id": "person-alice",
+                    "type": "Person",
+                    "confidence": 1.0,
+                    "attributes": {"name": {"value": "Alice", "confidence": 1.0}},
+                    "aliases": ["Ali"],
+                }
+            ],
+            "edges": [],
+        },
+        "b.md": {
+            "nodes": [
+                {
+                    "id": "person-alice",
+                    "type": "Person",
+                    "confidence": 1.0,
+                    "attributes": {"name": {"value": "Alice", "confidence": 1.0}},
+                    "aliases": ["A.", "Liz"],
+                }
+            ],
+            "edges": [],
+        },
+    }
+    nodes, _ = deduplicate_nodes(raw)
+    assert sorted(nodes[0]["aliases"]) == ["A.", "Ali", "Liz"]
+
+
+def test_node_dedup_no_aliases_field_absent():
+    """Nodes with no aliases get no aliases key in the merged output (per D29)."""
+    from mykg.assembler import deduplicate_nodes
+
+    raw = {
+        "a.md": {
+            "nodes": [
+                {
+                    "id": "person-alice",
+                    "type": "Person",
+                    "confidence": 1.0,
+                    "attributes": {"name": {"value": "Alice", "confidence": 1.0}},
+                }
+            ],
+            "edges": [],
+        },
+    }
+    nodes, _ = deduplicate_nodes(raw)
+    assert "aliases" not in nodes[0]
+
+
+def test_edge_dedup_with_non_dict_attrs():
+    """Edges with non-dict attributes coerce gracefully."""
+    from mykg.assembler import deduplicate_edges
+
+    raw = {
+        "a.md": {
+            "nodes": [],
+            "edges": [
+                {
+                    "type": "works_at",
+                    "from": "p-1",
+                    "to": "o-1",
+                    "confidence": 0.9,
+                    "attributes": "not-a-dict",
+                }
+            ],
+        },
+        "b.md": {
+            "nodes": [],
+            "edges": [
+                {
+                    "type": "works_at",
+                    "from": "p-1",
+                    "to": "o-1",
+                    "confidence": 0.9,
+                    "attributes": {"role": {"value": "engineer", "confidence": 0.8}},
+                }
+            ],
+        },
+    }
+    edges, _ = deduplicate_edges(raw)
+    edge = next(iter(edges.values()))
+    assert isinstance(edge["attributes"], dict)
+
+
+def test_dedup_nodes_with_non_dict_attrs():
+    """Node with non-dict attributes still merges without error."""
+    from mykg.assembler import deduplicate_nodes
+
+    raw = {
+        "a.md": {
+            "nodes": [
+                {
+                    "id": "p-1",
+                    "type": "Person",
+                    "confidence": 0.9,
+                    "attributes": {"name": {"value": "Alice", "confidence": 0.9}},
+                },
+            ],
+            "edges": [],
+        },
+        "b.md": {
+            "nodes": [
+                {
+                    "id": "p-1",
+                    "type": "Person",
+                    "confidence": 0.5,
+                    "attributes": "not-a-dict",
+                },
+            ],
+            "edges": [],
+        },
+    }
+    nodes, _ = deduplicate_nodes(raw)
+    assert len(nodes) == 1
+    assert nodes[0]["attributes"]["name"]["value"] == "Alice"

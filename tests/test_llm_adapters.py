@@ -1036,6 +1036,138 @@ def _load_openrouter_api_key() -> str | None:
     return key or None
 
 
+def test_openrouter_endpoint_label_includes_model_and_base_url():
+    """endpoint_label() returns a string with model and base URL (line 59)."""
+    with patch("openai.OpenAI"):
+        from mykg.llm.openrouter_adapter import OpenRouterAdapter
+
+        adapter = OpenRouterAdapter(
+            model="some/model",
+            max_tokens=100,
+            timeout=10,
+            api_key="test-key",
+        )
+        label = adapter.endpoint_label()
+    assert "some/model" in label
+    assert "openrouter.ai" in label
+
+
+def test_openrouter_wall_clock_timeout_raises_timeouterror(monkeypatch):
+    """When future.result raises concurrent.futures.TimeoutError, the adapter raises
+    TimeoutError and records the call with the timeout error annotation (lines 94-109)."""
+    import concurrent.futures as _cf
+
+    class _SlowFuture:
+        def result(self, timeout=None):
+            raise _cf.TimeoutError
+
+    class _FakeExec:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def submit(self, fn):
+            return _SlowFuture()
+
+    with (
+        patch("openai.OpenAI"),
+        patch("mykg.llm.openrouter_adapter.concurrent.futures.ThreadPoolExecutor", _FakeExec),
+        patch("mykg.llm.openrouter_adapter.record_llm_call") as mock_record,
+    ):
+        from mykg.llm.openrouter_adapter import OpenRouterAdapter
+
+        adapter = OpenRouterAdapter(
+            model="m",
+            max_tokens=10,
+            timeout=1,
+            api_key="test-key",
+            retry_429_max=0,  # don't retry through the rate-limit harness
+        )
+        with pytest.raises(TimeoutError, match="wall-clock timeout"):
+            adapter.complete("s", "u", context_label="ctx-tw")
+
+    # record_llm_call should have been invoked with the wall-clock error
+    found = any(
+        "wall-clock timeout" in str(c.kwargs.get("error", ""))
+        for c in mock_record.call_args_list
+    )
+    assert found, "record_llm_call should record the wall-clock timeout error"
+
+
+def test_openrouter_api_status_error_4xx_records_and_raises():
+    """APIStatusError with status<500 is recorded and re-raised (lines 129-141, 150)."""
+    import openai
+
+    api_err = openai.APIStatusError(
+        message="bad request",
+        response=MagicMock(status_code=400, headers={}),
+        body={"error": {"message": "bad request"}},
+    )
+
+    with (
+        patch("openai.OpenAI") as mock_cls,
+        patch("mykg.llm.openrouter_adapter.record_llm_call") as mock_record,
+    ):
+        mock_client = MagicMock()
+        mock_cls.return_value = mock_client
+        mock_client.chat.completions.create.side_effect = api_err
+
+        from mykg.llm.openrouter_adapter import OpenRouterAdapter
+
+        adapter = OpenRouterAdapter(
+            model="m",
+            max_tokens=10,
+            timeout=10,
+            api_key="test-key",
+            retry_429_max=0,
+        )
+        with pytest.raises(openai.APIStatusError):
+            adapter.complete("s", "u")
+
+    # A 4xx is recorded with status_code in the metadata
+    call_kwargs_list = [c.kwargs for c in mock_record.call_args_list]
+    assert any(k.get("status_code") == 400 for k in call_kwargs_list)
+
+
+def test_openrouter_api_status_error_5xx_converted_to_rate_limit(monkeypatch):
+    """APIStatusError with status>=500 is converted to RateLimitError (lines 144-149)."""
+    import openai
+
+    api_err = openai.APIStatusError(
+        message="upstream",
+        response=MagicMock(status_code=502, headers={}),
+        body={"error": {"message": "upstream"}},
+    )
+
+    with (
+        patch("openai.OpenAI") as mock_cls,
+        patch("mykg.llm.openrouter_adapter.record_llm_call"),
+        patch("time.sleep"),
+    ):
+        mock_client = MagicMock()
+        mock_cls.return_value = mock_client
+        mock_client.chat.completions.create.side_effect = api_err
+
+        from mykg.llm.openrouter_adapter import OpenRouterAdapter
+
+        adapter = OpenRouterAdapter(
+            model="m",
+            max_tokens=10,
+            timeout=10,
+            api_key="test-key",
+            retry_429_max=1,
+            retry_429_base_delay=0.0,
+        )
+        # The 5xx is converted to RateLimitError, which after retries surfaces
+        with pytest.raises(openai.RateLimitError):
+            adapter.complete("s", "u")
+
+
 @pytest.mark.live
 def test_openrouter_live_call_respects_timeout():
     """Live call: confirms the adapter actually connects and returns a non-empty response

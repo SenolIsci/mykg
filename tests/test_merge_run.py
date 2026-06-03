@@ -440,6 +440,95 @@ def test_run_merge_non_blocking_step_continues_after_failure(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def test_run_merge_waits_at_human_review_when_review_enabled(tmp_path):
+    """When ctx.review=True and the approval flag is absent, the pipeline pauses at human_review."""
+    ctx = _make_ctx(tmp_path, review=True)
+
+    seen_steps: list[str] = []
+
+    def try_run_side_effect(step, ctx_arg):
+        seen_steps.append(step.name)
+        return None
+
+    # human_review step is the only one with requires_review_flag=True
+    with (
+        patch("mykg.merge_run._try_run", side_effect=try_run_side_effect),
+        patch("mykg.merge_run._is_done", return_value=False),
+        patch("mykg.merge_run._review_flag_exists", return_value=False),
+        patch("mykg.merge_run.log") as mock_log,
+    ):
+        run_merge(ctx)  # must return cleanly (no exception)
+
+    # Steps after human_review should NOT have been attempted
+    assert "human_review" not in seen_steps
+    # The merge run should have logged the WAITING message and returned
+    info_msgs = " ".join(str(c) for c in mock_log.info.call_args_list)
+    assert "WAITING" in info_msgs
+
+    # pipeline_state.json must have written human_review as waiting
+    state_path = ctx.intermediate_dir / "pipeline_state.json"
+    state = json.loads(state_path.read_text())
+    assert state["steps"]["human_review"]["status"] == "waiting"
+
+
+def test_run_merge_feedback_path_triggered_on_llm_step_failure(tmp_path):
+    """When an LLM step fails on retry, feedback.apply is called (lines 213-219)."""
+    ctx = _make_ctx(tmp_path)
+
+    # merge_schema is an is_llm_step=True step
+    llm_step_name = next(s.name for s in MERGE_STEPS if s.is_llm_step)
+
+    def try_run_side_effect(step, ctx_arg):
+        if step.name == llm_step_name:
+            return f"simulated {step.name} error"
+        return None
+
+    with (
+        patch("mykg.merge_run._try_run", side_effect=try_run_side_effect),
+        patch("mykg.merge_run._is_done", return_value=False),
+        patch("mykg.feedback.apply") as mock_feedback,
+        patch("mykg.merge_run.log"),
+    ):
+        mock_feedback.return_value = True
+        # Will raise PipelineHaltError because the step keeps failing and is blocking
+        try:
+            run_merge(ctx)
+        except PipelineHaltError:
+            pass
+
+    assert mock_feedback.called
+    # The first positional arg should be the step name
+    first_call_args = mock_feedback.call_args[0]
+    assert first_call_args[0] == llm_step_name
+
+
+def test_run_merge_feedback_handler_exception_logged_not_raised(tmp_path):
+    """If feedback.apply raises, the merge_run catches and logs but does not crash."""
+    ctx = _make_ctx(tmp_path)
+
+    llm_step_name = next(s.name for s in MERGE_STEPS if s.is_llm_step)
+
+    def try_run_side_effect(step, ctx_arg):
+        if step.name == llm_step_name:
+            return f"simulated {step.name} error"
+        return None
+
+    with (
+        patch("mykg.merge_run._try_run", side_effect=try_run_side_effect),
+        patch("mykg.merge_run._is_done", return_value=False),
+        patch("mykg.feedback.apply", side_effect=RuntimeError("feedback exploded")),
+        patch("mykg.merge_run.log") as mock_log,
+    ):
+        try:
+            run_merge(ctx)
+        except PipelineHaltError:
+            pass
+
+    # The "Feedback handler failed" warning should have been logged
+    warning_messages = " ".join(str(c) for c in mock_log.warning.call_args_list)
+    assert "Feedback handler failed" in warning_messages
+
+
 def test_run_merge_keyboard_interrupt_saved_to_state(tmp_path):
     """KeyboardInterrupt during a step saves the step as failed before re-raising."""
     ctx = _make_ctx(tmp_path)

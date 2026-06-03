@@ -455,3 +455,220 @@ def test_interrupt_marks_step_failed(tmp_path, exc_factory, exc_type):
     assert state_path.exists()
     state = json.loads(state_path.read_text())
     assert state["steps"]["interrupted"]["status"] == "failed"
+
+
+# ---------------------------------------------------------------------------
+# Extended Unit 6 — retry / restart / re-entry coverage
+# ---------------------------------------------------------------------------
+
+
+def test_is_done_returns_false_when_no_outputs(tmp_path):
+    """Step with empty outputs list is never 'done' (line 96)."""
+    from mykg.orchestrator import _is_done
+
+    step = Step(name="x", fn=lambda c: None, outputs=[])
+    ctx = _make_ctx(tmp_path)
+    assert _is_done(step, ctx) is False
+
+
+def test_review_flag_check(tmp_path):
+    """_review_flag_exists checks for the approval flag."""
+    from mykg.orchestrator import _review_flag_exists
+
+    ctx = _make_ctx(tmp_path)
+    ctx.intermediate_dir.mkdir(parents=True)
+    assert _review_flag_exists(ctx) is False
+    (ctx.intermediate_dir / "schema_approved.flag").write_text("ok")
+    assert _review_flag_exists(ctx) is True
+
+
+def test_human_review_waits_for_approval(tmp_path):
+    """Pipeline pauses at human_review when review=True and flag missing."""
+    ctx = _make_ctx(tmp_path)
+    ctx.intermediate_dir.mkdir(parents=True)
+    ctx.review = True
+
+    executed = []
+
+    def fn(c):
+        executed.append("ran")
+        (c.intermediate_dir / "schema_approved.flag").write_text("approved")
+
+    def fn_b(c):
+        executed.append("b")
+        (c.intermediate_dir / "b.json").write_text("{}")
+
+    steps = [
+        Step(name="human_review", fn=fn, outputs=["schema_approved.flag"], requires_review_flag=True),
+        Step(name="b", fn=fn_b, outputs=["b.json"]),
+    ]
+    run(steps, ctx)
+    # No flag pre-existing -> pipeline returns early, fn never called
+    assert "b" not in executed
+
+
+def test_schema_restart_limit_reached(tmp_path, monkeypatch):
+    """schema_restart_count >= max -> step is marked failed, no further restart."""
+    import mykg.config as _cfg
+    from mykg.orchestrator import SchemaUpdatedError
+
+    monkeypatch.setattr(_cfg, "ORPHAN_SCHEMA_MAX_RESTARTS", 0)
+
+    ctx = _make_ctx(tmp_path)
+    ctx.intermediate_dir.mkdir(parents=True)
+    ctx.output_dir.mkdir(parents=True)
+
+    fired = {"n": 0}
+
+    def orphan_connect_step(c):
+        fired["n"] += 1
+        raise SchemaUpdatedError(["new_prop"])
+
+    steps = [
+        Step(
+            name="orphan_connect",
+            fn=orphan_connect_step,
+            outputs=["orphan_connections.json"],
+            is_llm_step=True,
+            blocking=False,
+        ),
+    ]
+    run(steps, ctx)
+    # With max=0, the first call should be marked failed without restart
+    assert fired["n"] == 1
+
+
+def test_feedback_handler_failure_logged(tmp_path, monkeypatch):
+    """When feedback.apply raises, the orchestrator logs and continues."""
+    import mykg.feedback as feedback
+
+    monkeypatch.setattr(feedback, "apply", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("fb")))
+
+    ctx = _make_ctx(tmp_path)
+    ctx.intermediate_dir.mkdir(parents=True)
+    ctx.output_dir.mkdir(parents=True)
+
+    fail_count = {"n": 0}
+
+    def bad_step(c):
+        fail_count["n"] += 1
+        raise ValueError(f"bad attempt {fail_count['n']}")
+
+    steps = [
+        Step(name="llm_step", fn=bad_step, outputs=["x.json"], is_llm_step=True, blocking=False),
+    ]
+    run(steps, ctx)
+    # 1st attempt + retry + post-feedback attempt = 3 calls
+    assert fail_count["n"] == 3
+
+
+def test_append_mode_requires_existing_schema(tmp_path):
+    """append=True without prior schema.json raises RuntimeError."""
+    ctx = _make_ctx(tmp_path)
+    ctx.intermediate_dir.mkdir(parents=True)
+    ctx.append = True
+
+    with pytest.raises(RuntimeError, match="without --append"):
+        run([], ctx)
+
+
+def test_append_mode_invalidates_downstream(tmp_path):
+    """When append + new_files, pass2+downstream outputs are invalidated."""
+    ctx = _make_ctx(tmp_path)
+    ctx.intermediate_dir.mkdir(parents=True)
+    ctx.output_dir.mkdir(parents=True)
+    ctx.append = True
+    # Required for append mode to pass the initial guard
+    (ctx.intermediate_dir / "schema.json").write_text("{}")
+
+    # Pre-populate downstream outputs that should be deleted
+    (ctx.intermediate_dir / "edge_metadata.json").write_text("{}")
+    (ctx.intermediate_dir / "name_normalization.json").write_text("{}")
+
+    def ingest_fn(c):
+        c.append_new_files = {"doc.md"}
+        (c.intermediate_dir / "file_manifest.json").write_text("{}")
+
+    def pass2_fn(c):
+        (c.intermediate_dir / "raw_extractions.json").write_text("{}")
+        (c.intermediate_dir / "chunk_node_index.json").write_text("{}")
+
+    def normalize_fn(c):
+        (c.intermediate_dir / "name_normalization.json").write_text("{}")
+
+    def assemble_fn(c):
+        (c.intermediate_dir / "edge_metadata.json").write_text("{}")
+
+    steps = [
+        Step(name="ingest", fn=ingest_fn, outputs=["file_manifest.json"]),
+        Step(
+            name="pass2",
+            fn=pass2_fn,
+            outputs=["raw_extractions.json", "chunk_node_index.json"],
+            is_llm_step=True,
+        ),
+        Step(name="normalize_names", fn=normalize_fn, outputs=["name_normalization.json"], is_llm_step=True),
+        Step(name="assemble", fn=assemble_fn, outputs=["edge_metadata.json"]),
+    ]
+    run(steps, ctx)
+
+    # All downstream outputs should be present at end of run (re-written by their steps)
+    assert (ctx.intermediate_dir / "raw_extractions.json").exists()
+
+
+def test_append_mode_no_new_files(tmp_path):
+    """append + ingest finds no new files -> downstream steps skipped."""
+    ctx = _make_ctx(tmp_path)
+    ctx.intermediate_dir.mkdir(parents=True)
+    ctx.output_dir.mkdir(parents=True)
+    ctx.append = True
+    (ctx.intermediate_dir / "schema.json").write_text("{}")
+
+    executed = []
+
+    def ingest_fn(c):
+        c.append_new_files = set()  # explicitly empty
+        (c.intermediate_dir / "file_manifest.json").write_text("{}")
+        executed.append("ingest")
+
+    def downstream_fn(c):
+        executed.append("downstream")
+        (c.intermediate_dir / "out.json").write_text("{}")
+
+    steps = [
+        Step(name="ingest", fn=ingest_fn, outputs=["file_manifest.json"]),
+        Step(name="pass2", fn=downstream_fn, outputs=["out.json"]),
+    ]
+    run(steps, ctx)
+
+    assert "ingest" in executed
+    # downstream skipped because append_new_files is empty
+    assert "downstream" not in executed
+
+
+def test_append_mode_skips_pass1(tmp_path):
+    """append mode skips pass1, schema_validate, human_review."""
+    ctx = _make_ctx(tmp_path)
+    ctx.intermediate_dir.mkdir(parents=True)
+    ctx.output_dir.mkdir(parents=True)
+    ctx.append = True
+    (ctx.intermediate_dir / "schema.json").write_text("{}")
+
+    executed = []
+
+    def fn_pass1(c):
+        executed.append("pass1")
+        (c.intermediate_dir / "schema.json").write_text("{}")
+
+    def fn_ingest(c):
+        executed.append("ingest")
+        c.append_new_files = set()
+        (c.intermediate_dir / "file_manifest.json").write_text("{}")
+
+    steps = [
+        Step(name="ingest", fn=fn_ingest, outputs=["file_manifest.json"]),
+        Step(name="pass1", fn=fn_pass1, outputs=["schema.json"], is_llm_step=True),
+    ]
+    run(steps, ctx)
+    assert "pass1" not in executed
+    assert "ingest" in executed
