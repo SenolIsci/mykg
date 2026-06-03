@@ -295,3 +295,110 @@ def test_obsidian_return_value_includes_all_node_paths(tmp_path: Path) -> None:
     result = _run_obsidian(tmp_path)
     node_paths = [p for p in result if p != "obsidian_vault/index.md"]
     assert len(node_paths) == len(_OBS_NODES)
+
+
+# ---------------------------------------------------------------------------
+# Extra coverage: aliases / subClassOf / NX list flattening / obsidian fallback
+# ---------------------------------------------------------------------------
+
+
+def test_ttl_no_aliases_no_skos_prefix():
+    """When no node has aliases, the @prefix skos: line and altLabel triples are absent."""
+    ttl = export_ttl(SCHEMA, NODES, EDGE_METADATA)
+    assert "skos:altLabel" not in ttl
+    assert "@prefix skos:" not in ttl
+
+
+def test_ttl_with_aliases_emits_altLabel_and_skos_prefix():
+    """If at least one node has aliases, skos:altLabel triples + skos: prefix declaration appear."""
+    nodes_with_aliases = [
+        {
+            "id": "person-alice",
+            "type": "Person",
+            "confidence": 0.99,
+            "attributes": {"name": {"value": "Alice", "confidence": 0.99}},
+            "aliases": ["A. Smith", "Allie"],
+        },
+    ]
+    ttl = export_ttl(SCHEMA, nodes_with_aliases, {})
+    assert "@prefix skos:" in ttl
+    assert "skos:altLabel" in ttl
+    assert "A. Smith" in ttl
+    assert "Allie" in ttl
+
+
+def test_ttl_subclassof_branch():
+    """A concept whose parent is non-None emits an rdfs:subClassOf triple."""
+    schema = {
+        "concepts": [
+            {"type": "Person", "parent": None, "attributes": ["name"]},
+            {"type": "SoftwareEngineer", "parent": "Person", "attributes": []},
+        ],
+        "properties": [],
+    }
+    ttl = export_ttl(schema, [], {})
+    assert "ex:SoftwareEngineer rdfs:subClassOf ex:Person" in ttl
+
+
+def test_ttl_attribute_value_is_list_gets_joined():
+    """When an attribute's value is a list, export_ttl joins it with ', '."""
+    schema = {
+        "concepts": [{"type": "Person", "parent": None, "attributes": ["nicknames"]}],
+        "properties": [],
+    }
+    nodes = [
+        {
+            "id": "person-alice",
+            "type": "Person",
+            "confidence": 0.9,
+            "attributes": {"nicknames": {"value": ["Al", "Ally"], "confidence": 0.9}},
+        }
+    ]
+    ttl = export_ttl(schema, nodes, {})
+    assert "Al, Ally" in ttl
+
+
+def test_nx_flatten_attributes_with_list_value():
+    """_nx_flatten_attributes joins list values with '|' for GML safety."""
+    from mykg.exporter import _nx_flatten_attributes
+
+    flat = _nx_flatten_attributes(
+        {"tags": {"value": ["python", "rust"], "confidence": 0.8}}
+    )
+    assert flat["attr_tags_value"] == "python|rust"
+    assert flat["attr_tags_confidence"] == 0.8
+
+
+def test_node_display_name_falls_back_to_id_when_no_name_attr():
+    """_node_display_name returns node['id'] when the 'name' attribute is absent."""
+    from mykg.exporter import _node_display_name
+
+    node = {"id": "person-noname", "attributes": {}}
+    assert _node_display_name(node) == "person-noname"
+
+
+def test_node_display_name_falls_back_when_name_value_falsy():
+    """If name attr exists but its value is empty, _node_display_name returns the id."""
+    from mykg.exporter import _node_display_name
+
+    node = {"id": "person-noname", "attributes": {"name": {"value": "", "confidence": 0.0}}}
+    assert _node_display_name(node) == "person-noname"
+
+
+def test_obsidian_entity_note_payload_not_dict_branch(tmp_path: Path) -> None:
+    """_obsidian_entity_note handles attribute payloads that are bare values, not dicts."""
+    from mykg.exporter import _obsidian_entity_note
+
+    node = {
+        "id": "person-bare",
+        "type": "Person",
+        "confidence": 0.8,
+        "attributes": {
+            "name": {"value": "Bare Person", "confidence": 1.0},
+            "raw_attr": "just-a-string",  # NOT a dict — exercises lines 737-738
+        },
+        "source_files": [],
+    }
+    content = _obsidian_entity_note(node, outgoing=[], incoming=[])
+    assert "just-a-string" in content
+    assert "raw_attr" in content
