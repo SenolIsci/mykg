@@ -880,3 +880,245 @@ def test_build_targeted_top_k_variations(top_k):
     assert result is not None
     total_chunks = sum(len(v) for v in result.values())
     assert total_chunks <= top_k
+
+
+# ---------------------------------------------------------------------------
+# Extended Unit 7 — missing-line coverage
+# ---------------------------------------------------------------------------
+
+
+def test_copy_session_into_merged_copies_schema_history(tmp_path):
+    """copy_session_into_merged copies schema_history/ entries with alias prefix."""
+    from pathlib import Path
+
+    from mykg.merger import SessionData, copy_session_into_merged
+
+    src = tmp_path / "src_session"
+    src_inter = src / "intermediate"
+    hist_dir = src_inter / "schema_history"
+    hist_dir.mkdir(parents=True)
+    (hist_dir / "001_pass1.json").write_text("{}")
+    (hist_dir / "002_quality.json").write_text("{}")
+
+    merged_inter = tmp_path / "merged" / "intermediate"
+    merged_inter.mkdir(parents=True)
+
+    session = SessionData(
+        name="src",
+        path=src,
+        schema={},
+        raw_extractions={},
+        shards={},
+        manifest={},
+        prep_mode="per_file",
+    )
+    copy_session_into_merged(session, merged_inter, alias="session_a")
+    out = list((merged_inter / "schema_history").iterdir())
+    names = {p.name for p in out}
+    assert "session_a_001_pass1.json" in names
+    assert "session_a_002_quality.json" in names
+
+
+def test_build_merged_manifest_namespaces_keys():
+    """build_merged_manifest produces namespaced keys for both sessions."""
+    from pathlib import Path
+
+    from mykg.merger import SessionData, build_merged_manifest
+
+    s_a = SessionData(
+        name="a",
+        path=Path("."),
+        schema={},
+        raw_extractions={},
+        shards={},
+        manifest={"doc.md": {"sha256": "x"}, "other.md": {}},
+        prep_mode="per_file",
+    )
+    s_b = SessionData(
+        name="b",
+        path=Path("."),
+        schema={},
+        raw_extractions={},
+        shards={},
+        manifest={"doc.md": {"sha256": "y"}},
+        prep_mode="per_file",
+    )
+    merged = build_merged_manifest(s_a, s_b)
+    assert "session_a/doc.md" in merged
+    assert "session_a/other.md" in merged
+    assert "session_b/doc.md" in merged
+
+
+def test_reextract_for_merge_strategy_none():
+    """strategy='none' returns the input untouched."""
+    from pathlib import Path
+
+    raw = {"session_a/doc.md": {"nodes": [], "edges": []}}
+    result = reextract_for_merge(
+        session_alias="session_a",
+        session_path=Path("."),
+        raw_extractions_namespaced=raw,
+        merged_schema={"concepts": [], "properties": []},
+        flattened_schema={},
+        intermediate_dir=Path("."),
+        adapter=None,
+        config={},
+        strategy="none",
+    )
+    assert result is raw
+
+
+def test_reextract_for_merge_invalid_strategy():
+    """Unknown strategy raises ValueError."""
+    from pathlib import Path
+
+    with pytest.raises(ValueError, match="Unknown reextraction_strategy"):
+        reextract_for_merge(
+            session_alias="session_a",
+            session_path=Path("."),
+            raw_extractions_namespaced={},
+            merged_schema={},
+            flattened_schema={},
+            intermediate_dir=Path("."),
+            adapter=None,
+            config={},
+            strategy="bogus",
+        )
+
+
+def test_reextract_for_merge_surgical_no_delta(tmp_path):
+    """strategy='surgical' with no schema delta returns input unchanged."""
+    original_schema = {"concepts": [], "properties": [{"name": "knows"}]}
+    merged_schema = {"concepts": [], "properties": [{"name": "knows"}]}
+    raw = {"session_a/doc.md": {"nodes": [], "edges": []}}
+
+    result = reextract_for_merge(
+        session_alias="session_a",
+        session_path=tmp_path / "src",
+        raw_extractions_namespaced=raw,
+        merged_schema=merged_schema,
+        flattened_schema={},
+        intermediate_dir=tmp_path / "inter",
+        adapter=None,
+        config={},
+        strategy="surgical",
+        original_schema=original_schema,
+    )
+    assert result is raw
+
+
+def test_reextract_for_merge_full_no_input_dir(tmp_path):
+    """strategy='full' with missing input dir returns input unchanged + logs warning."""
+    raw = {"session_a/doc.md": {"nodes": [], "edges": []}}
+    result = reextract_for_merge(
+        session_alias="session_a",
+        session_path=tmp_path / "nonexistent",
+        raw_extractions_namespaced=raw,
+        merged_schema={},
+        flattened_schema={},
+        intermediate_dir=tmp_path / "inter",
+        adapter=None,
+        config={},
+        strategy="full",
+    )
+    assert result is raw
+
+
+def test_reextract_for_merge_surgical_no_input_dir(tmp_path):
+    """surgical strategy with delta but missing input dir returns input unchanged."""
+    raw = {"session_a/doc.md": {"nodes": [], "edges": []}}
+    result = reextract_for_merge(
+        session_alias="session_a",
+        session_path=tmp_path / "nonexistent",
+        raw_extractions_namespaced=raw,
+        merged_schema={
+            "concepts": [],
+            "properties": [{"name": "new_prop", "domain": "X", "range": "Y", "attributes": []}],
+        },
+        flattened_schema={},
+        intermediate_dir=tmp_path / "inter",
+        adapter=None,
+        config={},
+        strategy="surgical",
+        original_schema={"concepts": [], "properties": []},
+    )
+    assert result is raw
+
+
+def test_reextract_for_merge_full_no_files_resolved(tmp_path):
+    """strategy='full' with input dir present but no file contents -> input returned."""
+    sess = tmp_path / "src"
+    (sess / "input").mkdir(parents=True)
+    raw = {"session_a/doc.md": {"nodes": [], "edges": []}}
+
+    result = reextract_for_merge(
+        session_alias="session_a",
+        session_path=sess,
+        raw_extractions_namespaced=raw,
+        merged_schema={"concepts": [], "properties": []},
+        flattened_schema={},
+        intermediate_dir=tmp_path / "inter",
+        adapter=None,
+        config={},
+        strategy="full",
+    )
+    assert result is raw
+
+
+def test_reextract_for_merge_surgical_no_files_resolved(tmp_path):
+    """surgical strategy with delta + input dir but no file contents -> returns input."""
+    sess = tmp_path / "src"
+    (sess / "input").mkdir(parents=True)
+    raw = {"session_a/missing.md": {"nodes": [], "edges": []}}
+
+    result = reextract_for_merge(
+        session_alias="session_a",
+        session_path=sess,
+        raw_extractions_namespaced=raw,
+        merged_schema={
+            "concepts": [],
+            "properties": [{"name": "newp", "domain": "X", "range": "Y", "attributes": []}],
+        },
+        flattened_schema={},
+        intermediate_dir=tmp_path / "inter",
+        adapter=None,
+        config={},
+        strategy="surgical",
+        original_schema={"concepts": [], "properties": []},
+    )
+    assert result is raw
+
+
+def test_build_targeted_reextract_top_k_zero():
+    """top_k=0 disables targeted re-extraction -> returns empty dict."""
+    result = _build_targeted_reextract_chunks(
+        delta={"works_at"},
+        merged_schema={"concepts": [], "properties": []},
+        prior_extractions={},
+        prior_chunk_index={"f.md": {"1": ["x"]}},
+        top_k=0,
+    )
+    assert result == {}
+
+
+def test_copy_shard_dir_no_op_for_missing_dir(tmp_path):
+    """_copy_shard_dir is a no-op when src_dir doesn't exist."""
+    src = tmp_path / "nope"
+    dst = tmp_path / "dst"
+    _copy_shard_dir(src, dst, alias="session_a")
+    assert not dst.exists()
+
+
+def test_copy_shard_dir_with_oversized_filename(tmp_path):
+    """Long shard filenames are hashed instead of inflating."""
+    src = tmp_path / "src"
+    src.mkdir()
+    long_name = "a" * 200 + ".json"
+    shard = src / long_name
+    shard.write_text(json.dumps({"_fname": "x"}))
+
+    dst = tmp_path / "dst"
+    _copy_shard_dir(src, dst, alias="session_a")
+    out = list(dst.iterdir())
+    assert len(out) == 1
+    assert out[0].name.startswith("session_a_")

@@ -1063,3 +1063,252 @@ def test_invalid_edge_type_dropped_partial_recovery():
     )
     assert len(confirmed) == 1
     assert confirmed[0]["type"] == "works_at"
+
+
+# ---------------------------------------------------------------------------
+# Extended Unit 9 — orphan_connector helper coverage
+# ---------------------------------------------------------------------------
+
+
+def test_get_node_attr_bare_string_value():
+    """_get_node_attr handles bare-string attribute values (line 100)."""
+    node = {"id": "p-1", "attributes": {"nickname": "Alex"}}
+    assert _get_node_attr(node, "nickname") == "Alex"
+
+
+def test_get_node_attr_falls_back_to_id():
+    """_get_node_attr returns id when attribute is missing or empty."""
+    node = {"id": "p-1", "attributes": {"name": {"value": "", "confidence": 0.0}}}
+    assert _get_node_attr(node, "name") == "p-1"
+
+
+def test_best_display_name_subject_fallback():
+    """_best_display_name uses subject when name is missing (line 114)."""
+    from mykg.orphan_connector import _best_display_name
+
+    node = {
+        "id": "doc-1",
+        "attributes": {"subject": {"value": "Report", "confidence": 1.0}},
+    }
+    assert _best_display_name(node) == "Report"
+
+
+def test_best_display_name_bare_string():
+    """_best_display_name handles bare string title attribute (line 114)."""
+    from mykg.orphan_connector import _best_display_name
+
+    node = {"id": "x", "attributes": {"title": "Memo"}}
+    assert _best_display_name(node) == "Memo"
+
+
+def test_best_display_name_falls_back_to_id():
+    from mykg.orphan_connector import _best_display_name
+
+    node = {"id": "thing-1", "attributes": {}}
+    assert _best_display_name(node) == "thing-1"
+
+
+def test_get_type_ancestors_walks_chain():
+    """_get_type_ancestors walks parent chain (lines 128-129)."""
+    from mykg.orphan_connector import _get_type_ancestors
+
+    concept_map = {
+        "Engineer": {"parent": "Person"},
+        "Person": {"parent": "Agent"},
+        "Agent": {"parent": None},
+    }
+    ancestors = _get_type_ancestors("Engineer", concept_map)
+    assert "Engineer" in ancestors
+    assert "Person" in ancestors
+    assert "Agent" in ancestors
+
+
+def test_get_type_ancestors_cycle_protection():
+    """_get_type_ancestors stops on cycle (line 127)."""
+    from mykg.orphan_connector import _get_type_ancestors
+
+    concept_map = {
+        "A": {"parent": "B"},
+        "B": {"parent": "A"},  # cycle
+    }
+    ancestors = _get_type_ancestors("A", concept_map)
+    assert "A" in ancestors
+    assert "B" in ancestors
+
+
+def test_is_schema_compatible_no_pairs_returns_true():
+    """_is_schema_compatible: empty valid_pairs -> True (line 138)."""
+    from mykg.orphan_connector import _is_schema_compatible
+
+    assert _is_schema_compatible("X", "Y", {}, set()) is True
+
+
+def test_confirm_one_json_parse_error():
+    """_confirm_one returns None on bad JSON (lines 590-597)."""
+    from mykg.orphan_connector import _confirm_one
+
+    adapter = MagicMock()
+    adapter.complete.return_value = "not valid json"
+
+    candidate = OrphanCandidate(
+        orphan_id="p-1",
+        orphan_type="Person",
+        orphan_name="Alice",
+        candidate_id="o-1",
+        candidate_type="Organization",
+        candidate_name="Acme",
+        shared_chunks=["doc.md::1"],
+        heuristic_score=0.5,
+        cooccurrence_count=1,
+    )
+    result = _confirm_one(candidate, SCHEMA, adapter, {"doc.md::1": "Alice at Acme"})
+    assert result is None
+
+
+def test_confirm_one_missing_type_returns_none():
+    """_confirm_one returns None when connected=true but no type (lines 604-609)."""
+    from mykg.orphan_connector import _confirm_one
+
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps({"connected": True})
+
+    candidate = OrphanCandidate(
+        orphan_id="p-1",
+        orphan_type="Person",
+        orphan_name="Alice",
+        candidate_id="o-1",
+        candidate_type="Organization",
+        candidate_name="Acme",
+        shared_chunks=["doc.md::1"],
+        heuristic_score=0.5,
+        cooccurrence_count=1,
+    )
+    result = _confirm_one(candidate, SCHEMA, adapter, {})
+    assert result is None
+
+
+def test_confirm_orphan_chunk_groups_handles_parse_error():
+    """confirm_orphan_chunk_groups handles JSON parse errors (lines 847-849)."""
+    nodes = [_node("p-1", "Person", "Alice"), _node("o-1", "Organization", "Acme")]
+    group = OrphanChunkGroup(
+        filename="doc.md",
+        chunk_idx=1,
+        chunk_key="doc.md::1",
+        orphan_ids=["p-1"],
+        connected_ids=["o-1"],
+        is_blank_response=False,
+    )
+    adapter = MagicMock()
+    adapter.complete.return_value = "not valid json {{{"
+    confirmed, rejections = confirm_orphan_chunk_groups(
+        [group], nodes, SCHEMA, adapter, chunk_texts={"doc.md::1": "text"}
+    )
+    assert confirmed == []
+    assert any(r["reason"] == "parse_error" for r in rejections)
+
+
+def test_confirm_orphan_chunk_groups_wrong_type():
+    """confirm_orphan_chunk_groups handles dict response (not list) (lines 855-860)."""
+    nodes = [_node("p-1", "Person", "Alice")]
+    group = OrphanChunkGroup(
+        filename="doc.md",
+        chunk_idx=1,
+        chunk_key="doc.md::1",
+        orphan_ids=["p-1"],
+        connected_ids=[],
+        is_blank_response=False,
+    )
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps({"foo": "bar"})  # Not a list
+    confirmed, rejections = confirm_orphan_chunk_groups(
+        [group], nodes, SCHEMA, adapter, chunk_texts={"doc.md::1": "x"}
+    )
+    assert confirmed == []
+    assert any(r["reason"] == "wrong_type" for r in rejections)
+
+
+def test_confirm_orphan_chunk_groups_drops_invalid_type():
+    """Edges with unknown type are dropped (line 877)."""
+    nodes = [_node("p-1", "Person", "Alice"), _node("o-1", "Organization", "Acme")]
+    group = OrphanChunkGroup(
+        filename="doc.md",
+        chunk_idx=1,
+        chunk_key="doc.md::1",
+        orphan_ids=["p-1"],
+        connected_ids=["o-1"],
+        is_blank_response=False,
+    )
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps(
+        [
+            {"type": "totally_invalid", "from": "p-1", "to": "o-1", "confidence": 0.9},
+        ]
+    )
+    confirmed, _ = confirm_orphan_chunk_groups(
+        [group], nodes, SCHEMA, adapter, chunk_texts={"doc.md::1": "x"}
+    )
+    assert confirmed == []
+
+
+def test_confirm_orphan_chunk_groups_drops_dangling():
+    """Edges with from/to id not in node set are dropped (line 885)."""
+    nodes = [_node("p-1", "Person", "Alice"), _node("o-1", "Organization", "Acme")]
+    group = OrphanChunkGroup(
+        filename="doc.md",
+        chunk_idx=1,
+        chunk_key="doc.md::1",
+        orphan_ids=["p-1"],
+        connected_ids=["o-1"],
+        is_blank_response=False,
+    )
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps(
+        [
+            {"type": "works_at", "from": "p-1", "to": "ghost", "confidence": 0.9},
+        ]
+    )
+    confirmed, _ = confirm_orphan_chunk_groups(
+        [group], nodes, SCHEMA, adapter, chunk_texts={"doc.md::1": "x"}
+    )
+    assert confirmed == []
+
+
+def test_propose_schema_additions_unparseable(monkeypatch):
+    """propose_schema_additions returns None on bad JSON (lines 1024-1026)."""
+    adapter = MagicMock()
+    adapter.complete.return_value = "not json"
+    gap = SchemaGapOrphan(
+        orphan_id="p-1",
+        orphan_type="Person",
+        orphan_name="Alice",
+        cooccurring_types=["Organization"],
+        shared_chunks=["doc.md::1"],
+    )
+    result = propose_schema_additions([gap], SCHEMA, adapter, {"doc.md::1": "x"})
+    assert result is None
+
+
+def test_propose_schema_additions_empty_after_filter():
+    """All proposed properties have undeclared domain/range -> {new_properties: []}."""
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps(
+        {
+            "new_properties": [
+                {
+                    "name": "p1",
+                    "domain": "UndeclaredType",
+                    "range": "AnotherUndeclared",
+                    "attributes": [],
+                }
+            ]
+        }
+    )
+    gap = SchemaGapOrphan(
+        orphan_id="p-1",
+        orphan_type="Person",
+        orphan_name="Alice",
+        cooccurring_types=["Org"],
+        shared_chunks=["doc.md::1"],
+    )
+    result = propose_schema_additions([gap], SCHEMA, adapter, {"doc.md::1": "x"})
+    assert result == {"new_properties": []}
