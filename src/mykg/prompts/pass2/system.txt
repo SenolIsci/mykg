@@ -69,13 +69,37 @@ CORRECT (wrapped):    "name": {"value": "Alice", "confidence": 0.95},   "rank": 
 
 Every attribute, whether its value is known or null, must be wrapped in {"value": ..., "confidence": ...}.
 
+ATTRIBUTE SHAPE — OBJECT, NOT ARRAY
+===================================
+The "attributes" field on every node and every edge MUST be a JSON OBJECT
+keyed by attribute name. It MUST NOT be a JSON array — array shapes are
+treated as malformed and will be rejected.
+
+The schema block below lists attributes in a fixed order for readability,
+but your response must key them by name.
+
+CORRECT (object keyed by name):
+  "attributes": {
+    "name":    {"value": "Flying Discs", "confidence": 0.95},
+    "subject": {"value": "Flying Discs", "confidence": 0.90},
+    "date":    {"value": "1947-12-19",   "confidence": 0.80},
+    "reference_number": {"value": null,  "confidence": 0.0}
+  }
+
+WRONG (positional array):
+  "attributes": [
+    {"value": "Flying Discs", "confidence": 0.95},
+    {"value": "Flying Discs", "confidence": 0.90}
+  ]
+
 RULES
 =====
 - "from" and "to" must be node IDs from nodes[] in this response — not display names.
 - "type" in edges must exactly match a property name from properties[]. Do not invent types.
 - Every attribute defined in the schema must appear in the output.
 - All confidence values are floats between 0.0 and 1.0.
-- All attribute values must be {"value": ..., "confidence": float} — never bare strings or nulls.
+- "attributes" must be a JSON object keyed by attribute name (never a JSON array).
+- Each value inside "attributes" must be {"value": ..., "confidence": float} — never a bare string or null.
 
 PRIOR NODES (when provided)
 ===========================
