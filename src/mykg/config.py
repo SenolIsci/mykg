@@ -139,6 +139,8 @@ TTL_NAMESPACE_SKOS: str = _get("export", "skos_namespace")
 NETWORKX_ENABLED: bool = _get("export", "networkx_enabled")
 OBSIDIAN_ENABLED: bool = _get_opt("export", "obsidian_enabled", False)
 OBSIDIAN_VAULT_DIR: str = _get_opt("export", "obsidian_vault_dir", "obsidian_vault")
+NEO4J_CSV_ENABLED: bool = _get_opt("export", "neo4j_csv_enabled", False)
+NEO4J_CSV_DIR: str = _get_opt("export", "neo4j_csv_dir", "neo4j_csv")
 
 # ---------------------------------------------------------------------------
 # Output / intermediate paths (D16, D18)

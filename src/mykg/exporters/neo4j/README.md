@@ -1,10 +1,25 @@
 # Neo4j LOAD CSV exporter
 
-`emit_load_csv` turns a finished mykg session into a self-contained import bundle: plain-header CSVs plus a paste-and-run Cypher script you execute against any Neo4j 5+ instance. No optional Python dependency, no plugins, no live driver.
+Turns a finished mykg session into a self-contained import bundle: plain-header CSVs plus paste-and-run Cypher scripts you execute against any Neo4j 5+ instance. No optional Python dependency, no plugins, no live driver.
 
 Requires Neo4j 5.x or newer. The generated Cypher uses `CREATE CONSTRAINT … IF NOT EXISTS`, `IN TRANSACTIONS OF`, and the modern `REQUIRE` syntax — none of which exist in 4.x.
 
-## Usage
+## How to enable
+
+**Canonical entry point — pipeline integration.** Set the toggle in `mykg_config.yaml`:
+
+```yaml
+profiles:
+  <your-profile>:
+    pipeline:
+      export:
+        neo4j_csv_enabled: true     # default false
+        neo4j_csv_dir: neo4j_csv    # subdirectory under output/
+```
+
+The bundle is then written to `<session>/output/neo4j_csv/` by `step_validate_graph` alongside `nodes.jsonl`, `knowledge_graph.ttl`, and the NetworkX outputs. Pass `--neo4j-csv` to `mykg extract-graph` to override the YAML for a single run.
+
+**Standalone fallback.** When the toggle was off at extraction time and you want to produce a bundle from an existing session without re-running the pipeline:
 
 ```bash
 python -m mykg.exporters.neo4j.emit_load_csv \

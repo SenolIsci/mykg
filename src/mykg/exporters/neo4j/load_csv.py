@@ -298,3 +298,44 @@ def build_readme(out_dir_abs: Path, csv_paths: list[Path]) -> str:
         "Each relationship carries:\n"
         "- `confidence`, `method`, `source_files`, plus `<attr>` and `<attr>_confidence` for every non-null attribute.\n"
     )
+
+
+def export_neo4j_csv(
+    nodes: list[dict],
+    edge_metadata: dict,
+    schema: dict,
+    output_dir: Path,
+) -> list[str]:
+    """Write a Neo4j LOAD CSV bundle to ``output_dir/<NEO4J_CSV_DIR>/``.
+
+    Returns a list of written file paths as relative strings (same contract as
+    ``export_networkx`` and ``export_obsidian``). Returns an empty list when
+    ``NEO4J_CSV_ENABLED`` is False.
+    """
+    from mykg import config as _cfg
+
+    if not getattr(_cfg, "NEO4J_CSV_ENABLED", False):
+        return []
+
+    vault_dir = Path(output_dir) / _cfg.NEO4J_CSV_DIR
+    vault_dir.mkdir(parents=True, exist_ok=True)
+    vault_dir_abs = vault_dir.absolute()
+
+    edges = list(edge_metadata.values())
+    csvs = build_plain_csvs(nodes, edges, schema)
+
+    written: list[str] = []
+    for rel_path, content in csvs.items():
+        (vault_dir / rel_path.name).write_text(content)
+        written.append(f"{_cfg.NEO4J_CSV_DIR}/{rel_path.name}")
+
+    (vault_dir / "import_browser.cypher").write_text(build_browser_cypher(csvs))
+    written.append(f"{_cfg.NEO4J_CSV_DIR}/import_browser.cypher")
+
+    (vault_dir / "import_shell.cypher").write_text(build_shell_cypher(csvs, vault_dir_abs))
+    written.append(f"{_cfg.NEO4J_CSV_DIR}/import_shell.cypher")
+
+    (vault_dir / "README.md").write_text(build_readme(vault_dir_abs, list(csvs.keys())))
+    written.append(f"{_cfg.NEO4J_CSV_DIR}/README.md")
+
+    return written

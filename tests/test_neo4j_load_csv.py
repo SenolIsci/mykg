@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from mykg.exporters.neo4j._common import load_session
-from mykg.exporters.neo4j.load_csv import build_plain_csvs
+from mykg.exporters.neo4j.load_csv import build_plain_csvs, export_neo4j_csv
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "neo4j_sample_session"
 EXPECTED_DIR = FIXTURE_ROOT / "expected_load_csv"
@@ -193,3 +193,86 @@ def test_round_trip_referential_integrity():
         for row in reader:
             assert row[from_col] in all_node_ids, f"unknown from in {path.name}: {row[from_col]}"
             assert row[to_col] in all_node_ids, f"unknown to in {path.name}: {row[to_col]}"
+
+
+# ---------------------------------------------------------------------------
+# export_neo4j_csv (pipeline integration shim) tests
+# ---------------------------------------------------------------------------
+
+
+def _fixture_inputs():
+    """Load the fixture in the dict-shape that step_validate_graph passes in."""
+    nodes, edges, schema = load_session(FIXTURE_ROOT)
+    edge_metadata = {f"edge-{i:03d}": e for i, e in enumerate(edges, start=1)}
+    return nodes, edge_metadata, schema
+
+
+def test_export_neo4j_csv_returns_empty_when_disabled(tmp_path, monkeypatch):
+    """export_neo4j_csv returns [] when NEO4J_CSV_ENABLED is False."""
+    import mykg.config as _cfg
+
+    monkeypatch.setattr(_cfg, "NEO4J_CSV_ENABLED", False, raising=False)
+    nodes, edge_metadata, schema = _fixture_inputs()
+    result = export_neo4j_csv(nodes, edge_metadata, schema, tmp_path)
+    assert result == []
+    assert not (tmp_path / "neo4j_csv").exists()
+
+
+def test_export_neo4j_csv_writes_full_bundle(tmp_path, monkeypatch):
+    """When enabled, the bundle dir holds every CSV + both scripts + README."""
+    import mykg.config as _cfg
+
+    monkeypatch.setattr(_cfg, "NEO4J_CSV_ENABLED", True, raising=False)
+    monkeypatch.setattr(_cfg, "NEO4J_CSV_DIR", "neo4j_csv", raising=False)
+
+    nodes, edge_metadata, schema = _fixture_inputs()
+    written = export_neo4j_csv(nodes, edge_metadata, schema, tmp_path)
+
+    vault = tmp_path / "neo4j_csv"
+    assert vault.is_dir()
+    expected_files = {
+        "nodes_SoftwareEngineer.csv",
+        "nodes_Person.csv",
+        "nodes_Organization.csv",
+        "relationships_WORKS_AT.csv",
+        "relationships_KNOWS.csv",
+        "relationships_LOCATED_IN.csv",
+        "import_browser.cypher",
+        "import_shell.cypher",
+        "README.md",
+    }
+    actual_files = {p.name for p in vault.iterdir()}
+    assert actual_files == expected_files
+
+    # `written` reports the relative paths, prefixed with the vault dir name
+    assert set(written) == {f"neo4j_csv/{name}" for name in expected_files}
+
+
+def test_export_neo4j_csv_honors_custom_dir_name(tmp_path, monkeypatch):
+    """NEO4J_CSV_DIR controls the output subdirectory name."""
+    import mykg.config as _cfg
+
+    monkeypatch.setattr(_cfg, "NEO4J_CSV_ENABLED", True, raising=False)
+    monkeypatch.setattr(_cfg, "NEO4J_CSV_DIR", "my_neo4j_dump", raising=False)
+
+    nodes, edge_metadata, schema = _fixture_inputs()
+    written = export_neo4j_csv(nodes, edge_metadata, schema, tmp_path)
+
+    assert (tmp_path / "my_neo4j_dump").is_dir()
+    assert not (tmp_path / "neo4j_csv").exists()
+    assert all(p.startswith("my_neo4j_dump/") for p in written)
+
+
+def test_export_neo4j_csv_shell_script_uses_absolute_uris(tmp_path, monkeypatch):
+    """import_shell.cypher must use absolute file:// URIs rooted at the vault."""
+    import mykg.config as _cfg
+
+    monkeypatch.setattr(_cfg, "NEO4J_CSV_ENABLED", True, raising=False)
+    monkeypatch.setattr(_cfg, "NEO4J_CSV_DIR", "neo4j_csv", raising=False)
+
+    nodes, edge_metadata, schema = _fixture_inputs()
+    export_neo4j_csv(nodes, edge_metadata, schema, tmp_path)
+
+    shell_cypher = (tmp_path / "neo4j_csv" / "import_shell.cypher").read_text()
+    vault_uri_prefix = (tmp_path / "neo4j_csv").absolute().as_uri()
+    assert vault_uri_prefix in shell_cypher

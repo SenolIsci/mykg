@@ -158,6 +158,18 @@ def test_extract_graph_help_contains_obsidian_vault():
     assert "--obsidian-vault" in result.output
 
 
+def test_extract_graph_help_contains_neo4j_csv():
+    """--help output for extract-graph must advertise --neo4j-csv."""
+    from click.testing import CliRunner
+
+    import mykg.cli as cli_mod
+
+    runner = CliRunner()
+    result = runner.invoke(cli_mod.cli, ["extract-graph", "--help"])
+    assert result.exit_code == 0
+    assert "--neo4j-csv" in result.output
+
+
 def test_from_step_without_session_or_dirs_errors(tmp_path, input_dir, monkeypatch):
     import mykg.cli as cli_mod
     import mykg.config as cfg_mod
@@ -198,6 +210,23 @@ def test_extract_obsidian_vault_flag_mutates_config(tmp_path, input_dir, monkeyp
 
     assert result.exit_code == 0, result.output
     assert cfg_mod.OBSIDIAN_ENABLED is True
+
+
+def test_extract_neo4j_csv_flag_mutates_config(tmp_path, input_dir, monkeypatch):
+    """--neo4j-csv flag flips mykg.config.NEO4J_CSV_ENABLED to True."""
+    import mykg.cli as cli_mod
+    import mykg.config as cfg_mod
+
+    monkeypatch.setattr(cfg_mod, "SESSIONS_DIR", str(tmp_path / "sessions"))
+    monkeypatch.setattr(cfg_mod, "NEO4J_CSV_ENABLED", False)
+    monkeypatch.setattr("mykg.orchestrator.run", lambda steps, ctx: None)
+    monkeypatch.setattr("mykg.llm.config.load_adapter", lambda **kw: MagicMock())
+
+    runner = CliRunner()
+    result = runner.invoke(cli_mod.cli, ["extract-graph", str(input_dir), "--neo4j-csv"])
+
+    assert result.exit_code == 0, result.output
+    assert cfg_mod.NEO4J_CSV_ENABLED is True
 
 
 def test_extract_base_schema_argument(tmp_path, input_dir, monkeypatch):

@@ -41,6 +41,12 @@ def run_validate_graph(ctx: PipelineContext) -> None:
         obs_written = export_obsidian(nodes, valid_edge_metadata, schema, ctx.output_dir)
         log.info("Step 12d — Obsidian vault export: %d notes written", len(obs_written))
 
+    if _cfg.NEO4J_CSV_ENABLED:
+        from mykg.exporters.neo4j.load_csv import export_neo4j_csv
+
+        n4j_written = export_neo4j_csv(nodes, valid_edge_metadata, schema, ctx.output_dir)
+        log.info("Step 12e — Neo4j CSV export: %d file(s) written", len(n4j_written))
+
     (ctx.output_dir / "knowledge_graph_validation.json").write_text(
         json.dumps(result, indent=_cfg.JSON_INDENT)
     )

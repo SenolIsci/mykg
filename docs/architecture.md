@@ -233,7 +233,11 @@ All four output formats are produced from the same in-memory data at export time
 
 ### Neo4j
 
-[src/mykg/exporters/neo4j/emit_load_csv.py](../src/mykg/exporters/neo4j/emit_load_csv.py) reads a finished session (`nodes.jsonl`, `edges.jsonl`, `intermediate/schema.json`) and emits a self-contained import bundle: one CSV per node label, one CSV per relationship type, a `LOAD CSV` Cypher script for Neo4j Browser, a sibling script for `cypher-shell`, and a per-bundle README. No optional dependency, no live driver — the user runs the script against any Neo4j 5+ instance to materialize the graph. See the [exporters README](../src/mykg/exporters/neo4j/README.md) for the data model, sanitization rules, and Cypher examples.
+A `LOAD CSV` bundle is written to `output/neo4j_csv/` whenever `export.neo4j_csv_enabled: true` is set in `mykg_config.yaml` or the `--neo4j-csv` CLI flag is passed. The bundle is one of the four parallel formats produced by `step_validate_graph` — same in-memory data as the JSONL, TTL, and NetworkX outputs.
+
+The bundle contents are one `nodes_<Label>.csv` per concept type with plain headers, one `relationships_<TYPE>.csv` per property, `import_browser.cypher` for Neo4j Browser, `import_shell.cypher` for `cypher-shell`, and a per-bundle `README.md`. The scripts use idempotent `MERGE` against a `_MykgNode` uniqueness constraint, require Neo4j 5+, and need no Python driver, no plugin, and no APOC. Re-running the import updates the graph in place.
+
+A standalone CLI [`python -m mykg.exporters.neo4j.emit_load_csv`](../src/mykg/exporters/neo4j/emit_load_csv.py) produces the same bundle against an existing session and is the fallback when the toggle was off at extraction time. See the [exporters README](../src/mykg/exporters/neo4j/README.md) for the data model, sanitization rules, and Cypher examples.
 
 ### RDF / OWL (Turtle)
 

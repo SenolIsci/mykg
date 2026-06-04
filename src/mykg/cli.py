@@ -493,6 +493,12 @@ def _print_next_steps(profile: str, *, reinstall_skill: bool = False) -> None:
     default=False,
     help="Write an Obsidian vault to output/obsidian_vault/ (overrides config obsidian_enabled)",
 )
+@click.option(
+    "--neo4j-csv",
+    is_flag=True,
+    default=False,
+    help="Write a Neo4j LOAD CSV bundle to output/neo4j_csv/ (overrides config neo4j_csv_enabled)",
+)
 def extract_graph(
     input_dir,
     output_dir,
@@ -508,6 +514,7 @@ def extract_graph(
     append,
     session,
     obsidian_vault,
+    neo4j_csv,
 ):
     """Extract a knowledge graph from a directory of Markdown files."""
     from mykg.llm.config import load_adapter
@@ -579,6 +586,11 @@ def extract_graph(
         import mykg.config as _config_mod
 
         _config_mod.OBSIDIAN_ENABLED = True
+
+    if neo4j_csv:
+        import mykg.config as _config_mod
+
+        _config_mod.NEO4J_CSV_ENABLED = True
 
     from mykg.llm.error_gate import ErrorGate
 
@@ -936,9 +948,9 @@ def _delete_from_step(
             concat_map_path.unlink()
             click.echo(f"Deleted {concat_map_path}")
 
-    # obsidian_vault/ is written by validate_graph but not tracked in Step.outputs
-    # (it is optional; omitting it prevents _is_done from breaking when disabled).
-    # Delete it when re-running from validate_graph or any earlier step.
+    # obsidian_vault/ and neo4j_csv/ are written by validate_graph but not tracked in
+    # Step.outputs (they are optional; omitting them prevents _is_done from breaking
+    # when disabled). Delete them when re-running from validate_graph or any earlier step.
     validate_graph_idx = (
         step_names.index("validate_graph") if "validate_graph" in step_names else -1
     )
@@ -947,6 +959,10 @@ def _delete_from_step(
         if obsidian_path.exists():
             shutil.rmtree(obsidian_path)
             click.echo(f"Deleted {obsidian_path}")
+        neo4j_csv_path = output_dir / _cfg().NEO4J_CSV_DIR
+        if neo4j_csv_path.exists():
+            shutil.rmtree(neo4j_csv_path)
+            click.echo(f"Deleted {neo4j_csv_path}")
 
     human_review_idx = step_names.index("human_review") if "human_review" in step_names else -1
     if idx > human_review_idx >= 0:
