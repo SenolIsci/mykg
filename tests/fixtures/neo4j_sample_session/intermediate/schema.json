@@ -1,0 +1,12 @@
+{
+  "concepts": [
+    {"type": "Person", "parent": null, "attributes": ["name", "email"]},
+    {"type": "SoftwareEngineer", "parent": "Person", "attributes": ["name", "email", "primary_language"]},
+    {"type": "Organization", "parent": null, "attributes": ["name", "industry"]}
+  ],
+  "properties": [
+    {"name": "works_at", "domain": "Person", "range": "Organization", "attributes": ["role", "start_date"]},
+    {"name": "knows", "domain": "Person", "range": "Person", "attributes": []},
+    {"name": "located_in", "domain": "Organization", "range": "Organization", "attributes": []}
+  ]
+}

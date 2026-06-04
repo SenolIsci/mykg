@@ -32,6 +32,10 @@ CLAUDE.md
 # Exception: keep the bundled demo session under docs/examples/ tracked
 !docs/examples/**
 
+# Exception: keep test fixtures tracked even though they use output/ and intermediate/ subdirs
+!tests/fixtures/**
+tests/fixtures/**/__pycache__/
+
 # Profiler dumps
 profile.out
 *.prof

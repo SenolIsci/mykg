@@ -1,0 +1,3 @@
+from,to,confidence,method,source_files
+person-bob,person-carol,0.7,orphan_inferred,notes.md
+softwareengineer-alice,person-bob,0.85,llm_extraction,team.md

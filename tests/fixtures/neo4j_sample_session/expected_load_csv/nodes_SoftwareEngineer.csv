@@ -1,0 +1,2 @@
+id,_aliases,_node_confidence,_parents,_source_files,email,email_confidence,name,name_confidence,primary_language,primary_language_confidence
+softwareengineer-alice,A. Smith;Alice Smith,0.95,Person,team.md,alice@acme.com,0.97,Alice,0.99,Python,0.88

@@ -1,0 +1,4 @@
+from,to,confidence,method,role,role_confidence,source_files,start_date,start_date_confidence
+person-bob,organization-acme-corp,0.92,llm_extraction,manager,0.89,team.md,,
+person-carol,organization-globex,0.9,llm_extraction,,,notes.md,,
+softwareengineer-alice,organization-acme-corp,0.96,llm_extraction,engineer,0.91,team.md,2024-01-15,0.88

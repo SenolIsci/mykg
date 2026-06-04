@@ -231,6 +231,10 @@ All four output formats are produced from the same in-memory data at export time
 
 `nodes.jsonl` and `edges.jsonl` are the primary format for property graph consumers: Neo4j, NetworkX, visualizers like D3.js and Gephi, and LLM retrieval-augmented generation pipelines. Every node and edge record carries typed attributes with confidence scores, source file provenance, and — for nodes — an alias list.
 
+### Neo4j
+
+[src/mykg/exporters/neo4j/emit_load_csv.py](../src/mykg/exporters/neo4j/emit_load_csv.py) reads a finished session (`nodes.jsonl`, `edges.jsonl`, `intermediate/schema.json`) and emits a self-contained import bundle: one CSV per node label, one CSV per relationship type, a `LOAD CSV` Cypher script for Neo4j Browser, a sibling script for `cypher-shell`, and a per-bundle README. No optional dependency, no live driver — the user runs the script against any Neo4j 5+ instance to materialize the graph. See the [exporters README](../src/mykg/exporters/neo4j/README.md) for the data model, sanitization rules, and Cypher examples.
+
 ### RDF / OWL (Turtle)
 
 `knowledge_graph.ttl` is a valid RDFS/OWL Turtle file with two sections. The TBox section declares concept types as RDFS classes with their subclass hierarchy, and relationship types as RDF properties with domain and range constraints. The ABox section records one type triple and one label triple per entity, plus one direct object-property triple per relationship.

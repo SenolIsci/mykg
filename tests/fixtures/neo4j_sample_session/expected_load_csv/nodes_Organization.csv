@@ -1,0 +1,4 @@
+id,_node_confidence,_parents,_source_files,industry,industry_confidence,name,name_confidence
+organization-acme-corp,0.97,,team.md,Software,0.9,Acme Corp,0.99
+organization-acme-eu,0.92,,team.md,Software,0.85,Acme EU,0.99
+organization-globex,0.96,,notes.md,,,Globex,0.99
