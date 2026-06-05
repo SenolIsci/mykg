@@ -6,7 +6,13 @@ from unittest import mock
 
 import yaml
 
-from mykg.exporter import export_edges_jsonl, export_nodes_jsonl, export_obsidian, export_ttl
+from mykg.exporter import (
+    export_edges_jsonl,
+    export_html,
+    export_nodes_jsonl,
+    export_obsidian,
+    export_ttl,
+)
 
 SCHEMA = {
     "concepts": [
@@ -383,6 +389,27 @@ def test_node_display_name_falls_back_when_name_value_falsy():
 
     node = {"id": "person-noname", "attributes": {"name": {"value": "", "confidence": 0.0}}}
     assert _node_display_name(node) == "person-noname"
+
+
+def test_html_contains_confidence_filter_sliders(tmp_path: Path) -> None:
+    """export_html injects two confidence sliders and exposes _confidence on edges."""
+    import networkx as nx
+
+    G = nx.DiGraph()
+    G.add_node("person-alice", label="Alice", node_type="Person", confidence=0.9)
+    G.add_node("organization-acme", label="Acme", node_type="Organization", confidence=0.8)
+    G.add_edge(
+        "person-alice", "organization-acme", edge_type="works_at", confidence=0.7
+    )
+
+    export_html(G, tmp_path)
+    content = (tmp_path / "knowledge_graph.html").read_text(encoding="utf-8")
+
+    assert 'id="node-conf-slider"' in content
+    assert 'id="edge-conf-slider"' in content
+    assert "applyConfidenceFilter" in content
+    # _confidence must appear in RAW_NODES (existing) and RAW_EDGES (new)
+    assert content.count("_confidence") >= 2
 
 
 def test_obsidian_entity_note_payload_not_dict_branch(tmp_path: Path) -> None:

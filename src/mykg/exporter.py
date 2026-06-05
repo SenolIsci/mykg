@@ -293,6 +293,19 @@ def _html_styles() -> str:
   #info-content .attr-key { color: #888; flex-shrink: 0; }
   #info-content .attr-val { color: #ddd; word-break: break-word; }
   #info-content .attr-conf { color: #555; font-size: 14px; margin-left: auto; flex-shrink: 0; }
+  #conf-filters { padding: 10px 12px; border-bottom: 1px solid #2a2a4e; }
+  .slider-row {
+    display: flex; align-items: center; gap: 8px; margin: 6px 0;
+    font-size: 13px; color: #aaa;
+  }
+  .slider-row label { flex-shrink: 0; min-width: 80px; }
+  .slider-row input[type=range] {
+    flex: 1; accent-color: #4E79A7; cursor: pointer;
+  }
+  .slider-row .readout {
+    flex-shrink: 0; min-width: 50px; color: #ccc;
+    font-variant-numeric: tabular-nums; text-align: right;
+  }
 </style>"""
 
 
@@ -429,7 +442,11 @@ searchInput.addEventListener('input', () => {{
   const q = searchInput.value.toLowerCase().trim();
   searchResults.innerHTML = '';
   if (!q) {{ searchResults.style.display = 'none'; return; }}
-  const matches = RAW_NODES.filter(n => n.label.toLowerCase().includes(q)).slice(0, 20);
+  const matches = RAW_NODES.filter(n => {{
+    if (!n.label.toLowerCase().includes(q)) return false;
+    const cur = nodesDS.get(n.id);
+    return !cur || cur.hidden !== true;
+  }}).slice(0, 20);
   if (!matches.length) {{ searchResults.style.display = 'none'; return; }}
   searchResults.style.display = 'block';
   matches.forEach(n => {{
@@ -450,6 +467,45 @@ document.addEventListener('click', e => {{
   if (!searchResults.contains(e.target) && e.target !== searchInput)
     searchResults.style.display = 'none';
 }});
+
+const nodeSlider = document.getElementById('node-conf-slider');
+const edgeSlider = document.getElementById('edge-conf-slider');
+const nodeReadout = document.getElementById('node-conf-readout');
+const edgeReadout = document.getElementById('edge-conf-readout');
+const statsEl = document.getElementById('stats');
+const TOTAL_NODES = RAW_NODES.length;
+const TOTAL_EDGES = RAW_EDGES.length;
+
+function applyConfidenceFilter() {{
+  const nodeThr = parseFloat(nodeSlider.value);
+  const edgeThr = parseFloat(edgeSlider.value);
+  nodeReadout.textContent = '≥ ' + nodeThr.toFixed(2);
+  edgeReadout.textContent = '≥ ' + edgeThr.toFixed(2);
+
+  const hiddenNodeIds = new Set();
+  const nodeUpdates = RAW_NODES.map(n => {{
+    const hidden = (n._confidence ?? 0) < nodeThr;
+    if (hidden) hiddenNodeIds.add(n.id);
+    return {{ id: n.id, hidden: hidden }};
+  }});
+  nodesDS.update(nodeUpdates);
+
+  let visibleEdges = 0;
+  const edgeUpdates = RAW_EDGES.map((e, i) => {{
+    const hidden = (e._confidence ?? 0) < edgeThr
+      || hiddenNodeIds.has(e.from) || hiddenNodeIds.has(e.to);
+    if (!hidden) visibleEdges += 1;
+    return {{ id: i, hidden: hidden }};
+  }});
+  edgesDS.update(edgeUpdates);
+
+  const visibleNodes = TOTAL_NODES - hiddenNodeIds.size;
+  statsEl.textContent = TOTAL_NODES + ' nodes (' + visibleNodes + ' visible) · '
+    + TOTAL_EDGES + ' edges (' + visibleEdges + ' visible)';
+}}
+
+nodeSlider.addEventListener('input', applyConfidenceFilter);
+edgeSlider.addEventListener('input', applyConfidenceFilter);
 
 const resizer = document.getElementById('resizer');
 const sidebar = document.getElementById('sidebar');
@@ -538,6 +594,7 @@ def export_html(G: nx.DiGraph, out_dir: Path) -> str:
                 "label": edge_type,
                 "title": _html.escape(f"{edge_type} (conf={conf:.2f})"),
                 "width": 2 if conf >= 0.8 else 1,
+                "_confidence": conf,
             }
         )
 
@@ -572,6 +629,18 @@ def export_html(G: nx.DiGraph, out_dir: Path) -> str:
         '  <div id="search-wrap">\n'
         '    <input id="search" type="text" placeholder="Search nodes..." autocomplete="off">\n'
         '    <div id="search-results"></div>\n'
+        "  </div>\n"
+        '  <div id="conf-filters">\n'
+        '    <div class="slider-row">\n'
+        '      <label for="node-conf-slider">Min node conf</label>\n'
+        '      <input id="node-conf-slider" type="range" min="0" max="1" step="0.01" value="0">\n'
+        '      <span class="readout" id="node-conf-readout">&ge; 0.00</span>\n'
+        "    </div>\n"
+        '    <div class="slider-row">\n'
+        '      <label for="edge-conf-slider">Min edge conf</label>\n'
+        '      <input id="edge-conf-slider" type="range" min="0" max="1" step="0.01" value="0">\n'
+        '      <span class="readout" id="edge-conf-readout">&ge; 0.00</span>\n'
+        "    </div>\n"
         "  </div>\n"
         '  <div id="info-panel">\n'
         "    <h3>Node Info</h3>\n"
