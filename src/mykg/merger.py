@@ -36,7 +36,7 @@ class SessionData(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     name: str  # session folder name, e.g. "2026-05-10T14-32-00"
-    path: Path  # path to session root (sessions/<name>)
+    path: Path  # path to session root (mykg_sessions/<name>)
     schema: dict  # parsed schema.json content
     raw_extractions: dict  # parsed raw_extractions.json content (file-keyed)
     shards: dict[str, dict]  # filename -> shard data from raw_extractions_shards/
@@ -591,7 +591,7 @@ def reextract_for_merge(
     session_alias:
         Alias for this session (``"session_a"`` or ``"session_b"``).
     session_path:
-        Path to the session root folder (``sessions/<name>/``). Used to locate
+        Path to the session root folder (``mykg_sessions/<name>/``). Used to locate
         original input files under ``session_path/input/``.
     raw_extractions_namespaced:
         Already-namespaced raw extractions dict for this session.

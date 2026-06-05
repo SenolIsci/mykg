@@ -133,7 +133,7 @@ profiles:
       paths:
         output_dir: output
         intermediate_dir: intermediate
-        sessions_dir: sessions  # parent folder for per-run session directories (each run gets a timestamped subfolder)
+        sessions_dir: mykg_sessions  # parent folder for per-run session directories (each run gets a timestamped subfolder)
       output:
         json_indent: 2          # pretty-print indent for all intermediate JSON files
       logging:
@@ -266,7 +266,7 @@ profiles:
       paths:
         output_dir: output
         intermediate_dir: intermediate
-        sessions_dir: sessions
+        sessions_dir: mykg_sessions
       output:
         json_indent: 2
       logging:
@@ -396,7 +396,7 @@ profiles:
       paths:
         output_dir: output
         intermediate_dir: intermediate
-        sessions_dir: sessions  # parent folder for per-run session directories (each run gets a timestamped subfolder)
+        sessions_dir: mykg_sessions  # parent folder for per-run session directories (each run gets a timestamped subfolder)
       output:
         json_indent: 2          # pretty-print indent for all intermediate JSON files
       logging:
@@ -535,7 +535,7 @@ profiles:
       paths:
         output_dir: output
         intermediate_dir: intermediate
-        sessions_dir: sessions
+        sessions_dir: mykg_sessions
       output:
         json_indent: 2
       logging:
@@ -668,7 +668,7 @@ profiles:
       paths:
         output_dir: output
         intermediate_dir: intermediate
-        sessions_dir: sessions
+        sessions_dir: mykg_sessions
       output:
         json_indent: 2
       logging:

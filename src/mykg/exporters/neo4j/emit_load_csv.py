@@ -27,7 +27,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Emit plain-header CSVs + Cypher scripts for Neo4j LOAD CSV import.",
     )
     parser.add_argument("--session", required=True, help="Session name (directory under --sessions-root)")
-    parser.add_argument("--sessions-root", default="sessions", help="Parent directory of sessions (default: sessions)")
+    parser.add_argument("--sessions-root", default="mykg_sessions", help="Parent directory of sessions (default: mykg_sessions)")
     parser.add_argument("--out", required=True, help="Directory to write CSVs and Cypher scripts into")
     return parser.parse_args(argv)
 

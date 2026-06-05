@@ -13,7 +13,7 @@ The pipeline code, the orchestrator, all prompts, all 12 pipeline steps, and the
 
 ## Default behaviour — fresh session unless told otherwise
 
-**The default is to create a NEW session for every `extract-graph` invocation.** Pass no `--session` flag to `mykg extract-graph` and let mykg auto-create a fresh timestamped session under `sessions/`.
+**The default is to create a NEW session for every `extract-graph` invocation.** Pass no `--session` flag to `mykg extract-graph` and let mykg auto-create a fresh timestamped session under `mykg_sessions/`.
 
 Only reuse an existing session when the user *explicitly* signals it. Explicit signals are any of:
 
@@ -81,7 +81,7 @@ From the user's `/mykg <free text>` message extract:
 2. **Input dir** — the path the user named, or `.` if they said "this folder", or absent for session-only commands.
 3. **Session** — **default: do not pass `--session` at all** so mykg auto-creates a fresh timestamped session. Only override the default when the current user message contains an explicit reuse signal (see "Default behaviour" above). Resolution order:
    1. **Literal session name.** User typed `--session <name>` or "session <name>" → use that exact name.
-   2. **Explicit reuse verb / phrase.** User said one of: **resume**, **continue**, **redo**, **append**, **approve**, **walkthrough**, **"the last session"**, **"the existing session"**, **"the same session"** → auto-detect the most-recent session: list `$SESSIONS_DIR` (read `sessions_dir` from `mykg_config.yaml`, default `sessions`), sort by mtime, pick newest.
+   2. **Explicit reuse verb / phrase.** User said one of: **resume**, **continue**, **redo**, **append**, **approve**, **walkthrough**, **"the last session"**, **"the existing session"**, **"the same session"** → auto-detect the most-recent session: list `$SESSIONS_DIR` (read `sessions_dir` from `mykg_config.yaml`, default `mykg_sessions`), sort by mtime, pick newest.
    3. **Reuse-implying flag.** User specified `--append` or `--from-step <step>` → auto-detect-most-recent (these flags only make sense against an existing session).
    4. **Session-only subcommand.** Verb is `approve-schema` or `walkthrough` → auto-detect-most-recent.
    5. **Otherwise.** Do NOT pass `--session`. mykg creates a fresh session. This is the path for bare `/mykg <dir>`, `/mykg extract <dir>`, `/mykg extract more from <dir>`, "extract this folder", etc.

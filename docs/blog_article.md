@@ -81,7 +81,7 @@ The Obsidian vault output is more than a visualization. It's a directory of Mark
 ```bash
 mykg extract-graph ./docs/ --session my-docs-kg
 # Then in Claude Code or Cursor:
-# "Read sessions/my-docs-kg/output/obsidian_vault/ and tell me
+# "Read mykg_sessions/my-docs-kg/output/obsidian_vault/ and tell me
 #  which services depend on the auth module."
 ```
 
@@ -91,7 +91,7 @@ Claude Code, Cursor, and Copilot can read those notes as project context, traver
 
 **myKG** is designed to scale to messy, evolving collections:
 
-- **Session isolation** — every run lives in its own timestamped folder under `sessions/`, fully self-contained.
+- **Session isolation** — every run lives in its own timestamped folder under `mykg_sessions/`, fully self-contained.
 - **Resumable from any step** — re-enter at `pass2`, `assemble`, `orphan_score`, or anywhere else; upstream work is never repeated.
 - **Append mode** — add new Markdown files to an existing session without re-running Pass 1.
 - **Cross-session merge** — combine two independently-built graphs into one unified knowledge graph, with full provenance tracking and a re-extraction strategy for schema deltas.
@@ -103,7 +103,7 @@ Claude Code, Cursor, and Copilot can read those notes as project context, traver
 pip install mykg
 mykg init                          # interactive: pick provider, paste API key
 mykg extract-graph my_notes/       # any directory of mixed documents
-open sessions/*/output/knowledge_graph.html
+open mykg_sessions/*/output/knowledge_graph.html
 ```
 
 That's it. You now have a typed, confidence-scored, ontology-grounded knowledge graph of your notes — queryable from SPARQL, browsable in Obsidian, and ready to feed your AI coding assistant.

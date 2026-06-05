@@ -485,7 +485,7 @@ def _print_next_steps(profile: str, *, reinstall_skill: bool = False) -> None:
 @click.option(
     "--session",
     default=None,
-    help="Session name under sessions/ to resume or append; omit to auto-create",
+    help="Session name under mykg_sessions/ to resume or append; omit to auto-create",
 )
 @click.option(
     "--obsidian-vault",
