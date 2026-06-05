@@ -293,7 +293,7 @@ def _html_styles() -> str:
   #info-content .attr-key { color: #888; flex-shrink: 0; }
   #info-content .attr-val { color: #ddd; word-break: break-word; }
   #info-content .attr-conf { color: #555; font-size: 14px; margin-left: auto; flex-shrink: 0; }
-  #conf-filters { padding: 10px 12px; border-bottom: 1px solid #2a2a4e; }
+  #conf-filters { margin-top: 10px; padding-top: 8px; border-top: 1px solid #2a2a4e; }
   .slider-row {
     display: flex; align-items: center; gap: 8px; margin: 6px 0;
     font-size: 13px; color: #aaa;
@@ -630,18 +630,6 @@ def export_html(G: nx.DiGraph, out_dir: Path) -> str:
         '    <input id="search" type="text" placeholder="Search nodes..." autocomplete="off">\n'
         '    <div id="search-results"></div>\n'
         "  </div>\n"
-        '  <div id="conf-filters">\n'
-        '    <div class="slider-row">\n'
-        '      <label for="node-conf-slider">Min node conf</label>\n'
-        '      <input id="node-conf-slider" type="range" min="0" max="1" step="0.01" value="0">\n'
-        '      <span class="readout" id="node-conf-readout">&ge; 0.00</span>\n'
-        "    </div>\n"
-        '    <div class="slider-row">\n'
-        '      <label for="edge-conf-slider">Min edge conf</label>\n'
-        '      <input id="edge-conf-slider" type="range" min="0" max="1" step="0.01" value="0">\n'
-        '      <span class="readout" id="edge-conf-readout">&ge; 0.00</span>\n'
-        "    </div>\n"
-        "  </div>\n"
         '  <div id="info-panel">\n'
         "    <h3>Node Info</h3>\n"
         '    <div id="info-content"><span class="empty">Click a node to inspect it</span></div>\n'
@@ -650,6 +638,18 @@ def export_html(G: nx.DiGraph, out_dir: Path) -> str:
         'font-size:14px;color:#666;flex-shrink:0;max-height:220px;overflow-y:auto">\n'
         '    <div style="margin-bottom:6px;color:#aaa">Node types</div>\n'
         f"    {type_legend_items}\n"
+        '    <div id="conf-filters">\n'
+        '      <div class="slider-row">\n'
+        '        <label for="node-conf-slider">Node conf.</label>\n'
+        '        <input id="node-conf-slider" type="range" min="0" max="1" step="0.01" value="0">\n'
+        '        <span class="readout" id="node-conf-readout">&ge; 0.00</span>\n'
+        "      </div>\n"
+        '      <div class="slider-row">\n'
+        '        <label for="edge-conf-slider">Link conf.</label>\n'
+        '        <input id="edge-conf-slider" type="range" min="0" max="1" step="0.01" value="0">\n'
+        '        <span class="readout" id="edge-conf-readout">&ge; 0.00</span>\n'
+        "      </div>\n"
+        "    </div>\n"
         "  </div>\n"
         f'  <div id="stats">{stats}</div>\n'
         "</div>\n" + _html_script(nodes_json, edges_json) + "\n</body>\n</html>"
