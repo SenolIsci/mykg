@@ -911,6 +911,84 @@ def merge_graphs(
     click.echo(f"Merged session written to: {merged_session_root}")
 
 
+# MinerU cannot convert HTML; the pipeline's `step_preprocess` routes HTML
+# files through markdownify instead. `parse-docs` is MinerU-only and therefore
+# always skips these suffixes regardless of `preprocess.extensions`.
+_PARSE_DOCS_HARDCODED_SKIP: frozenset[str] = frozenset({".html", ".htm"})
+
+
+def _build_parse_docs_targets(
+    input_path: Path,
+    output_path: Path,
+    files: tuple[Path, ...],
+    allowed_exts: frozenset[str] | None,
+) -> tuple[list[tuple[Path, Path]], list[tuple[Path, str]]]:
+    """Build (source, per-file-output-dir) targets for parse-docs.
+
+    `allowed_exts` is the suffix allowlist from `preprocess.extensions`
+    (lowercased, leading dot). Pass `None` to disable the allowlist and convert
+    every non-`.md` candidate — the HTML hard-skip still applies. Returns
+    `(targets, skipped)` where `skipped` is `[(path, reason), ...]` for files
+    filtered out.
+
+    Pure function: no I/O beyond `Path.is_file()` and `rglob()`; no mkdir.
+    The caller creates output dirs after deciding what to act on.
+    """
+    targets: list[tuple[Path, Path]] = []
+    skipped: list[tuple[Path, str]] = []
+
+    def _passes_filter(p: Path) -> tuple[bool, str]:
+        suffix = p.suffix.lower()
+        if suffix == ".md":
+            return False, "markdown is the native format"
+        if suffix in _PARSE_DOCS_HARDCODED_SKIP:
+            return (
+                False,
+                f"{suffix} is not supported by parse-docs (MinerU cannot convert HTML); "
+                "use `mykg extract-graph` for HTML support via markdownify",
+            )
+        if allowed_exts is not None and suffix not in allowed_exts:
+            return False, f"extension {suffix or '(none)'} not in preprocess.extensions"
+        return True, ""
+
+    if files:
+        for f in files:
+            resolved = f if f.is_absolute() else (input_path / f)
+            ok, reason = _passes_filter(resolved)
+            rel_parent = (
+                f.parent if not f.is_absolute() and f.parent != Path(".") else Path()
+            )
+            per_file_out = output_path / rel_parent
+            if ok:
+                targets.append((resolved, per_file_out))
+            else:
+                skipped.append((resolved, reason))
+    elif input_path.is_file():
+        ok, reason = _passes_filter(input_path)
+        if ok:
+            targets.append((input_path, output_path))
+        else:
+            skipped.append((input_path, reason))
+    else:
+        # Recursive directory mode: rglob every candidate; filter; preserve
+        # subfolder structure at the output.
+        for src in sorted(input_path.rglob("*")):
+            if not src.is_file():
+                continue
+            ok, reason = _passes_filter(src)
+            if not ok:
+                # Don't list .md files as "skipped" — they're trivially not
+                # candidates and logging every one would be noise.
+                if src.suffix.lower() != ".md":
+                    skipped.append((src, reason))
+                continue
+            rel_parent = src.relative_to(input_path).parent
+            per_file_out = output_path / rel_parent
+            targets.append((src, per_file_out))
+
+    return targets, skipped
+
+
 @cli.command(
     "parse-docs",
     context_settings={"ignore_unknown_options": True},
@@ -950,12 +1028,24 @@ def merge_graphs(
         "with --file."
     ),
 )
+@click.option(
+    "--no-filter",
+    is_flag=True,
+    default=False,
+    help=(
+        "Disable the preprocess.extensions allowlist; send every non-.md file "
+        "to MinerU. .html/.htm are still hard-skipped (MinerU cannot convert "
+        "HTML). Use when you've already curated the input and want MinerU "
+        "to attempt every other file regardless of suffix."
+    ),
+)
 @click.argument("extra_args", nargs=-1, type=click.UNPROCESSED)
 def parse_docs(
     input_path: Path,
     output_path: Path,
     files: tuple[Path, ...],
     file_list: Path | None,
+    no_filter: bool,
     extra_args: tuple[str, ...],
 ) -> None:
     """Convert non-Markdown documents (PDF, DOCX, images, etc.) to Markdown using MinerU.
@@ -974,13 +1064,24 @@ def parse_docs(
       * `--file-list <path>` — read one rel-path per line from a text file.
         Use this for large corpora to avoid the OS argv-size limit.
 
+    File-extension filter:
+      By default, candidate files are filtered against `preprocess.extensions`
+      from mykg_config.yaml — the same allowlist `step_preprocess` applies
+      upstream of pipeline-driven calls. Files whose suffix is not on the list
+      (e.g. `.DS_Store`, `.css`, `.svg` sidecars) are logged and skipped
+      before MinerU is invoked. `.html` and `.htm` are always hard-skipped
+      because MinerU cannot convert HTML — use `mykg extract-graph` if you
+      need HTML support via markdownify. Pass `--no-filter` to disable the
+      allowlist (the HTML hard-skip still applies). When the filter empties
+      the target list, `parse-docs` exits clean before building the
+      multi-GB ephemeral venv.
+
     All files share a single ephemeral venv — MinerU is invoked once per file
     inside that venv, so the multi-GB install cost is paid at most once per
     `parse-docs` call regardless of file count.
 
-    Per-file MinerU failures (e.g. an unsupported format like HTML) are logged
-    and the loop continues; parse-docs exits non-zero at the end if any file
-    failed. Timeouts remain fatal.
+    Per-file MinerU failures are logged and the loop continues; parse-docs
+    exits non-zero at the end if any file failed. Timeouts remain fatal.
     """
     from mykg import config as _cfg
     from mykg.uv_venv import ephemeral_mineru_venv
@@ -994,6 +1095,26 @@ def parse_docs(
             if line.strip()
         )
 
+    allowed_exts = None if no_filter else _cfg.PREPROCESS_EXTENSIONS
+    targets, skipped = _build_parse_docs_targets(
+        input_path, output_path, files, allowed_exts
+    )
+
+    if skipped:
+        for src, reason in skipped:
+            click.echo(f"Skipping {src}: {reason}", err=True)
+        click.echo(f"Skipped {len(skipped)} file(s) — see lines above.", err=True)
+
+    if not targets:
+        # Nothing to do — exit clean rather than build the ephemeral venv.
+        # Without this guard a `parse-docs` against a directory of only
+        # `.DS_Store` files would pay the multi-GB MinerU install for nothing.
+        click.echo(
+            f"No files to convert{' after filtering' if skipped else ''}.",
+            err=True,
+        )
+        return
+
     with ephemeral_mineru_venv(
         _cfg.PREPROCESS_UV_PYTHON_VERSION,
         _cfg.PREPROCESS_MINERU_SPEC,
@@ -1001,32 +1122,8 @@ def parse_docs(
         _cfg.PREPROCESS_INSTALL_TIMEOUT_SECONDS,
     ) as mineru_bin:
         output_path.mkdir(parents=True, exist_ok=True)
-
-        if files:
-            targets: list[tuple[Path, Path]] = []
-            for f in files:
-                resolved = f if f.is_absolute() else (input_path / f)
-                # Preserve subfolder structure: "sub/a.pdf" → output_path/"sub"/...
-                rel_parent = (
-                    f.parent if not f.is_absolute() and f.parent != Path(".") else Path()
-                )
-                per_file_out = output_path / rel_parent
-                per_file_out.mkdir(parents=True, exist_ok=True)
-                targets.append((resolved, per_file_out))
-        elif input_path.is_file():
-            targets = [(input_path, output_path)]
-        else:
-            # Recursive directory mode: rglob every non-md file and convert it.
-            # MinerU's own `-p <dir>` only walks the top level and can't preserve
-            # subfolder structure — this loop fixes both.
-            targets = []
-            for src in sorted(input_path.rglob("*")):
-                if not src.is_file() or src.suffix.lower() == ".md":
-                    continue
-                rel_parent = src.relative_to(input_path).parent
-                per_file_out = output_path / rel_parent
-                per_file_out.mkdir(parents=True, exist_ok=True)
-                targets.append((src, per_file_out))
+        for _, dst in targets:
+            dst.mkdir(parents=True, exist_ok=True)
 
         failures: list[tuple[Path, int | str]] = []
         for src, dst in targets:
