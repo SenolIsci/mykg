@@ -397,8 +397,11 @@ def test_parse_docs_directory_input_continues_on_per_file_failure(tmp_path: Path
     input_dir = tmp_path / "in"
     output_dir = tmp_path / "out"
     input_dir.mkdir()
+    # Both must be MinerU-eligible suffixes — .html is hard-skipped before MinerU
+    # (it routes to markdownify), so it can't exercise the per-file MinerU-failure
+    # path. Use a second PDF and fail it inside MinerU instead.
     (input_dir / "good.pdf").write_bytes(b"%PDF ok")
-    (input_dir / "bad.html").write_bytes(b"<html></html>")
+    (input_dir / "bad.pdf").write_bytes(b"%PDF bad")
 
     mineru_calls: list[list[str]] = []
 
@@ -413,8 +416,8 @@ def test_parse_docs_directory_input_continues_on_per_file_failure(tmp_path: Path
                 (bin_dir / "mineru").write_text("")
             return _fake_proc(0)
         mineru_calls.append(list(cmd))
-        # bad.html should be rejected; everything else succeeds.
-        rc = 1 if cmd[2].endswith(".html") else 0
+        # bad.pdf fails in MinerU; everything else succeeds.
+        rc = 1 if cmd[2].endswith("bad.pdf") else 0
         return subprocess.CompletedProcess(cmd, rc)
 
     with (
