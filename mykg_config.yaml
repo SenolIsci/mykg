@@ -69,6 +69,23 @@ profiles:
           - .jpeg
           - .html
           - .htm
+      # --- Fetch (optional web crawl via fetch-web command) --------------------
+      # The crawler runs inside an ephemeral uv-managed venv created per fetch-web
+      # call and deleted on exit; nothing is installed into mykg's interpreter.
+      fetch:
+        enabled: true                 # master toggle for the fetch-web command
+        strategy: same-domain         # link-following scope: same-domain | same-origin | all
+        max_pages: 500                # hard cap on total fetched pages (bounds runtime)
+        max_depth: 10                 # max crawl depth from the seed URL
+        respect_robots: true          # honor robots.txt disallow + crawl-delay
+        request_delay_seconds: 0.5    # politeness delay between requests
+        concurrency: 4                # max concurrent requests
+        download_assets: true         # download linked binaries whose suffix is in preprocess.extensions
+        timeout_seconds: 1800         # crawl run-phase timeout (30 min)
+        uv_path: uv                   # uv CLI path (uv is a core mykg dependency)
+        uv_python_version: "3.12"    # interpreter pinned for the ephemeral crawl venv
+        crawlee_spec: "crawlee[beautifulsoup]"   # spec installed via `uv pip install -U`
+        install_timeout_seconds: 1800 # install-phase timeout (30 min)
       chunking:
         window_tokens: 25000     # = input_headroom / 4 = 25000  (keep small; many chunks batched together in pass1)
         overlap_tokens: 2500     # = window_tokens × 0.10 = 2500  (10% overlap preserves context at boundaries)
@@ -206,6 +223,23 @@ profiles:
           - .jpeg
           - .html
           - .htm
+      # --- Fetch (optional web crawl via fetch-web command) --------------------
+      # The crawler runs inside an ephemeral uv-managed venv created per fetch-web
+      # call and deleted on exit; nothing is installed into mykg's interpreter.
+      fetch:
+        enabled: true                 # master toggle for the fetch-web command
+        strategy: same-domain         # link-following scope: same-domain | same-origin | all
+        max_pages: 500                # hard cap on total fetched pages (bounds runtime)
+        max_depth: 10                 # max crawl depth from the seed URL
+        respect_robots: true          # honor robots.txt disallow + crawl-delay
+        request_delay_seconds: 0.5    # politeness delay between requests
+        concurrency: 4                # max concurrent requests
+        download_assets: true         # download linked binaries whose suffix is in preprocess.extensions
+        timeout_seconds: 1800         # crawl run-phase timeout (30 min)
+        uv_path: uv                   # uv CLI path (uv is a core mykg dependency)
+        uv_python_version: "3.12"    # interpreter pinned for the ephemeral crawl venv
+        crawlee_spec: "crawlee[beautifulsoup]"   # spec installed via `uv pip install -U`
+        install_timeout_seconds: 1800 # install-phase timeout (30 min)
       chunking:
         window_tokens: 45000    # ≈ batch_token_target / 4
         overlap_tokens: 4500    # = window_tokens × 0.10
@@ -342,6 +376,23 @@ profiles:
           - .jpeg
           - .html
           - .htm
+      # --- Fetch (optional web crawl via fetch-web command) --------------------
+      # The crawler runs inside an ephemeral uv-managed venv created per fetch-web
+      # call and deleted on exit; nothing is installed into mykg's interpreter.
+      fetch:
+        enabled: true                 # master toggle for the fetch-web command
+        strategy: same-domain         # link-following scope: same-domain | same-origin | all
+        max_pages: 500                # hard cap on total fetched pages (bounds runtime)
+        max_depth: 10                 # max crawl depth from the seed URL
+        respect_robots: true          # honor robots.txt disallow + crawl-delay
+        request_delay_seconds: 0.5    # politeness delay between requests
+        concurrency: 4                # max concurrent requests
+        download_assets: true         # download linked binaries whose suffix is in preprocess.extensions
+        timeout_seconds: 1800         # crawl run-phase timeout (30 min)
+        uv_path: uv                   # uv CLI path (uv is a core mykg dependency)
+        uv_python_version: "3.12"    # interpreter pinned for the ephemeral crawl venv
+        crawlee_spec: "crawlee[beautifulsoup]"   # spec installed via `uv pip install -U`
+        install_timeout_seconds: 1800 # install-phase timeout (30 min)
       chunking:
         window_tokens: 2500     # = input_headroom / 4 = 25000  (keep small; many chunks batched together in pass1)
         overlap_tokens: 250     # = window_tokens × 0.10 = 2500  (10% overlap preserves context at boundaries)
@@ -483,6 +534,23 @@ profiles:
           - .jpeg
           - .html
           - .htm
+      # --- Fetch (optional web crawl via fetch-web command) --------------------
+      # The crawler runs inside an ephemeral uv-managed venv created per fetch-web
+      # call and deleted on exit; nothing is installed into mykg's interpreter.
+      fetch:
+        enabled: true                 # master toggle for the fetch-web command
+        strategy: same-domain         # link-following scope: same-domain | same-origin | all
+        max_pages: 500                # hard cap on total fetched pages (bounds runtime)
+        max_depth: 10                 # max crawl depth from the seed URL
+        respect_robots: true          # honor robots.txt disallow + crawl-delay
+        request_delay_seconds: 0.5    # politeness delay between requests
+        concurrency: 4                # max concurrent requests
+        download_assets: true         # download linked binaries whose suffix is in preprocess.extensions
+        timeout_seconds: 1800         # crawl run-phase timeout (30 min)
+        uv_path: uv                   # uv CLI path (uv is a core mykg dependency)
+        uv_python_version: "3.12"    # interpreter pinned for the ephemeral crawl venv
+        crawlee_spec: "crawlee[beautifulsoup]"   # spec installed via `uv pip install -U`
+        install_timeout_seconds: 1800 # install-phase timeout (30 min)
       chunking:
         window_tokens: 28000    # = input_headroom / 4 ≈ 28000
         overlap_tokens: 2800    # = window_tokens × 0.10
@@ -620,6 +688,23 @@ profiles:
           - .jpeg
           - .html
           - .htm
+      # --- Fetch (optional web crawl via fetch-web command) --------------------
+      # The crawler runs inside an ephemeral uv-managed venv created per fetch-web
+      # call and deleted on exit; nothing is installed into mykg's interpreter.
+      fetch:
+        enabled: true                 # master toggle for the fetch-web command
+        strategy: same-domain         # link-following scope: same-domain | same-origin | all
+        max_pages: 500                # hard cap on total fetched pages (bounds runtime)
+        max_depth: 10                 # max crawl depth from the seed URL
+        respect_robots: true          # honor robots.txt disallow + crawl-delay
+        request_delay_seconds: 0.5    # politeness delay between requests
+        concurrency: 4                # max concurrent requests
+        download_assets: true         # download linked binaries whose suffix is in preprocess.extensions
+        timeout_seconds: 1800         # crawl run-phase timeout (30 min)
+        uv_path: uv                   # uv CLI path (uv is a core mykg dependency)
+        uv_python_version: "3.12"    # interpreter pinned for the ephemeral crawl venv
+        crawlee_spec: "crawlee[beautifulsoup]"   # spec installed via `uv pip install -U`
+        install_timeout_seconds: 1800 # install-phase timeout (30 min)
       chunking:
         window_tokens: 6000     # = input_headroom / 4 ≈ 6000
         overlap_tokens: 600     # = window_tokens × 0.10
@@ -753,6 +838,23 @@ profiles:
           - .jpeg
           - .html
           - .htm
+      # --- Fetch (optional web crawl via fetch-web command) --------------------
+      # The crawler runs inside an ephemeral uv-managed venv created per fetch-web
+      # call and deleted on exit; nothing is installed into mykg's interpreter.
+      fetch:
+        enabled: true                 # master toggle for the fetch-web command
+        strategy: same-domain         # link-following scope: same-domain | same-origin | all
+        max_pages: 500                # hard cap on total fetched pages (bounds runtime)
+        max_depth: 10                 # max crawl depth from the seed URL
+        respect_robots: true          # honor robots.txt disallow + crawl-delay
+        request_delay_seconds: 0.5    # politeness delay between requests
+        concurrency: 4                # max concurrent requests
+        download_assets: true         # download linked binaries whose suffix is in preprocess.extensions
+        timeout_seconds: 1800         # crawl run-phase timeout (30 min)
+        uv_path: uv                   # uv CLI path (uv is a core mykg dependency)
+        uv_python_version: "3.12"    # interpreter pinned for the ephemeral crawl venv
+        crawlee_spec: "crawlee[beautifulsoup]"   # spec installed via `uv pip install -U`
+        install_timeout_seconds: 1800 # install-phase timeout (30 min)
       chunking:
         window_tokens: 25000
         overlap_tokens: 2500
