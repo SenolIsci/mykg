@@ -111,3 +111,50 @@ def test_already_fetched_skips_matching_sha() -> None:
     assert is_already_fetched(prior, "https://example.com/", "abc") is True
     assert is_already_fetched(prior, "https://example.com/", "xyz") is False
     assert is_already_fetched(prior, "https://example.com/new", "abc") is False
+
+
+def test_local_path_for_url_rejects_path_traversal() -> None:
+    """CRITICAL: a hostile URL path must never escape the output dir."""
+    from mykg.fetch_web import local_path_for_url
+    # `..` segments are stripped; result stays inside output_dir.
+    p = local_path_for_url("https://evil.com/../etc/passwd", "text/html")
+    assert not p.startswith("..")
+    assert "/../" not in p
+    assert ".." not in p.split("/")
+    assert p == "etc/passwd.html"
+
+
+def test_local_path_for_url_strips_interior_dotdot() -> None:
+    from mykg.fetch_web import local_path_for_url
+    p = local_path_for_url("https://evil.com/a/../../b", "text/html")
+    assert ".." not in p.split("/")
+    assert not p.startswith("/")
+    assert p == "a/b.html"
+
+
+def test_local_path_for_url_only_dot_segments_falls_back_to_index() -> None:
+    from mykg.fetch_web import local_path_for_url
+    p = local_path_for_url("https://evil.com/../..", "text/html")
+    assert ".." not in p.split("/")
+    assert p == "index.html"
+
+
+def test_local_path_for_url_no_silent_collision_on_stem_strip() -> None:
+    """IMPORTANT: /foo and /foo.html must not map to the same file."""
+    from mykg.fetch_web import local_path_for_url
+    a = local_path_for_url("https://example.com/foo", "text/html")
+    b = local_path_for_url("https://example.com/foo.html", "text/html")
+    assert a != b
+    assert a == "foo.html"
+
+
+def test_local_path_for_url_plain_path_unchanged_by_collision_fix() -> None:
+    """No dot in basename → no disambiguator fires (no regression)."""
+    from mykg.fetch_web import local_path_for_url
+    assert local_path_for_url("https://example.com/a/b", "text/html") == "a/b.html"
+
+
+def test_default_output_dir_sanitizes_netloc(tmp_path) -> None:
+    from mykg.fetch_web import default_output_dir
+    out = default_output_dir("https://a@b:8080/", base=tmp_path)
+    assert out == tmp_path / "fetched_web" / "b_8080"

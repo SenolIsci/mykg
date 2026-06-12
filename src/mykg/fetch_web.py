@@ -17,7 +17,8 @@ from urllib.parse import urlparse
 def default_output_dir(seed_url: str, base: Path | None = None) -> Path:
     """`./fetched_web/<seed-domain>/` so a bare invocation is one-shot usable."""
     base = base or Path.cwd()
-    domain = urlparse(seed_url).netloc or "site"
+    # Strip any user:pass@ credentials and make the port separator path-safe.
+    domain = urlparse(seed_url).netloc.split("@")[-1].replace(":", "_") or "site"
     return base / "fetched_web" / domain
 
 
@@ -65,17 +66,28 @@ def local_path_for_url(url: str, content_type: str) -> str:
         base = path.rstrip("/") + "/index"
     else:
         base = path
-    base = base.lstrip("/")
+
+    # Neutralize path traversal before any extension logic: drop empty, "."
+    # and ".." segments so the result can never escape the output dir. A
+    # hostile site controls this path via links/redirects.
+    safe_segments = [s for s in base.split("/") if s not in ("", ".", "..")]
+    base = "/".join(safe_segments)
     if not base:
         base = "index"
 
     if is_html:
         # Drop any existing suffix; we control the .html extension.
         stem = base
-        if "." in os.path.basename(stem):
+        stripped_ext = "." in os.path.basename(stem)
+        if stripped_ext:
             stem = stem.rsplit(".", 1)[0]
         if parsed.query:
             digest = hashlib.sha1(parsed.query.encode()).hexdigest()[:8]
+            return f"{stem}-{digest}{_HTML_EXT}"
+        if stripped_ext:
+            # Stripping a suffix can collide /foo with /foo.html — fold a short
+            # hash of the original path into the name to keep them distinct.
+            digest = hashlib.sha1(parsed.path.encode()).hexdigest()[:8]
             return f"{stem}-{digest}{_HTML_EXT}"
         return f"{stem}{_HTML_EXT}"
 
@@ -125,6 +137,7 @@ def write_manifest(
         "stats": stats,
         "pages": pages,
     }
+    output_dir.mkdir(parents=True, exist_ok=True)
     mf = output_dir / "fetch_manifest.json"
     tmp = mf.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
