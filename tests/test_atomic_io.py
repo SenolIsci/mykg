@@ -61,3 +61,27 @@ def test_crash_mid_replace_preserves_old_file(tmp_path: Path, monkeypatch) -> No
 
     # Old content survives — no partial/truncated write reached the target.
     assert json.loads(target.read_text()) == {"intact": True}
+    # The temp file from the failed write is cleaned up, not left behind.
+    assert not (tmp_path / "edge_metadata.json.tmp").exists()
+
+
+def test_fsync_called_before_replace(tmp_path: Path, monkeypatch) -> None:
+    """Bytes are fsync'd to disk before the rename, guarding against power loss."""
+    calls: list[str] = []
+    real_fsync = os.fsync
+    real_replace = os.replace
+
+    def traced_fsync(fd):
+        calls.append("fsync")
+        return real_fsync(fd)
+
+    def traced_replace(src, dst):
+        calls.append("replace")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "fsync", traced_fsync)
+    monkeypatch.setattr(os, "replace", traced_replace)
+
+    atomic_write_json(tmp_path / "nodes.json", {"ok": True})
+
+    assert calls == ["fsync", "replace"], "fsync must happen before the atomic rename"
