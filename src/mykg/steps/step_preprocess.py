@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -13,6 +12,7 @@ from pathlib import Path
 from mykg import config as _cfg
 from mykg.logging import get
 from mykg.orchestrator import PipelineContext
+from mykg.utility.atomic_io import atomic_write_json
 
 log = get("mykg.steps.preprocess")
 
@@ -31,10 +31,8 @@ def _write_sentinel(intermediate_dir: Path, manifest: dict) -> None:
 
 
 def _atomic_write_json(path: Path, data: dict) -> None:
-    """Write JSON atomically: write to .tmp, then os.replace onto the target."""
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, indent=_cfg.JSON_INDENT))
-    os.replace(tmp, path)
+    """Write JSON atomically. Thin alias kept for in-module call sites."""
+    atomic_write_json(path, data)
 
 
 def _sha256_path(p: Path) -> str:
