@@ -158,3 +158,70 @@ def test_default_output_dir_sanitizes_netloc(tmp_path) -> None:
     from mykg.fetch_web import default_output_dir
     out = default_output_dir("https://a@b:8080/", base=tmp_path)
     assert out == tmp_path / "fetched_web" / "b_8080"
+
+
+def _load_runner_module():
+    """Load data/_crawl_runner.py via importlib without importing crawlee."""
+    import importlib.util
+    from pathlib import Path
+    import mykg
+
+    runner = Path(mykg.__file__).parent / "data" / "_crawl_runner.py"
+    spec = importlib.util.spec_from_file_location("_crawl_runner", runner)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_crawl_runner_module_imports_without_crawlee() -> None:
+    """The runner must import cleanly even when crawlee is absent — crawlee
+    is imported lazily inside the async crawl body, not at module top level."""
+    import importlib.util
+    from pathlib import Path
+    import mykg
+
+    runner = Path(mykg.__file__).parent / "data" / "_crawl_runner.py"
+    spec = importlib.util.spec_from_file_location("_crawl_runner", runner)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # must not raise (no crawlee import at top)
+    # Pure helper: sha256 of bytes
+    assert mod.sha256_bytes(b"abc") == __import__("hashlib").sha256(b"abc").hexdigest()
+    # Pure helper: write a page and return its row
+    assert hasattr(mod, "save_page")
+
+
+def test_crawl_runner_save_page_refuses_traversal_escape(tmp_path) -> None:
+    """save_page must never write outside output_dir, even for a hostile URL."""
+    mod = _load_runner_module()
+    row = mod.save_page(
+        tmp_path, "https://evil.com/../../etc/passwd", "text/html", b"x"
+    )
+    from pathlib import Path
+
+    # The mirror strips ".." so the local_file is a contained relative path.
+    assert ".." not in row["local_file"].split("/")
+    written = (Path(tmp_path) / row["local_file"]).resolve()
+    root = Path(tmp_path).resolve()
+    # The file must exist and live strictly under tmp_path.
+    assert written.exists()
+    assert root == written or root in written.parents
+    assert row["local_file"] == "etc/passwd.html"
+
+
+def test_crawl_runner_local_path_parity_with_fetch_web() -> None:
+    """The runner's mirror must match fetch_web.local_path_for_url exactly —
+    parity guard so the duplicated logic can't silently drift."""
+    mod = _load_runner_module()
+    from mykg.fetch_web import local_path_for_url
+
+    cases = [
+        ("https://example.com/", "text/html"),
+        ("https://example.com/a/b", "text/html"),
+        ("https://example.com/g.pdf", "application/pdf"),
+        ("https://example.com/foo.html", "text/html"),
+        ("https://evil.com/../etc/passwd", "text/html"),
+    ]
+    for url, ctype in cases:
+        assert mod._local_path_for_url(url, ctype) == local_path_for_url(
+            url, ctype
+        ), f"mirror drift for {url!r} ({ctype})"
