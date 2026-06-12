@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 
 def test_fetch_config_constants_exist_with_defaults() -> None:
     from mykg import config
@@ -225,3 +227,82 @@ def test_crawl_runner_local_path_parity_with_fetch_web() -> None:
         assert mod._local_path_for_url(url, ctype) == local_path_for_url(
             url, ctype
         ), f"mirror drift for {url!r} ({ctype})"
+
+
+def test_fetch_web_command_runs_runner_and_writes_manifest(tmp_path, monkeypatch) -> None:
+    import json
+    from unittest.mock import patch, MagicMock
+    from click.testing import CliRunner
+    from mykg.cli import cli
+
+    out = tmp_path / "fw"
+
+    # Fake the ephemeral venv: yield a fake python path without building anything.
+    class _FakeVenv:
+        def __enter__(self):
+            return tmp_path / "venv" / "bin" / "python"
+        def __exit__(self, *a):
+            return False
+
+    # Fake subprocess.run for the runner: simulate the runner writing results.
+    def fake_run(cmd, **kwargs):
+        results = {
+            "pages": {
+                "https://example.com/": {
+                    "local_file": "index.html", "sha256": "abc",
+                    "content_type": "text/html", "status": 200, "depth": 0,
+                    "fetched_at": "2026-06-12T00:00:00Z",
+                }
+            },
+            "stats": {"pages": 1, "assets": 0, "skipped_robots": 0, "errors": 0},
+        }
+        (out / ".fetch_results.json").write_text(json.dumps(results))
+        proc = MagicMock(); proc.returncode = 0
+        return proc
+
+    with (
+        patch("mykg.cli.ephemeral_venv", return_value=_FakeVenv()),
+        patch("mykg.cli.subprocess.run", side_effect=fake_run),
+    ):
+        result = CliRunner().invoke(
+            cli, ["fetch-web", "https://example.com", "--output", str(out),
+                  "--max-pages", "5"],
+        )
+
+    assert result.exit_code == 0, result.output
+    manifest = json.loads((out / "fetch_manifest.json").read_text())
+    assert "https://example.com/" in manifest["pages"]
+    assert manifest["seed_url"] == "https://example.com"
+
+
+@pytest.mark.live
+def test_fetch_web_e2e_local_site(tmp_path) -> None:
+    """End-to-end: serve a tiny 2-page site, crawl it for real (builds the
+    crawlee venv), assert pages + manifest. Deselect with -m 'not live'."""
+    import http.server, socketserver, threading, functools, json
+    from click.testing import CliRunner
+    from mykg.cli import cli
+
+    site = tmp_path / "site"
+    site.mkdir()
+    (site / "index.html").write_text(
+        '<html><body><a href="/a.html">A</a></body></html>')
+    (site / "a.html").write_text("<html><body><p>page a</p></body></html>")
+
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(site))
+    with socketserver.TCPServer(("127.0.0.1", 0), handler) as httpd:
+        port = httpd.server_address[1]
+        t = threading.Thread(target=httpd.serve_forever, daemon=True)
+        t.start()
+        try:
+            out = tmp_path / "fw"
+            result = CliRunner().invoke(cli, [
+                "fetch-web", f"http://127.0.0.1:{port}/",
+                "--output", str(out), "--max-pages", "10", "--no-robots",
+            ])
+            assert result.exit_code == 0, result.output
+            manifest = json.loads((out / "fetch_manifest.json").read_text())
+            assert manifest["stats"]["pages"] >= 1
+            assert (out / "index.html").exists()
+        finally:
+            httpd.shutdown()
