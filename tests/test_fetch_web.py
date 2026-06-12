@@ -337,6 +337,32 @@ def test_fetch_web_verbose_flag_is_wired_and_succeeds(tmp_path) -> None:
     assert (out / "fetch_manifest.json").exists()
 
 
+def test_crawl_runner_asset_allowed_predicate() -> None:
+    """Pure asset-allowlist decision: suffix in allowed → True; not in → False;
+    empty allowed → always False (download_assets off skips everything)."""
+    mod = _load_runner_module()
+    allowed = {".pdf", ".png"}
+    assert mod._asset_allowed("https://x.com/doc.pdf", allowed) is True
+    assert mod._asset_allowed("https://x.com/path/IMG.PNG", allowed) is True  # case-insensitive
+    assert mod._asset_allowed("https://x.com/style.css", allowed) is False
+    assert mod._asset_allowed("https://x.com/doc.pdf?v=1", allowed) is True
+    # Empty allowlist → nothing is allowed, regardless of suffix.
+    assert mod._asset_allowed("https://x.com/doc.pdf", set()) is False
+    # No extension at all → not in any allowlist.
+    assert mod._asset_allowed("https://x.com/page", allowed) is False
+
+
+def test_crawl_runner_should_skip_predicate() -> None:
+    """Pure dedup/resume decision: url in already-fetched map → skip (True),
+    otherwise process (False)."""
+    mod = _load_runner_module()
+    already = {"https://x.com/a": "deadbeef", "https://x.com/b": "cafef00d"}
+    assert mod._should_skip("https://x.com/a", already) is True
+    assert mod._should_skip("https://x.com/b", already) is True
+    assert mod._should_skip("https://x.com/c", already) is False
+    assert mod._should_skip("https://x.com/a", {}) is False
+
+
 @pytest.mark.live
 def test_fetch_web_e2e_local_site(tmp_path) -> None:
     """End-to-end: serve a tiny 2-page site, crawl it for real (builds the

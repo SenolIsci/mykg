@@ -71,6 +71,27 @@ def _local_path_for_url(url: str, content_type: str) -> str:
     return base
 
 
+def _asset_allowed(url: str, allowed: set[str]) -> bool:
+    """Decide whether a non-HTML asset body should be saved.
+
+    Pure predicate so it can be unit-tested without a live crawl. The suffix is
+    taken from the URL path (e.g. "/foo/bar.pdf" → ".pdf"). Returns True iff the
+    lowercased suffix is in `allowed`. An empty `allowed` (download_assets off)
+    means no non-HTML asset is ever saved.
+    """
+    suffix = Path(urlparse(url).path).suffix.lower()
+    return suffix in allowed
+
+
+def _should_skip(url: str, already: dict) -> bool:
+    """True iff `url` is in the already-fetched map (dedup/resume).
+
+    Pure predicate; `already` is a {url: sha256} map carried from the prior
+    manifest. When True, the handler skips save/stats/enqueue for this URL.
+    """
+    return url in already
+
+
 def save_page(output_dir: Path, url: str, content_type: str, body: bytes) -> dict:
     """Write the response bytes to disk and return a manifest row.
 
@@ -95,23 +116,65 @@ def save_page(output_dir: Path, url: str, content_type: str, body: bytes) -> dic
 
 async def crawl(cfg: dict) -> dict:
     """Run the crawl; return {"pages": {...}, "stats": {...}}."""
+    # Lazy, venv-only imports: keep this module importable without crawlee.
+    from crawlee import ConcurrencySettings
     from crawlee.crawlers import BeautifulSoupCrawler, BeautifulSoupCrawlingContext
 
     output_dir = Path(cfg["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
     allowed = {e.lower() for e in cfg["allowed_asset_exts"]}
+    already = cfg.get("already_fetched", {})
     pages: dict = {}
-    stats = {"pages": 0, "assets": 0, "skipped_robots": 0, "errors": 0}
+    stats = {
+        "pages": 0,
+        "assets": 0,
+        "skipped_robots": 0,
+        "skipped_cached": 0,
+        "errors": 0,
+    }
 
-    crawler = BeautifulSoupCrawler(
-        max_requests_per_crawl=cfg["max_pages"],
-        respect_robots_txt_file=cfg["respect_robots"],
-    )
+    # Concurrency + rate-limit mapping. request_delay_seconds is translated into
+    # Crawlee's max_tasks_per_minute throttle: a delay of D seconds means at most
+    # 60/D tasks per minute (e.g. 0.5s → 120/min). When D <= 0 we leave the
+    # per-minute rate unbounded and only cap raw concurrency.
+    concurrency = cfg.get("concurrency") or 1
+    delay = cfg.get("request_delay_seconds", 0) or 0
+    # Crawlee defaults desired_concurrency to 10 and rejects desired > max, so
+    # pin desired_concurrency to our max_concurrency to keep small caps valid.
+    conc_kwargs: dict = {
+        "max_concurrency": concurrency,
+        "desired_concurrency": concurrency,
+    }
+    if delay > 0:
+        conc_kwargs["max_tasks_per_minute"] = max(1, int(60 / delay))
+    conc_settings = ConcurrencySettings(**conc_kwargs)
+
+    crawler_kwargs: dict = {
+        "max_requests_per_crawl": cfg["max_pages"],
+        "respect_robots_txt_file": cfg["respect_robots"],
+        "concurrency_settings": conc_settings,
+    }
+    # max_crawl_depth caps enqueuing beyond this depth (seed = depth 0). Only
+    # pass it when configured so we don't override Crawlee's default with None.
+    if cfg.get("max_depth") is not None:
+        crawler_kwargs["max_crawl_depth"] = cfg["max_depth"]
+
+    crawler = BeautifulSoupCrawler(**crawler_kwargs)
 
     @crawler.router.default_handler
     async def handler(context: BeautifulSoupCrawlingContext) -> None:
-        resp = context.http_response
         url = context.request.url
+        # Dedup/resume: if this URL was already fetched in a prior run, skip it
+        # entirely — no save, no stats (except skipped_cached), no enqueue.
+        # HONEST LIMITATION: Crawlee fetches the response *before* the handler
+        # runs, so the HTTP request still goes out; this only avoids re-writing
+        # disk and re-descending. A true network-level skip would require
+        # pre-seeding the request queue, which is out of scope here.
+        if _should_skip(url, already):
+            stats["skipped_cached"] += 1
+            return
+
+        resp = context.http_response
         status = getattr(resp, "status_code", 200)
         try:
             ctype = resp.headers.get("content-type", "text/html")
@@ -123,17 +186,46 @@ async def crawl(cfg: dict) -> dict:
         if isinstance(body, str):
             body = body.encode("utf-8", "replace")
 
-        row = save_page(output_dir, url, ctype, body)
-        row["status"] = status
-        row["depth"] = getattr(context.request, "crawl_depth", 0)
-        pages[url] = row
-        if row["content_type"].split(";")[0].strip().lower() == "text/html":
+        is_html = ctype.split(";")[0].strip().lower() == "text/html"
+        if is_html:
+            # HTML is always saved; keep enqueuing same-domain links from it.
+            row = save_page(output_dir, url, ctype, body)
+            row["status"] = status
+            row["depth"] = getattr(context.request, "crawl_depth", 0)
+            pages[url] = row
             stats["pages"] += 1
             await context.enqueue_links(strategy=cfg["strategy"])
         else:
+            # Non-HTML asset: only save (and count) it if its suffix is on the
+            # allowlist. With download_assets off, `allowed` is empty → skip all.
+            if not _asset_allowed(url, allowed):
+                return
+            row = save_page(output_dir, url, ctype, body)
+            row["status"] = status
+            row["depth"] = getattr(context.request, "crawl_depth", 0)
+            pages[url] = row
             stats["assets"] += 1
 
+    @crawler.failed_request_handler
+    async def on_failed(context: BeautifulSoupCrawlingContext, error: Exception) -> None:
+        # Fires after Crawlee exhausts retries for a request (incl. 4xx/5xx that
+        # surface as errors). Make the error count real and record a row.
+        stats["errors"] += 1
+        url = context.request.url
+        status = None
+        resp = getattr(context, "http_response", None)
+        if resp is not None:
+            status = getattr(resp, "status_code", None)
+        pages[url] = {
+            "status": status,
+            "error": type(error).__name__,
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+        }
+
     await crawler.run([cfg["seed_url"]])
+    # NOTE on skipped_robots: Crawlee enforces robots.txt internally and does not
+    # surface a per-skip hook, so we cannot reliably count robots-skips. Rather
+    # than fabricate a number, skipped_robots is left at 0 (honest by design).
     return {"pages": pages, "stats": stats}
 
 
@@ -143,6 +235,13 @@ def main(argv: list[str]) -> int:
         return 2
     cfg = json.loads(Path(argv[1]).read_text(encoding="utf-8"))
     result = asyncio.run(crawl(cfg))
+    try:
+        from importlib.metadata import version
+
+        cv = version("crawlee")
+    except Exception:  # noqa: BLE001 — provenance is best-effort
+        cv = ""
+    result["crawlee_version"] = cv
     out = Path(cfg["output_dir"]) / ".fetch_results.json"
     out.write_text(json.dumps(result, indent=2), encoding="utf-8")
     return 0

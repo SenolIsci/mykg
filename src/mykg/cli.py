@@ -1280,6 +1280,7 @@ def fetch_web(url, output, max_pages, max_depth, strategy, download_assets,
     fw.write_manifest(
         out_dir, seed_url=url, strategy=strat,
         pages=merged, stats=results.get("stats", {}),
+        crawlee_version=results.get("crawlee_version", ""),
     )
     # Manifest is durable; the runner's transient I/O files are not — drop them
     # so they don't leak into the extract-graph input folder. Only removed after
