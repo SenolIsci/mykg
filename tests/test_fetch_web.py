@@ -273,6 +273,68 @@ def test_fetch_web_command_runs_runner_and_writes_manifest(tmp_path, monkeypatch
     manifest = json.loads((out / "fetch_manifest.json").read_text())
     assert "https://example.com/" in manifest["pages"]
     assert manifest["seed_url"] == "https://example.com"
+    # Durable artifact stays; transient runner I/O files are cleaned up.
+    assert (out / "fetch_manifest.json").exists()
+    assert not (out / ".fetch_results.json").exists()
+    assert not (out / ".fetch_config.json").exists()
+
+
+def _fake_venv_and_run(out):
+    """Shared mocks: a no-op ephemeral venv + a runner that writes results."""
+    import json
+    from unittest.mock import MagicMock
+
+    class _FakeVenv:
+        def __enter__(self):
+            return out / "venv" / "bin" / "python"
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_run(cmd, **kwargs):
+        results = {
+            "pages": {
+                "https://example.com/": {
+                    "local_file": "index.html", "sha256": "abc",
+                    "content_type": "text/html", "status": 200, "depth": 0,
+                    "fetched_at": "2026-06-12T00:00:00Z",
+                }
+            },
+            "stats": {"pages": 1, "assets": 0, "skipped_robots": 0, "errors": 0},
+        }
+        (out / ".fetch_results.json").write_text(json.dumps(results))
+        proc = MagicMock(); proc.returncode = 0
+        return proc
+
+    return _FakeVenv(), fake_run
+
+
+def test_fetch_web_verbose_flag_is_wired_and_succeeds(tmp_path) -> None:
+    """Smoke test: -v enables DEBUG logging via setup() without crashing."""
+    import json
+    from unittest.mock import patch
+    from click.testing import CliRunner
+    from mykg.cli import cli
+
+    out = tmp_path / "fw"
+    fake_venv, fake_run = _fake_venv_and_run(out)
+
+    with (
+        patch("mykg.cli.ephemeral_venv", return_value=fake_venv),
+        patch("mykg.cli.subprocess.run", side_effect=fake_run),
+        patch("mykg.logging.setup") as mock_setup,
+    ):
+        result = CliRunner().invoke(
+            cli, ["fetch-web", "https://example.com", "--output", str(out),
+                  "--max-pages", "5", "--verbose"],
+        )
+
+    assert result.exit_code == 0, result.output
+    # setup() was invoked with verbose=True (parent-process DEBUG logging).
+    mock_setup.assert_called_once()
+    _, kwargs = mock_setup.call_args
+    assert kwargs.get("verbose") is True
+    assert (out / "fetch_manifest.json").exists()
 
 
 @pytest.mark.live

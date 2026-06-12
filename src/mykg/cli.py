@@ -1214,6 +1214,10 @@ def fetch_web(url, output, max_pages, max_depth, strategy, download_assets,
         mykg fetch-web https://example.com
         mykg extract-graph ./fetched_web/example.com/
     """
+    from mykg.logging import setup
+
+    setup(log_file=None, verbose=verbose)
+
     from mykg import config as _cfg
     from mykg import fetch_web as fw
 
@@ -1277,6 +1281,11 @@ def fetch_web(url, output, max_pages, max_depth, strategy, download_assets,
         out_dir, seed_url=url, strategy=strat,
         pages=merged, stats=results.get("stats", {}),
     )
+    # Manifest is durable; the runner's transient I/O files are not — drop them
+    # so they don't leak into the extract-graph input folder. Only removed after
+    # the manifest write succeeds, so earlier failures leave them for debugging.
+    config_path.unlink(missing_ok=True)
+    results_path.unlink(missing_ok=True)
     click.echo(
         f"Done. {results.get('stats', {}).get('pages', 0)} pages, "
         f"{results.get('stats', {}).get('assets', 0)} assets → {out_dir}\n"
