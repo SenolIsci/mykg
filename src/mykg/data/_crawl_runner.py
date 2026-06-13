@@ -83,13 +83,14 @@ def _asset_allowed(url: str, allowed: set[str]) -> bool:
     return suffix in allowed
 
 
-def _should_skip(url: str, already: dict) -> bool:
-    """True iff `url` is in the already-fetched map (dedup/resume).
+def _should_skip(url: str, sha256: str, already: dict) -> bool:
+    """True iff `url`'s content is unchanged since the prior crawl (dedup/resume).
 
-    Pure predicate; `already` is a {url: sha256} map carried from the prior
-    manifest. When True, the handler skips save/stats/enqueue for this URL.
+    `already` is a {url: sha256} map carried from the prior manifest. Returns
+    True only when `url` was seen before AND its content hash is unchanged —
+    a URL whose content changed is reprocessed even if previously fetched.
     """
-    return url in already
+    return already.get(url) == sha256
 
 
 def save_page(output_dir: Path, url: str, content_type: str, body: bytes) -> dict:
@@ -164,16 +165,6 @@ async def crawl(cfg: dict) -> dict:
     @crawler.router.default_handler
     async def handler(context: BeautifulSoupCrawlingContext) -> None:
         url = context.request.url
-        # Dedup/resume: if this URL was already fetched in a prior run, skip it
-        # entirely — no save, no stats (except skipped_cached), no enqueue.
-        # HONEST LIMITATION: Crawlee fetches the response *before* the handler
-        # runs, so the HTTP request still goes out; this only avoids re-writing
-        # disk and re-descending. A true network-level skip would require
-        # pre-seeding the request queue, which is out of scope here.
-        if _should_skip(url, already):
-            stats["skipped_cached"] += 1
-            return
-
         resp = context.http_response
         status = getattr(resp, "status_code", 200)
         try:
@@ -187,6 +178,20 @@ async def crawl(cfg: dict) -> dict:
             body = body.encode("utf-8", "replace")
 
         is_html = ctype.split(";")[0].strip().lower() == "text/html"
+
+        # Dedup/resume: if this URL's content is unchanged since the prior run,
+        # skip the save/stats — but HTML still gets enqueued so newly-reachable
+        # links are discovered even when the page itself hasn't changed.
+        # HONEST LIMITATION: Crawlee fetches the response *before* the handler
+        # runs, so the HTTP request still goes out; this only avoids re-writing
+        # disk. A true network-level skip would require pre-seeding the request
+        # queue, which is out of scope here.
+        if _should_skip(url, sha256_bytes(body), already):
+            stats["skipped_cached"] += 1
+            if is_html:
+                await context.enqueue_links(strategy=cfg["strategy"])
+            return
+
         if is_html:
             # HTML is always saved; keep enqueuing same-domain links from it.
             row = save_page(output_dir, url, ctype, body)

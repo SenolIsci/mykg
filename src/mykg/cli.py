@@ -1221,6 +1221,11 @@ def fetch_web(url, output, max_pages, max_depth, strategy, download_assets,
     from mykg import config as _cfg
     from mykg import fetch_web as fw
 
+    if not _cfg.FETCH_ENABLED:
+        raise click.ClickException(
+            "fetch-web is disabled (fetch.enabled: false in mykg_config.yaml)"
+        )
+
     out_dir = Path(output) if output else fw.default_output_dir(url)
     out_dir.mkdir(parents=True, exist_ok=True)
 

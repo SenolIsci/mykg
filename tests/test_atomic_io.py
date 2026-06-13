@@ -18,6 +18,15 @@ def test_writes_correct_content(tmp_path: Path) -> None:
     assert json.loads(target.read_text()) == data
 
 
+def test_writes_non_ascii_content_as_utf8(tmp_path: Path) -> None:
+    target = tmp_path / "nodes.json"
+    data = {"name": "café Müller 中文"}
+
+    atomic_write_json(target, data)
+
+    assert json.loads(target.read_text(encoding="utf-8")) == data
+
+
 def test_overwrites_existing_file(tmp_path: Path) -> None:
     target = tmp_path / "nodes.json"
     target.write_text(json.dumps({"old": True}))

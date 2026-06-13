@@ -279,6 +279,25 @@ def test_fetch_web_command_runs_runner_and_writes_manifest(tmp_path, monkeypatch
     assert not (out / ".fetch_config.json").exists()
 
 
+def test_fetch_web_command_disabled_short_circuits(tmp_path, monkeypatch) -> None:
+    """When fetch.enabled is false, the command exits with an error before
+    creating the output directory or touching the ephemeral venv."""
+    from click.testing import CliRunner
+    from mykg import config as _cfg
+    from mykg.cli import cli
+
+    monkeypatch.setattr(_cfg, "FETCH_ENABLED", False)
+
+    out = tmp_path / "fw"
+    result = CliRunner().invoke(
+        cli, ["fetch-web", "https://example.com", "--output", str(out)],
+    )
+
+    assert result.exit_code != 0
+    assert "disabled" in result.output.lower()
+    assert not out.exists()
+
+
 def _fake_venv_and_run(out):
     """Shared mocks: a no-op ephemeral venv + a runner that writes results."""
     import json
@@ -353,14 +372,18 @@ def test_crawl_runner_asset_allowed_predicate() -> None:
 
 
 def test_crawl_runner_should_skip_predicate() -> None:
-    """Pure dedup/resume decision: url in already-fetched map → skip (True),
-    otherwise process (False)."""
+    """Pure dedup/resume decision: url previously fetched AND content sha256
+    unchanged → skip (True); new url, or unchanged url with a different sha
+    (content changed since prior crawl) → process (False)."""
     mod = _load_runner_module()
     already = {"https://x.com/a": "deadbeef", "https://x.com/b": "cafef00d"}
-    assert mod._should_skip("https://x.com/a", already) is True
-    assert mod._should_skip("https://x.com/b", already) is True
-    assert mod._should_skip("https://x.com/c", already) is False
-    assert mod._should_skip("https://x.com/a", {}) is False
+    assert mod._should_skip("https://x.com/a", "deadbeef", already) is True
+    assert mod._should_skip("https://x.com/b", "cafef00d", already) is True
+    # Content changed since prior crawl → reprocess despite being "known".
+    assert mod._should_skip("https://x.com/a", "newhash01", already) is False
+    # New URL, not in the prior manifest at all.
+    assert mod._should_skip("https://x.com/c", "deadbeef", already) is False
+    assert mod._should_skip("https://x.com/a", "deadbeef", {}) is False
 
 
 @pytest.mark.live

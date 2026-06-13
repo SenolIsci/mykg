@@ -36,7 +36,7 @@ def atomic_write_json(path: Path, data: Any) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     payload = json.dumps(data, indent=_cfg.JSON_INDENT)
     try:
-        with tmp.open("w") as f:
+        with tmp.open("w", encoding="utf-8") as f:
             f.write(payload)
             f.flush()
             os.fsync(f.fileno())

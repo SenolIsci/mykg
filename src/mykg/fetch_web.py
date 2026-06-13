@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
+from mykg.utility.atomic_io import atomic_write_json
+
 
 def default_output_dir(seed_url: str, base: Path | None = None) -> Path:
     """`./fetched_web/<seed-domain>/` so a bare invocation is one-shot usable."""
@@ -128,7 +130,7 @@ def write_manifest(
     stats: dict,
     crawlee_version: str = "",
 ) -> None:
-    """Atomically write fetch_manifest.json (`*.tmp` → os.replace)."""
+    """Atomically write fetch_manifest.json via atomic_write_json."""
     data = {
         "seed_url": seed_url,
         "strategy": strategy,
@@ -138,10 +140,7 @@ def write_manifest(
         "pages": pages,
     }
     output_dir.mkdir(parents=True, exist_ok=True)
-    mf = output_dir / "fetch_manifest.json"
-    tmp = mf.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    os.replace(tmp, mf)
+    atomic_write_json(output_dir / "fetch_manifest.json", data)
 
 
 __all__ = [
