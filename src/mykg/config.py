@@ -253,6 +253,12 @@ FETCH_CRAWLEE_SPEC: str = _get_opt("fetch", "crawlee_spec", "crawlee[beautifulso
 FETCH_INSTALL_TIMEOUT_SECONDS: int = int(
     _get_opt("fetch", "install_timeout_seconds", 1800)
 )
+FETCH_GITHUB_CLONE_ENABLED: bool = bool(_get_opt("fetch", "github_clone_enabled", True))
+FETCH_GITHUB_CLONE_DEPTH: int = int(_get_opt("fetch", "github_clone_depth", 1))
+FETCH_GITHUB_CLONE_TIMEOUT_SECONDS: int = int(
+    _get_opt("fetch", "github_clone_timeout_seconds", 1800)
+)
+FETCH_MAX_WORKERS: int = int(_get_opt("fetch", "max_workers", 2))
 
 # ---------------------------------------------------------------------------
 # JSON pretty-print (all intermediate files)

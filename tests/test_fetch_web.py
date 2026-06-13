@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import click
 import pytest
 
 
@@ -19,6 +20,10 @@ def test_fetch_config_constants_exist_with_defaults() -> None:
     assert isinstance(config.FETCH_UV_PYTHON_VERSION, str)
     assert "crawlee" in config.FETCH_CRAWLEE_SPEC
     assert isinstance(config.FETCH_INSTALL_TIMEOUT_SECONDS, int)
+    assert isinstance(config.FETCH_GITHUB_CLONE_ENABLED, bool)
+    assert isinstance(config.FETCH_GITHUB_CLONE_DEPTH, int) and config.FETCH_GITHUB_CLONE_DEPTH > 0
+    assert isinstance(config.FETCH_GITHUB_CLONE_TIMEOUT_SECONDS, int)
+    assert config.FETCH_MAX_WORKERS == 2
 
 
 def test_fetch_block_present_in_both_yaml_files() -> None:
@@ -43,7 +48,9 @@ def test_fetch_block_present_in_both_yaml_files() -> None:
             for key in ("enabled", "strategy", "max_pages", "max_depth",
                         "respect_robots", "request_delay_seconds", "concurrency",
                         "download_assets", "timeout_seconds", "uv_path",
-                        "uv_python_version", "crawlee_spec", "install_timeout_seconds"):
+                        "uv_python_version", "crawlee_spec", "install_timeout_seconds",
+                        "github_clone_enabled", "github_clone_depth",
+                        "github_clone_timeout_seconds", "max_workers"):
                 assert key in fetch, f"fetch.{key} missing in {cfg_path} profile {name}"
 
 
@@ -417,3 +424,630 @@ def test_fetch_web_e2e_local_site(tmp_path) -> None:
             assert (out / "index.html").exists()
         finally:
             httpd.shutdown()
+
+
+# --- D51: GitHub repo scraping + --url-list -------------------------------
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://github.com/SenolIsci/mykg", ("SenolIsci", "mykg")),
+        ("https://github.com/SenolIsci/mykg/", ("SenolIsci", "mykg")),
+        ("https://github.com/SenolIsci/mykg.git", ("SenolIsci", "mykg")),
+        ("https://github.com/SenolIsci/mykg/tree/main/docs", ("SenolIsci", "mykg")),
+        ("https://github.com/orgs/SenolIsci/repositories", None),
+        ("https://github.com/search?q=mykg", None),
+        ("https://github.com", None),
+        ("https://github.com/SenolIsci", None),
+        ("https://example.com/SenolIsci/mykg", None),
+    ],
+)
+def test_is_github_repo_url(url, expected) -> None:
+    from mykg.fetch_web import is_github_repo_url
+    assert is_github_repo_url(url) == expected
+
+
+def test_seed_subdir_name_github_vs_plain() -> None:
+    from mykg.fetch_web import seed_subdir_name
+    assert seed_subdir_name("https://github.com/SenolIsci/mykg") == "github.com_SenolIsci_mykg"
+    assert seed_subdir_name("https://example.com/docs/guide") == "example.com"
+
+
+def test_default_output_dir_github_repo(tmp_path) -> None:
+    from mykg.fetch_web import default_output_dir
+    out = default_output_dir("https://github.com/SenolIsci/mykg", base=tmp_path)
+    assert out == tmp_path / "fetched_web" / "github.com_SenolIsci_mykg"
+
+
+@pytest.mark.parametrize(
+    ("url", "expected_depth"),
+    [
+        ("https://example.com", "default"),
+        ("https://example.com/", "default"),
+        ("https://example.com/blog/post-1", 0),
+        ("https://example.com/blog/post-1/", 0),
+    ],
+)
+def test_infer_max_depth(url, expected_depth) -> None:
+    from mykg.fetch_web import infer_max_depth
+    configured_default = 3
+    expected = configured_default if expected_depth == "default" else expected_depth
+    assert infer_max_depth(url, configured_default) == expected
+
+
+def test_parse_url_list(tmp_path) -> None:
+    from mykg.fetch_web import parse_url_list
+    f = tmp_path / "urls.txt"
+    f.write_text(
+        "\n".join([
+            "# a comment",
+            "",
+            "https://example.com",
+            "  # indented comment",
+            "https://github.com/SenolIsci/mykg  ",
+            "",
+            "https://example.org/page",
+        ]),
+        encoding="utf-8",
+    )
+    assert parse_url_list(f) == [
+        "https://example.com",
+        "https://github.com/SenolIsci/mykg",
+        "https://example.org/page",
+    ]
+
+
+def test_filter_repo_files(tmp_path) -> None:
+    from mykg.fetch_web import filter_repo_files
+
+    repo = tmp_path / "_repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / ".git" / "config").write_text("git config")
+    (repo / "README.md").write_text("# readme")
+    (repo / "src").mkdir()
+    (repo / "src" / "main.py").write_text("print('hi')")
+    (repo / "docs").mkdir()
+    (repo / "docs" / "guide.md").write_text("# guide")
+    (repo / "assets").mkdir()
+    (repo / "assets" / "logo.png").write_bytes(b"\x89PNG")
+
+    input_dir = tmp_path / "input"
+    allowed = frozenset({".png", ".pdf"})
+    result = filter_repo_files(repo, input_dir, allowed)
+
+    assert sorted(result["copied"]) == sorted([
+        "README.md", "docs/guide.md", "assets/logo.png",
+    ])
+    assert result["skipped"] == [{"path": "src/main.py", "ext": ".py"}]
+    assert result["total_files"] == 4  # .git/config excluded entirely
+    assert result["copied_count"] == 3
+
+    assert (input_dir / "README.md").exists()
+    assert (input_dir / "docs" / "guide.md").exists()
+    assert (input_dir / "assets" / "logo.png").exists()
+    assert not (input_dir / "src" / "main.py").exists()
+    assert not (input_dir / ".git").exists()
+
+
+def test_clone_github_repo_command_shape(tmp_path) -> None:
+    from unittest.mock import patch, MagicMock
+    from mykg.fetch_web import clone_github_repo
+
+    dest = tmp_path / "_repo"
+    proc = MagicMock()
+    proc.returncode = 0
+    with (
+        patch("mykg.fetch_web.shutil.which", return_value="/usr/bin/git"),
+        patch("mykg.fetch_web.subprocess.run", return_value=proc) as mock_run,
+    ):
+        clone_github_repo("SenolIsci", "mykg", dest, depth=1, timeout_seconds=60)
+
+    args, kwargs = mock_run.call_args
+    cmd = args[0]
+    assert cmd == [
+        "git", "clone", "--depth", "1",
+        "https://github.com/SenolIsci/mykg.git", str(dest),
+    ]
+    assert kwargs["timeout"] == 60
+    assert kwargs["check"] is True
+
+
+def test_clone_github_repo_missing_git(tmp_path) -> None:
+    from unittest.mock import patch
+    from mykg.fetch_web import clone_github_repo
+
+    with patch("mykg.fetch_web.shutil.which", return_value=None):
+        with pytest.raises(click.ClickException, match="git"):
+            clone_github_repo("SenolIsci", "mykg", tmp_path / "_repo", depth=1, timeout_seconds=60)
+
+
+def test_clone_github_repo_failure(tmp_path) -> None:
+    import subprocess
+    from unittest.mock import patch
+    from mykg.fetch_web import clone_github_repo
+
+    with (
+        patch("mykg.fetch_web.shutil.which", return_value="/usr/bin/git"),
+        patch(
+            "mykg.fetch_web.subprocess.run",
+            side_effect=subprocess.CalledProcessError(1, ["git"], stderr=b"fatal: not found"),
+        ),
+    ):
+        with pytest.raises(click.ClickException, match="git clone failed"):
+            clone_github_repo("SenolIsci", "mykg", tmp_path / "_repo", depth=1, timeout_seconds=60)
+
+
+def test_clone_github_repo_timeout(tmp_path) -> None:
+    import subprocess
+    from unittest.mock import patch
+    from mykg.fetch_web import clone_github_repo
+
+    with (
+        patch("mykg.fetch_web.shutil.which", return_value="/usr/bin/git"),
+        patch(
+            "mykg.fetch_web.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(["git"], 60),
+        ),
+    ):
+        with pytest.raises(click.ClickException, match="timed out"):
+            clone_github_repo("SenolIsci", "mykg", tmp_path / "_repo", depth=1, timeout_seconds=60)
+
+
+def test_fetch_web_github_url_skips_crawlee(tmp_path) -> None:
+    """A github.com/<owner>/<repo> URL is cloned+filtered; Crawlee/venv path
+    is never entered."""
+    import json
+    from unittest.mock import patch
+    from click.testing import CliRunner
+    from mykg.cli import cli
+
+    out = tmp_path / "fw"
+
+    def fake_clone(owner, repo, dest, *, depth, timeout_seconds):
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "README.md").write_text("# hi")
+        (dest / ".git").mkdir()
+
+    with (
+        patch("mykg.cli.ephemeral_venv") as mock_venv,
+        patch("mykg.cli.subprocess.run") as mock_run,
+        patch("mykg.fetch_web.clone_github_repo", side_effect=fake_clone),
+    ):
+        result = CliRunner().invoke(
+            cli, ["fetch-web", "https://github.com/SenolIsci/mykg", "--output", str(out)],
+        )
+
+    assert result.exit_code == 0, result.output
+    mock_venv.assert_not_called()
+    mock_run.assert_not_called()
+
+    manifest = json.loads((out / "fetch_manifest.json").read_text())
+    assert manifest["seed_url"] == "https://github.com/SenolIsci/mykg"
+    assert manifest["strategy"] == "github_clone"
+    assert manifest["stats"]["files_total"] == 1
+    assert manifest["stats"]["files_copied"] == 1
+    assert (out / "input" / "README.md").exists()
+    assert not (out / "input" / ".git").exists()
+
+
+def test_fetch_web_url_list_requires_output(tmp_path) -> None:
+    from click.testing import CliRunner
+    from mykg.cli import cli
+
+    url_list = tmp_path / "urls.txt"
+    url_list.write_text("https://example.com\n")
+
+    result = CliRunner().invoke(cli, ["fetch-web", "--url-list", str(url_list)])
+    assert result.exit_code != 0
+    assert "--output" in result.output
+
+
+def test_fetch_web_url_and_url_list_mutually_exclusive(tmp_path) -> None:
+    from click.testing import CliRunner
+    from mykg.cli import cli
+
+    url_list = tmp_path / "urls.txt"
+    url_list.write_text("https://example.com\n")
+    out = tmp_path / "fw"
+
+    result = CliRunner().invoke(
+        cli,
+        ["fetch-web", "https://example.com", "--url-list", str(url_list), "--output", str(out)],
+    )
+    assert result.exit_code != 0
+    assert "--url-list" in result.output
+
+
+def test_fetch_web_url_list_mixed_seeds(tmp_path) -> None:
+    """1 plain URL + 1 GitHub URL: single shared venv/subprocess for the
+    Crawlee seed, GitHub seed cloned separately; aggregated manifest."""
+    import json
+    from unittest.mock import patch, MagicMock
+    from click.testing import CliRunner
+    from mykg.cli import cli
+
+    out = tmp_path / "fw"
+
+    url_list = tmp_path / "urls.txt"
+    url_list.write_text(
+        "https://example.com\nhttps://github.com/SenolIsci/mykg\n", encoding="utf-8"
+    )
+
+    class _FakeVenv:
+        def __enter__(self):
+            return tmp_path / "venv" / "bin" / "python"
+
+        def __exit__(self, *a):
+            return False
+
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        config_path = Path(cmd[-1])
+        cfg = json.loads(config_path.read_text())
+        captured["cfg"] = cfg
+        results = {
+            "seeds": [
+                {
+                    "pages": {
+                        "https://example.com/": {
+                            "local_file": "index.html", "sha256": "abc",
+                            "content_type": "text/html", "status": 200, "depth": 0,
+                            "fetched_at": "2026-06-12T00:00:00Z",
+                        }
+                    },
+                    "stats": {"pages": 1, "assets": 0, "skipped_robots": 0, "errors": 0},
+                    "crawlee_version": "1.0.0",
+                }
+            ],
+            "crawlee_version": "1.0.0",
+        }
+        (Path(cfg["output_dir"]) / ".fetch_results.json").write_text(json.dumps(results))
+        proc = MagicMock()
+        proc.returncode = 0
+        return proc
+
+    def fake_clone(owner, repo, dest, *, depth, timeout_seconds):
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "README.md").write_text("# hi")
+
+    from pathlib import Path
+
+    with (
+        patch("mykg.cli.ephemeral_venv", return_value=_FakeVenv()) as mock_venv,
+        patch("mykg.cli.subprocess.run", side_effect=fake_run) as mock_subproc,
+        patch("mykg.fetch_web.clone_github_repo", side_effect=fake_clone),
+    ):
+        result = CliRunner().invoke(
+            cli, ["fetch-web", "--url-list", str(url_list), "--output", str(out)],
+        )
+
+    assert result.exit_code == 0, result.output
+    mock_venv.assert_called_once()
+    mock_subproc.assert_called_once()
+    assert len(captured["cfg"]["seeds"]) == 1
+
+    manifest = json.loads((out / "fetch_manifest.json").read_text())
+    assert manifest["seed_url"] is None
+    assert manifest["strategy"] is None
+    assert len(manifest["seeds"]) == 2
+    strategies = {s["seed_url"]: s["strategy"] for s in manifest["seeds"]}
+    assert strategies["https://example.com"] == "same-domain"
+    assert strategies["https://github.com/SenolIsci/mykg"] == "github_clone"
+
+    subdirs = {p.name for p in out.iterdir()}
+    assert "example.com" in subdirs
+    assert "github.com_SenolIsci_mykg" in subdirs
+    assert (out / "github.com_SenolIsci_mykg" / "input" / "README.md").exists()
+
+
+def test_fetch_web_url_list_single_shared_venv_for_plain_urls(tmp_path) -> None:
+    """3 plain URLs: exactly one ephemeral_venv + one subprocess.run, with all
+    3 seed configs in a single combined config file."""
+    import json
+    from pathlib import Path
+    from unittest.mock import patch, MagicMock
+    from click.testing import CliRunner
+    from mykg.cli import cli
+
+    out = tmp_path / "fw"
+
+    url_list = tmp_path / "urls.txt"
+    url_list.write_text(
+        "https://a.example.com\nhttps://b.example.com\nhttps://c.example.com\n",
+        encoding="utf-8",
+    )
+
+    class _FakeVenv:
+        def __enter__(self):
+            return tmp_path / "venv" / "bin" / "python"
+
+        def __exit__(self, *a):
+            return False
+
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        config_path = Path(cmd[-1])
+        cfg = json.loads(config_path.read_text())
+        captured["cfg"] = cfg
+        seeds = cfg["seeds"]
+        results = {
+            "seeds": [
+                {"pages": {}, "stats": {"pages": 0, "assets": 0, "skipped_robots": 0, "errors": 0},
+                 "crawlee_version": "1.0.0"}
+                for _ in seeds
+            ],
+            "crawlee_version": "1.0.0",
+        }
+        (Path(cfg["output_dir"]) / ".fetch_results.json").write_text(json.dumps(results))
+        proc = MagicMock()
+        proc.returncode = 0
+        return proc
+
+    with (
+        patch("mykg.cli.ephemeral_venv", return_value=_FakeVenv()) as mock_venv,
+        patch("mykg.cli.subprocess.run", side_effect=fake_run) as mock_subproc,
+    ):
+        result = CliRunner().invoke(
+            cli, ["fetch-web", "--url-list", str(url_list), "--output", str(out)],
+        )
+
+    assert result.exit_code == 0, result.output
+    mock_venv.assert_called_once()
+    mock_subproc.assert_called_once()
+    assert len(captured["cfg"]["seeds"]) == 3
+    assert captured["cfg"]["max_workers"] == 2
+
+    manifest = json.loads((out / "fetch_manifest.json").read_text())
+    assert len(manifest["seeds"]) == 3
+
+
+def test_fetch_web_url_list_per_seed_depth_inference(tmp_path) -> None:
+    """Bare-domain seed → fetch.max_depth; specific-page seed → 0; both when
+    --max-depth is not passed."""
+    import json
+    from pathlib import Path
+    from unittest.mock import patch, MagicMock
+    from click.testing import CliRunner
+    from mykg.cli import cli
+    from mykg import config as _cfg
+
+    out = tmp_path / "fw"
+
+    url_list = tmp_path / "urls.txt"
+    url_list.write_text(
+        "https://a.example.com\nhttps://b.example.com/blog/post-1\n", encoding="utf-8"
+    )
+
+    class _FakeVenv:
+        def __enter__(self):
+            return tmp_path / "venv" / "bin" / "python"
+
+        def __exit__(self, *a):
+            return False
+
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        config_path = Path(cmd[-1])
+        cfg = json.loads(config_path.read_text())
+        captured["cfg"] = cfg
+        seeds = cfg["seeds"]
+        results = {
+            "seeds": [
+                {"pages": {}, "stats": {"pages": 0, "assets": 0, "skipped_robots": 0, "errors": 0},
+                 "crawlee_version": "1.0.0"}
+                for _ in seeds
+            ],
+            "crawlee_version": "1.0.0",
+        }
+        (Path(cfg["output_dir"]) / ".fetch_results.json").write_text(json.dumps(results))
+        proc = MagicMock()
+        proc.returncode = 0
+        return proc
+
+    with (
+        patch("mykg.cli.ephemeral_venv", return_value=_FakeVenv()),
+        patch("mykg.cli.subprocess.run", side_effect=fake_run),
+    ):
+        result = CliRunner().invoke(
+            cli, ["fetch-web", "--url-list", str(url_list), "--output", str(out)],
+        )
+
+    assert result.exit_code == 0, result.output
+    by_url = {c["seed_url"]: c for c in captured["cfg"]["seeds"]}
+    assert by_url["https://a.example.com"]["max_depth"] == _cfg.FETCH_MAX_DEPTH
+    assert by_url["https://b.example.com/blog/post-1"]["max_depth"] == 0
+
+
+def test_fetch_web_url_list_explicit_max_depth_overrides_inference(tmp_path) -> None:
+    """An explicit --max-depth applies uniformly to all seeds, bypassing
+    infer_max_depth."""
+    import json
+    from pathlib import Path
+    from unittest.mock import patch, MagicMock
+    from click.testing import CliRunner
+    from mykg.cli import cli
+
+    out = tmp_path / "fw"
+
+    url_list = tmp_path / "urls.txt"
+    url_list.write_text(
+        "https://a.example.com\nhttps://b.example.com/blog/post-1\n", encoding="utf-8"
+    )
+
+    class _FakeVenv:
+        def __enter__(self):
+            return tmp_path / "venv" / "bin" / "python"
+
+        def __exit__(self, *a):
+            return False
+
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        config_path = Path(cmd[-1])
+        cfg = json.loads(config_path.read_text())
+        captured["cfg"] = cfg
+        seeds = cfg["seeds"]
+        results = {
+            "seeds": [
+                {"pages": {}, "stats": {"pages": 0, "assets": 0, "skipped_robots": 0, "errors": 0},
+                 "crawlee_version": "1.0.0"}
+                for _ in seeds
+            ],
+            "crawlee_version": "1.0.0",
+        }
+        (Path(cfg["output_dir"]) / ".fetch_results.json").write_text(json.dumps(results))
+        proc = MagicMock()
+        proc.returncode = 0
+        return proc
+
+    with (
+        patch("mykg.cli.ephemeral_venv", return_value=_FakeVenv()),
+        patch("mykg.cli.subprocess.run", side_effect=fake_run),
+    ):
+        result = CliRunner().invoke(
+            cli,
+            ["fetch-web", "--url-list", str(url_list), "--output", str(out), "--max-depth", "5"],
+        )
+
+    assert result.exit_code == 0, result.output
+    by_url = {c["seed_url"]: c for c in captured["cfg"]["seeds"]}
+    assert by_url["https://a.example.com"]["max_depth"] == 5
+    assert by_url["https://b.example.com/blog/post-1"]["max_depth"] == 5
+
+
+def test_fetch_web_single_url_depth_inference(tmp_path) -> None:
+    """Single-URL invocation without --max-depth: bare domain → fetch.max_depth
+    via infer_max_depth (refines the existing single-seed default)."""
+    import json
+    from unittest.mock import patch, MagicMock
+    from click.testing import CliRunner
+    from mykg.cli import cli
+    from mykg import config as _cfg
+
+    out = tmp_path / "fw"
+
+    class _FakeVenv:
+        def __enter__(self):
+            return tmp_path / "venv" / "bin" / "python"
+
+        def __exit__(self, *a):
+            return False
+
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        config_path = Path(cmd[-1])
+        cfg = json.loads(config_path.read_text())
+        captured["cfg"] = cfg
+        results = {"pages": {}, "stats": {"pages": 0, "assets": 0, "skipped_robots": 0, "errors": 0}}
+        (out / ".fetch_results.json").write_text(json.dumps(results))
+        proc = MagicMock()
+        proc.returncode = 0
+        return proc
+
+    from pathlib import Path
+
+    with (
+        patch("mykg.cli.ephemeral_venv", return_value=_FakeVenv()),
+        patch("mykg.cli.subprocess.run", side_effect=fake_run),
+    ):
+        result = CliRunner().invoke(
+            cli, ["fetch-web", "https://example.com/docs/guide", "--output", str(out)],
+        )
+
+    assert result.exit_code == 0, result.output
+    # Specific page (non-empty path) → max_depth=0 via infer_max_depth.
+    assert captured["cfg"]["max_depth"] == 0
+
+
+def test_crawl_runner_multi_seed(tmp_path) -> None:
+    """{"seeds": [cfg1, cfg2]} → main() writes {"seeds": [...]} results;
+    single-cfg (no "seeds" key) stays backward compatible."""
+    import json
+    from unittest.mock import patch
+
+    mod = _load_runner_module()
+
+    seeds = [
+        {"output_dir": str(tmp_path), "seed_url": "https://a.example.com"},
+        {"output_dir": str(tmp_path), "seed_url": "https://b.example.com"},
+    ]
+    combined = {"seeds": seeds, "max_workers": 2, "output_dir": str(tmp_path)}
+    config_path = tmp_path / "cfg.json"
+    config_path.write_text(json.dumps(combined))
+
+    async def fake_crawl(cfg):
+        return {"pages": {cfg["seed_url"]: {}}, "stats": {"pages": 1}}
+
+    with patch.object(mod, "crawl", side_effect=fake_crawl):
+        rc = mod.main(["_crawl_runner.py", str(config_path)])
+
+    assert rc == 0
+    results = json.loads((tmp_path / ".fetch_results.json").read_text())
+    assert "seeds" in results
+    assert len(results["seeds"]) == 2
+    assert results["seeds"][0]["pages"] == {"https://a.example.com": {}}
+    assert results["seeds"][1]["pages"] == {"https://b.example.com": {}}
+
+
+def test_crawl_runner_single_seed_backward_compatible(tmp_path) -> None:
+    import json
+    from unittest.mock import patch
+
+    mod = _load_runner_module()
+
+    cfg = {"output_dir": str(tmp_path), "seed_url": "https://example.com"}
+    config_path = tmp_path / "cfg.json"
+    config_path.write_text(json.dumps(cfg))
+
+    async def fake_crawl(cfg):
+        return {"pages": {"https://example.com": {}}, "stats": {"pages": 1}}
+
+    with patch.object(mod, "crawl", side_effect=fake_crawl):
+        rc = mod.main(["_crawl_runner.py", str(config_path)])
+
+    assert rc == 0
+    results = json.loads((tmp_path / ".fetch_results.json").read_text())
+    assert "seeds" not in results
+    assert results["pages"] == {"https://example.com": {}}
+
+
+def test_crawl_runner_concurrency_bound(tmp_path) -> None:
+    """asyncio.Semaphore(max_workers) caps in-flight crawl() calls."""
+    import asyncio
+
+    mod = _load_runner_module()
+
+    seeds = [{"output_dir": str(tmp_path), "seed_url": f"https://s{i}.example.com"} for i in range(4)]
+
+    async def run_with_max_workers(max_workers):
+        in_flight = 0
+        max_in_flight = 0
+        lock = asyncio.Lock()
+
+        async def fake_crawl(cfg):
+            nonlocal in_flight, max_in_flight
+            async with lock:
+                in_flight += 1
+                max_in_flight = max(max_in_flight, in_flight)
+            await asyncio.sleep(0.01)
+            async with lock:
+                in_flight -= 1
+            return {"pages": {}, "stats": {}, "seed_url": cfg["seed_url"]}
+
+        from unittest.mock import patch
+        with patch.object(mod, "crawl", side_effect=fake_crawl):
+            results = await mod._crawl_many(seeds, max_workers)
+        return results, max_in_flight
+
+    results, max_in_flight = asyncio.run(run_with_max_workers(2))
+    assert len(results) == 4
+    assert max_in_flight <= 2
+
+    _, max_in_flight_1 = asyncio.run(run_with_max_workers(1))
+    assert max_in_flight_1 == 1

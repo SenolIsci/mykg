@@ -1185,12 +1185,65 @@ def parse_docs(
     click.echo(f"Done. Output written to: {output_path}")
 
 
+def _github_clone_seed(seed_url, out_dir, _cfg, fw, *, ignored_notice=None):
+    """Clone+filter a GitHub repo seed into `out_dir`; return a manifest dict
+    shaped for `write_manifest`'s per-seed `seeds[]` entries (plus `pages`)."""
+    owner, repo = fw.is_github_repo_url(seed_url)
+    if ignored_notice:
+        click.echo(ignored_notice)
+    repo_dir = out_dir / "_repo"
+    input_dir = out_dir / "input"
+    click.echo(f"Cloning {owner}/{repo} (depth={_cfg.FETCH_GITHUB_CLONE_DEPTH}) → {repo_dir}")
+    fw.clone_github_repo(
+        owner, repo, repo_dir,
+        depth=_cfg.FETCH_GITHUB_CLONE_DEPTH,
+        timeout_seconds=_cfg.FETCH_GITHUB_CLONE_TIMEOUT_SECONDS,
+    )
+    if input_dir.exists():
+        shutil.rmtree(input_dir)
+    filter_result = fw.filter_repo_files(repo_dir, input_dir, _cfg.PREPROCESS_EXTENSIONS)
+    stats = {
+        "files_total": filter_result["total_files"],
+        "files_copied": filter_result["copied_count"],
+        "files_skipped": len(filter_result["skipped"]),
+    }
+    click.echo(
+        f"Done. {stats['files_copied']}/{stats['files_total']} files copied → {input_dir}\n"
+        f"Next: mykg extract-graph {input_dir}/"
+    )
+    return {
+        "seed_url": seed_url,
+        "strategy": "github_clone",
+        "output_subdir": out_dir.name,
+        "stats": stats,
+        "pages": {},
+    }
+
+
+def _crawlee_ignored_options_notice(max_pages, max_depth, strategy, download_assets,
+                                     delay, concurrency, no_robots, force):
+    """One-line notice when Crawlee-only options are passed for a GitHub seed."""
+    non_default = any([
+        max_pages is not None, max_depth is not None, strategy is not None,
+        download_assets is not None, delay is not None, concurrency is not None,
+        no_robots, force,
+    ])
+    if not non_default:
+        return None
+    return "Note: Crawlee options (--max-pages, --max-depth, etc.) are ignored for GitHub repo URLs (git-clone path)."
+
+
 @cli.command("fetch-web")
-@click.argument("url")
+@click.argument("url", required=False)
+@click.option("--url-list", default=None, type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="File of seed URLs (one per line, # comments ignored). "
+                   "Mutually exclusive with URL; requires --output.")
 @click.option("--output", default=None, type=click.Path(path_type=Path),
-              help="Target folder (default: ./fetched_web/<domain>/).")
+              help="Target folder (default: ./fetched_web/<domain>/; required with --url-list).")
 @click.option("--max-pages", default=None, type=int, help="Cap on total fetched pages.")
-@click.option("--max-depth", default=None, type=int, help="Max crawl depth from seed.")
+@click.option("--max-depth", default=None, type=int,
+              help="Max crawl depth from seed (default: inferred — 0 for a "
+                   "specific page, fetch.max_depth for a bare domain).")
 @click.option("--strategy", default=None,
               type=click.Choice(["same-domain", "same-origin", "all"]),
               help="Link-following scope (default from config; 'all' leaves the domain).")
@@ -1201,18 +1254,33 @@ def parse_docs(
 @click.option("--no-robots", is_flag=True, help="Disable robots.txt compliance.")
 @click.option("--force", is_flag=True, help="Ignore prior manifest; re-fetch everything.")
 @click.option("--verbose", "-v", is_flag=True, help="Enable DEBUG-level logging.")
-def fetch_web(url, output, max_pages, max_depth, strategy, download_assets,
+def fetch_web(url, url_list, output, max_pages, max_depth, strategy, download_assets,
               delay, concurrency, no_robots, force, verbose):
-    """Crawl a website and save raw HTML + fetch_manifest.json into a folder.
+    """Crawl a website (or clone a GitHub repo) and write fetch_manifest.json.
 
     The folder is a normal `extract-graph` input: the preprocess step converts
     the saved HTML to Markdown (and any downloaded PDFs/DOCX via MinerU). Crawlee
     runs inside an ephemeral uv venv that is destroyed on exit — nothing about
     the crawler is installed into mykg's own interpreter.
 
-    Example:
+    A `https://github.com/<owner>/<repo>` URL is shallow-cloned with `git`
+    instead of crawled; the clone lands in `<output>/_repo/` and is filtered
+    down to extract-graph-consumable files in `<output>/input/`.
+
+    `--url-list <file>` fetches multiple seeds (one URL per line, blank/`#`
+    lines ignored) into per-seed subfolders under `--output`. Each seed gets
+    its own caps (no shared budget); GitHub seeds are cloned, others crawled.
+    All Crawlee seeds in a `--url-list` share a single ephemeral venv, run in
+    parallel bounded by `fetch.max_workers`.
+
+    Examples:
         mykg fetch-web https://example.com
         mykg extract-graph ./fetched_web/example.com/
+
+        mykg fetch-web https://github.com/SenolIsci/mykg
+        mykg extract-graph ./fetched_web/github.com_SenolIsci_mykg/input/
+
+        mykg fetch-web --url-list urls.txt --output ./fetched_web/batch/
     """
     from mykg.logging import setup
 
@@ -1226,77 +1294,207 @@ def fetch_web(url, output, max_pages, max_depth, strategy, download_assets,
             "fetch-web is disabled (fetch.enabled: false in mykg_config.yaml)"
         )
 
-    out_dir = Path(output) if output else fw.default_output_dir(url)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    prior = {} if force else fw.load_manifest(out_dir)
+    if url and url_list:
+        raise click.UsageError("Pass either URL or --url-list, not both.")
+    if not url and not url_list:
+        raise click.UsageError("Pass either a URL or --url-list <file>.")
+    if url_list and not output:
+        raise click.UsageError("--output is required when using --url-list.")
 
     strat = strategy or _cfg.FETCH_STRATEGY
     dl_assets = _cfg.FETCH_DOWNLOAD_ASSETS if download_assets is None else download_assets
     allowed = sorted(_cfg.PREPROCESS_EXTENSIONS) if dl_assets else []
-
-    crawl_cfg = fw.build_crawl_config(
-        seed_url=url,
-        output_dir=str(out_dir),
-        strategy=strat,
-        max_pages=max_pages if max_pages is not None else _cfg.FETCH_MAX_PAGES,
-        max_depth=max_depth if max_depth is not None else _cfg.FETCH_MAX_DEPTH,
-        respect_robots=(False if no_robots else _cfg.FETCH_RESPECT_ROBOTS),
-        request_delay_seconds=delay if delay is not None else _cfg.FETCH_REQUEST_DELAY_SECONDS,
-        concurrency=concurrency if concurrency is not None else _cfg.FETCH_CONCURRENCY,
-        allowed_asset_exts=allowed,
+    ignored_notice = _crawlee_ignored_options_notice(
+        max_pages, max_depth, strategy, download_assets, delay, concurrency, no_robots, force,
     )
-    crawl_cfg["already_fetched"] = {u: e.get("sha256") for u, e in prior.items()}
 
-    config_path = out_dir / ".fetch_config.json"
-    config_path.write_text(json.dumps(crawl_cfg, indent=2), encoding="utf-8")
+    def _seed_crawl_cfg(seed_url, seed_out_dir, prior):
+        depth = max_depth if max_depth is not None else fw.infer_max_depth(seed_url, _cfg.FETCH_MAX_DEPTH)
+        cfg = fw.build_crawl_config(
+            seed_url=seed_url,
+            output_dir=str(seed_out_dir),
+            strategy=strat,
+            max_pages=max_pages if max_pages is not None else _cfg.FETCH_MAX_PAGES,
+            max_depth=depth,
+            respect_robots=(False if no_robots else _cfg.FETCH_RESPECT_ROBOTS),
+            request_delay_seconds=delay if delay is not None else _cfg.FETCH_REQUEST_DELAY_SECONDS,
+            concurrency=concurrency if concurrency is not None else _cfg.FETCH_CONCURRENCY,
+            allowed_asset_exts=allowed,
+        )
+        cfg["already_fetched"] = {u: e.get("sha256") for u, e in prior.items()}
+        return cfg
 
     runner = Path(__file__).parent / "data" / "_crawl_runner.py"
 
-    click.echo(f"Crawling {url} → {out_dir} (strategy={strat}, max_pages={crawl_cfg['max_pages']})")
-    with ephemeral_venv(
-        _cfg.FETCH_UV_PYTHON_VERSION,
-        _cfg.FETCH_CRAWLEE_SPEC,
-        _cfg.FETCH_UV_PATH,
-        _cfg.FETCH_INSTALL_TIMEOUT_SECONDS,
-        bin_name="python",
-        prefix="mykg-crawl-venv-",
-    ) as venv_python:
-        try:
-            proc = subprocess.run(
-                [str(venv_python), str(runner), str(config_path)],
-                check=False,
-                timeout=_cfg.FETCH_TIMEOUT_SECONDS,
+    # --- Single seed (existing behaviour, plus GitHub-clone + depth inference) ---
+    if url:
+        out_dir = Path(output) if output else fw.default_output_dir(url)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        if _cfg.FETCH_GITHUB_CLONE_ENABLED and fw.is_github_repo_url(url):
+            entry = _github_clone_seed(url, out_dir, _cfg, fw, ignored_notice=ignored_notice)
+            fw.write_manifest(
+                out_dir, seed_url=url, strategy="github_clone",
+                pages={}, stats=entry["stats"],
             )
-        except subprocess.TimeoutExpired as exc:
-            raise click.ClickException(
-                f"crawl timed out after {_cfg.FETCH_TIMEOUT_SECONDS}s"
-            ) from exc
-        if proc.returncode != 0:
-            raise click.ClickException(f"crawl runner failed with exit code {proc.returncode}")
+            return
 
-    results_path = out_dir / ".fetch_results.json"
-    if not results_path.exists():
-        raise click.ClickException("crawl runner produced no results file")
-    results = json.loads(results_path.read_text(encoding="utf-8"))
+        prior = {} if force else fw.load_manifest(out_dir)
+        crawl_cfg = _seed_crawl_cfg(url, out_dir, prior)
 
-    merged = dict(prior)
-    merged.update(results.get("pages", {}))
+        config_path = out_dir / ".fetch_config.json"
+        config_path.write_text(json.dumps(crawl_cfg, indent=2), encoding="utf-8")
+
+        click.echo(f"Crawling {url} → {out_dir} (strategy={strat}, max_pages={crawl_cfg['max_pages']}, max_depth={crawl_cfg['max_depth']})")
+        with ephemeral_venv(
+            _cfg.FETCH_UV_PYTHON_VERSION,
+            _cfg.FETCH_CRAWLEE_SPEC,
+            _cfg.FETCH_UV_PATH,
+            _cfg.FETCH_INSTALL_TIMEOUT_SECONDS,
+            bin_name="python",
+            prefix="mykg-crawl-venv-",
+        ) as venv_python:
+            try:
+                proc = subprocess.run(
+                    [str(venv_python), str(runner), str(config_path)],
+                    check=False,
+                    timeout=_cfg.FETCH_TIMEOUT_SECONDS,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise click.ClickException(
+                    f"crawl timed out after {_cfg.FETCH_TIMEOUT_SECONDS}s"
+                ) from exc
+            if proc.returncode != 0:
+                raise click.ClickException(f"crawl runner failed with exit code {proc.returncode}")
+
+        results_path = out_dir / ".fetch_results.json"
+        if not results_path.exists():
+            raise click.ClickException("crawl runner produced no results file")
+        results = json.loads(results_path.read_text(encoding="utf-8"))
+
+        merged = dict(prior)
+        merged.update(results.get("pages", {}))
+        fw.write_manifest(
+            out_dir, seed_url=url, strategy=strat,
+            pages=merged, stats=results.get("stats", {}),
+            crawlee_version=results.get("crawlee_version", ""),
+        )
+        config_path.unlink(missing_ok=True)
+        results_path.unlink(missing_ok=True)
+        click.echo(
+            f"Done. {results.get('stats', {}).get('pages', 0)} pages, "
+            f"{results.get('stats', {}).get('assets', 0)} assets → {out_dir}\n"
+            f"Next: mykg extract-graph {out_dir}/"
+        )
+        return
+
+    # --- --url-list: multiple independent seeds, one shared venv for Crawlee ---
+    out_root = Path(output)
+    out_root.mkdir(parents=True, exist_ok=True)
+    seed_urls = fw.parse_url_list(url_list)
+    if not seed_urls:
+        raise click.ClickException(f"--url-list {url_list} contained no URLs")
+
+    seed_entries: list[dict] = []
+    crawlee_seeds: list[dict] = []  # (seed_url, seed_out_dir, prior) for config building
+    crawlee_configs: list[dict] = []
+
+    for seed_url in seed_urls:
+        if _cfg.FETCH_GITHUB_CLONE_ENABLED and fw.is_github_repo_url(seed_url):
+            owner, repo = fw.is_github_repo_url(seed_url)
+            seed_out_dir = out_root / f"github.com_{owner}_{repo}"
+            seed_out_dir.mkdir(parents=True, exist_ok=True)
+            entry = _github_clone_seed(seed_url, seed_out_dir, _cfg, fw, ignored_notice=ignored_notice)
+            seed_entries.append(entry)
+        else:
+            seed_out_dir = out_root / fw.seed_subdir_name(seed_url)
+            seed_out_dir.mkdir(parents=True, exist_ok=True)
+            prior = {} if force else fw.load_manifest(seed_out_dir)
+            cfg = _seed_crawl_cfg(seed_url, seed_out_dir, prior)
+            crawlee_seeds.append((seed_url, seed_out_dir, prior))
+            crawlee_configs.append(cfg)
+
+    if crawlee_configs:
+        combined_cfg = {
+            "seeds": crawlee_configs,
+            "max_workers": _cfg.FETCH_MAX_WORKERS,
+            "output_dir": str(out_root),
+        }
+        config_path = out_root / ".fetch_config.json"
+        config_path.write_text(json.dumps(combined_cfg, indent=2), encoding="utf-8")
+
+        click.echo(
+            f"Crawling {len(crawlee_configs)} seed(s) → {out_root} "
+            f"(max_workers={_cfg.FETCH_MAX_WORKERS})"
+        )
+        with ephemeral_venv(
+            _cfg.FETCH_UV_PYTHON_VERSION,
+            _cfg.FETCH_CRAWLEE_SPEC,
+            _cfg.FETCH_UV_PATH,
+            _cfg.FETCH_INSTALL_TIMEOUT_SECONDS,
+            bin_name="python",
+            prefix="mykg-crawl-venv-",
+        ) as venv_python:
+            try:
+                proc = subprocess.run(
+                    [str(venv_python), str(runner), str(config_path)],
+                    check=False,
+                    timeout=_cfg.FETCH_TIMEOUT_SECONDS,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise click.ClickException(
+                    f"crawl timed out after {_cfg.FETCH_TIMEOUT_SECONDS}s"
+                ) from exc
+            if proc.returncode != 0:
+                raise click.ClickException(f"crawl runner failed with exit code {proc.returncode}")
+
+        results_path = out_root / ".fetch_results.json"
+        if not results_path.exists():
+            raise click.ClickException("crawl runner produced no results file")
+        results = json.loads(results_path.read_text(encoding="utf-8"))
+        seed_results = results.get("seeds", [])
+
+        for (seed_url, seed_out_dir, prior), seed_result in zip(crawlee_seeds, seed_results):
+            merged = dict(prior)
+            merged.update(seed_result.get("pages", {}))
+            stats = seed_result.get("stats", {})
+            fw.write_manifest(
+                seed_out_dir, seed_url=seed_url, strategy=strat,
+                pages=merged, stats=stats,
+                crawlee_version=seed_result.get("crawlee_version", ""),
+            )
+            click.echo(
+                f"Done. {stats.get('pages', 0)} pages, {stats.get('assets', 0)} assets → {seed_out_dir}"
+            )
+            seed_entries.append({
+                "seed_url": seed_url,
+                "strategy": strat,
+                "output_subdir": seed_out_dir.relative_to(out_root).as_posix(),
+                "stats": stats,
+                "pages": merged,
+            })
+
+        config_path.unlink(missing_ok=True)
+        results_path.unlink(missing_ok=True)
+
+    # Aggregate stats and pages across all seeds for the top-level manifest.
+    summed_stats: dict = {}
+    union_pages: dict = {}
+    for entry in seed_entries:
+        for key, val in entry["stats"].items():
+            if isinstance(val, (int, float)):
+                summed_stats[key] = summed_stats.get(key, 0) + val
+        union_pages.update(entry["pages"])
+
+    manifest_seeds = [
+        {k: v for k, v in entry.items() if k != "pages"} for entry in seed_entries
+    ]
     fw.write_manifest(
-        out_dir, seed_url=url, strategy=strat,
-        pages=merged, stats=results.get("stats", {}),
-        crawlee_version=results.get("crawlee_version", ""),
+        out_root, seed_url=None, strategy=None,
+        pages=union_pages, stats=summed_stats,
+        seeds=manifest_seeds,
     )
-    # Manifest is durable; the runner's transient I/O files are not — drop them
-    # so they don't leak into the extract-graph input folder. Only removed after
-    # the manifest write succeeds, so earlier failures leave them for debugging.
-    config_path.unlink(missing_ok=True)
-    results_path.unlink(missing_ok=True)
-    click.echo(
-        f"Done. {results.get('stats', {}).get('pages', 0)} pages, "
-        f"{results.get('stats', {}).get('assets', 0)} assets → {out_dir}\n"
-        f"Next: mykg extract-graph {out_dir}/"
-    )
+    click.echo(f"Done. {len(seed_entries)} seed(s) fetched → {out_root}")
 
 
 # Aliases for --from-step that encode the orphan-connect sweep mode.

@@ -234,20 +234,45 @@ async def crawl(cfg: dict) -> dict:
     return {"pages": pages, "stats": stats}
 
 
+def _crawlee_version() -> str:
+    try:
+        from importlib.metadata import version
+
+        return version("crawlee")
+    except Exception:  # noqa: BLE001 — provenance is best-effort
+        return ""
+
+
+async def _crawl_many(seeds: list[dict], max_workers: int) -> list[dict]:
+    """Run `crawl()` for each seed config, bounded by `max_workers` concurrent
+    crawls. Results are returned index-aligned with `seeds`."""
+    semaphore = asyncio.Semaphore(max(1, max_workers))
+
+    async def _run_one(seed_cfg: dict) -> dict:
+        async with semaphore:
+            return await crawl(seed_cfg)
+
+    return list(await asyncio.gather(*(_run_one(s) for s in seeds)))
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
         print("usage: _crawl_runner.py <config.json>", file=sys.stderr)
         return 2
     cfg = json.loads(Path(argv[1]).read_text(encoding="utf-8"))
-    result = asyncio.run(crawl(cfg))
-    try:
-        from importlib.metadata import version
 
-        cv = version("crawlee")
-    except Exception:  # noqa: BLE001 — provenance is best-effort
-        cv = ""
-    result["crawlee_version"] = cv
-    out = Path(cfg["output_dir"]) / ".fetch_results.json"
+    if "seeds" in cfg:
+        seed_results = asyncio.run(_crawl_many(cfg["seeds"], cfg.get("max_workers", 1)))
+        cv = _crawlee_version()
+        for seed_result in seed_results:
+            seed_result["crawlee_version"] = cv
+        result: dict = {"seeds": seed_results, "crawlee_version": cv}
+        out = Path(cfg["output_dir"]) / ".fetch_results.json"
+    else:
+        result = asyncio.run(crawl(cfg))
+        result["crawlee_version"] = _crawlee_version()
+        out = Path(cfg["output_dir"]) / ".fetch_results.json"
+
     out.write_text(json.dumps(result, indent=2), encoding="utf-8")
     return 0
 
