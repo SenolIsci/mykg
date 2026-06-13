@@ -1,6 +1,6 @@
 ---
 name: mykg
-description: Run mykg knowledge-graph commands inside Claude Code from one slash command `/mykg`. The user describes intent in natural language (extract, append, resume, approve, walkthrough, parse-docs, query); the skill parses intent, builds the right `mykg` CLI command from the live `--help` output, confirms, runs it, and drives the inbox/outbox watch loop for LLM-bearing commands (extract-graph). Also handles read-only queries against existing sessions (`query`) by reading `obsidian_vault/` or `nodes.jsonl`/`edges.jsonl` directly — no CLI call. Excludes `mykg init` (interactive shell command) and `mykg merge-graphs` (follow-up planning).
+description: Run mykg knowledge-graph commands inside Claude Code from one slash command `/mykg`. The user describes intent in natural language (extract, append, resume, approve, walkthrough, parse-docs, fetch-web, query); the skill parses intent, builds the right `mykg` CLI command from the live `--help` output, confirms, runs it, and drives the inbox/outbox watch loop for LLM-bearing commands (extract-graph). Also handles read-only queries against existing sessions (`query`) by reading `obsidian_vault/` or `nodes.jsonl`/`edges.jsonl` directly — no CLI call. Excludes `mykg init` (interactive shell command) and `mykg merge-graphs` (follow-up planning).
 ---
 
 # mykg — single slash command, intent-driven CLI dispatcher
@@ -55,6 +55,13 @@ Trigger this skill whenever the user types `/mykg <anything>`. Map the intent to
 | `/mykg make a walkthrough` | `mykg walkthrough --session <most-recent>` (session-only subcommand) |
 | `/mykg make a walkthrough for 2026-06-02T17-30-00` | `mykg walkthrough --session 2026-06-02T17-30-00` (literal session name) |
 | `/mykg convert pdfs in ./inbox to ./md` | `mykg parse-docs --input ./inbox --output ./md` (no session concept) |
+| `/mykg fetch https://example.com` | `mykg fetch-web https://example.com` (no session concept) |
+| `/mykg fetch https://example.com into ./my_output_dir` (user names the output folder) | `mykg fetch-web https://example.com --output ./my_output_dir` (no session concept) |
+| `/mykg fetch https://example.com and extract` | `mykg fetch-web https://example.com`, then on success `mykg extract-graph <printed output dir>` (**fresh session**) — chained two-step intent |
+| `/mykg download the github repo SenolIsci/mykg` | `mykg fetch-web https://github.com/SenolIsci/mykg` (GitHub URL → clone path, no session concept) |
+| `/mykg fetch these urls: urls.txt into ./mykg_web_fetch/batch` | `mykg fetch-web --url-list urls.txt --output ./mykg_web_fetch/batch` (no session concept) |
+| `/mykg fetch these urls: <url1> <url2> <url3> ...` (URLs typed inline, not a file path) | write each URL on its own line to a temp file `mykg_urls.txt` (in cwd), then `mykg fetch-web --url-list mykg_urls.txt --output ./mykg_web_fetch/batch` (no session concept) |
+| `/mykg fetch these urls: <url1> <url2> <url3> ... and extract` (URLs typed inline) | same temp-file step as above, then `mykg fetch-web --url-list mykg_urls.txt --output ./mykg_web_fetch/batch`; on success, for **each** per-seed output subdir reported in the manifest, run `mykg extract-graph <subdir>` (**fresh session per subdir**) — chained multi-seed intent |
 | `/mykg query who is Alice` | read-only — Stage 4d on the latest session; vault-first because the phrasing names an entity (wiki-style) |
 | `/mykg query what does the wiki say about <topic>` | read-only — Stage 4d on the latest session; **vault path** (`obsidian_vault/`); word "wiki" is explicit |
 | `/mykg query most connected node in the knowledge graph` | read-only — Stage 4d on the latest session; **jsonl path** (`nodes.jsonl` + `edges.jsonl`); words "knowledge graph" / "most connected" are structural |
@@ -77,6 +84,7 @@ EXTRACT_HELP=$(uv run mykg extract-graph --help 2>&1)
 WALKTHROUGH_HELP=$(uv run mykg walkthrough --help 2>&1)
 APPROVE_HELP=$(uv run mykg approve-schema --help 2>&1)
 PARSE_HELP=$(uv run mykg parse-docs --help 2>&1)
+FETCH_HELP=$(uv run mykg fetch-web --help 2>&1)
 ```
 
 Use these cached values to:
@@ -90,7 +98,7 @@ Use these cached values to:
 
 From the user's `/mykg <free text>` message extract:
 
-1. **Verb** — extract / append / approve / walkthrough / parse / resume / init / merge / **query** → maps to a CLI subcommand, a refusal, or the read-only file-read path (`query`).
+1. **Verb** — extract / append / approve / walkthrough / parse / fetch / download / resume / init / merge / **query** → maps to a CLI subcommand, a refusal, or the read-only file-read path (`query`). Fetch / download (URL or GitHub repo) maps to `fetch-web` — no session, same category as `parse-docs`.
 2. **Input dir** — the path the user named, or `.` if they said "this folder", or absent for session-only commands (including `query`).
 3. **Session** — **default: do not pass `--session` at all** so mykg auto-creates a fresh timestamped session. Only override the default when the current user message contains an explicit reuse signal (see "Default behaviour" above). Resolution order:
    1. **Literal session name.** User typed `--session <name>` or "session <name>" → use that exact name.
@@ -104,6 +112,32 @@ From the user's `/mykg <free text>` message extract:
 4. **Flags** — anything the user named that maps to a flag the cached `--help` confirms (`--review`, `--append`, `--from-step <step>`, `--workers <N>`, `--obsidian-vault`, `--base-schema`, `--thesaurus`, `--verbose`, `--confidence-agg`, etc.). Forward verbatim.
 
 `extract-graph` without `--append` or `--from-step` does not need a pre-existing session — it auto-creates one.
+
+### `fetch-web` flags and special cases
+
+`fetch-web` is a **no-session** verb, same category as `parse-docs` — Stage 1
+item 3's session-resolution logic never fires for it. Forward `--url-list`,
+`--output`, `--max-pages`, `--max-depth`, `--strategy`,
+`--download-assets`/`--no-download-assets`, `--delay`, `--concurrency`,
+`--no-robots`, `--force`, `-v`/`--verbose` verbatim when the user names them,
+validated against `$FETCH_HELP`.
+
+**`--output`:** when the user names a destination folder ("into ./X", "save to
+./X", "output ./X"), pass `--output ./X` verbatim — do not rewrite or
+normalize the path beyond what the user typed. When the user doesn't name one
+and the intent is single-seed, omit `--output` and let the CLI default
+(`./mykg_web_fetch/<domain>/`) apply. For `--url-list` (including the
+inline-tempfile case below), `--output` is **required** by the CLI — if the
+user didn't name one, default to `./mykg_web_fetch/batch`.
+
+**Inline URL list → temp file.** If the user pastes multiple URLs directly in
+the message (not a path to an existing file), `--url-list` can't be used
+as-is — it requires a file. Write each URL on its own line to `mykg_urls.txt`
+(cwd), one URL per line, no comments/blank lines needed since the skill
+controls the content, then pass `--url-list mykg_urls.txt`. Mention the temp
+file's path to the user in the Stage 5 report so they know it was created (it
+is not auto-deleted — leaving it is harmless and lets the user re-run/edit the
+list).
 
 ### Special `--from-step` values for the orphan-connect step
 
@@ -186,7 +220,33 @@ About to run: uv run mykg extract-graph ./docs --append --session 2026-06-02T17-
 Reply "yes" to run, or correct me.
 ```
 
-For obviously safe actions (`walkthrough`, `parse-docs`), skip the confirmation and run.
+For obviously safe actions (`walkthrough`, `parse-docs`, `fetch-web`), skip the confirmation and run.
+
+**`fetch-web` chained with `extract-graph`:** when the user's intent is "fetch
+and extract" (single seed or `--url-list`), run `fetch-web` directly (no
+confirmation — same as above), then confirm once before the `extract-graph`
+step(s), since those are the expensive/LLM-bearing part:
+
+```
+Fetched → <output dir> (N pages / GitHub clone).
+About to run: uv run mykg extract-graph <output dir>  (fresh session)
+
+Reply "yes" to extract, or "no" to stop here.
+```
+
+For the **multi-seed chained intent** (`--url-list`, including the
+inline-URL-list-to-tempfile case), confirm once listing every per-seed subdir
+that will get its own `extract-graph` run:
+
+```
+Fetched 3 seeds → ./mykg_web_fetch/batch/{a.com, b.com, github.com_owner_repo/input}
+About to run, one fresh session each:
+  uv run mykg extract-graph ./mykg_web_fetch/batch/a.com
+  uv run mykg extract-graph ./mykg_web_fetch/batch/b.com
+  uv run mykg extract-graph ./mykg_web_fetch/batch/github.com_owner_repo/input
+
+Reply "yes" to extract all, "no" to stop here, or name which ones to run.
+```
 
 **Fresh-vs-reuse ambiguity:** when the user's intent is plausibly either a fresh extract or a continuation of a recent session (e.g. they typed `/mykg ./more_docs` and a session exists from earlier today), the proposed command MUST use a fresh session (no `--session`). Surface the alternative explicitly in the confirmation line so the user can correct it in one word:
 
@@ -314,7 +374,7 @@ Track the wave count yourself. After 20 waves, tell the user:
 
 > Watch budget exhausted after 20 waves. Pipeline is still running (PID `$MYKG_PID`). Re-invoke `/mykg resume the last session` (or `/mykg --session <name> --continue`) to keep draining the inbox.
 
-### Stage 4b — synchronous path (`walkthrough`, `approve-schema`, `parse-docs`)
+### Stage 4b — synchronous path (`walkthrough`, `approve-schema`, `parse-docs`, `fetch-web`)
 
 These subcommands do not write to the inbox. Run them in the foreground and report the resulting file path.
 
@@ -338,6 +398,21 @@ echo "Approved: $SESSION_ROOT/intermediate/schema_approved.flag"
 uv run mykg parse-docs $ARGS
 echo "Converted markdown under: $OUTPUT_DIR"
 ```
+
+**`fetch-web`:**
+
+```bash
+uv run mykg fetch-web $ARGS
+# Single-seed: output ends with "Next: mykg extract-graph <path>" — capture <path>.
+# Multi-seed (--url-list): read fetch_manifest.json["seeds"][*]["output_subdir"]
+# under --output to get one <path> per seed.
+```
+
+Report the printed output directory (or all per-seed subdirs, for
+`--url-list`) and page/asset counts to the user. If the user's intent was the
+chained "fetch and extract" form (see Stage 1 intent table), proceed to Stage
+4a for each captured path (`extract-graph <path>`, fresh session per path,
+after the Stage 2 confirmation) using the captured path(s) as `INPUT_DIR`.
 
 Capture stdout/stderr; surface any non-zero exit to the user verbatim.
 

@@ -47,8 +47,8 @@ def is_github_repo_url(url: str) -> tuple[str, str] | None:
 
 def seed_subdir_name(seed_url: str) -> str:
     """`<seed-domain>` (or `github.com_<owner>_<repo>` for GitHub repo URLs) —
-    the per-seed folder name used both under `fetched_web/` (single-seed) and
-    directly under `--output` (`--url-list`)."""
+    the per-seed folder name used both under the default output dir
+    (single-seed) and directly under `--output` (`--url-list`)."""
     repo_match = is_github_repo_url(seed_url)
     if repo_match:
         owner, repo = repo_match
@@ -57,14 +57,16 @@ def seed_subdir_name(seed_url: str) -> str:
     return urlparse(seed_url).netloc.split("@")[-1].replace(":", "_") or "site"
 
 
-def default_output_dir(seed_url: str, base: Path | None = None) -> Path:
-    """`./fetched_web/<seed-domain>/` so a bare invocation is one-shot usable.
+def default_output_dir(seed_url: str, output_dir: str, base: Path | None = None) -> Path:
+    """`./<output_dir>/<seed-domain>/` so a bare invocation is one-shot usable.
 
-    GitHub repo URLs get a per-repo directory `github.com_<owner>_<repo>/` so
-    different repos under `github.com` never collide.
+    `output_dir` is `fetch.output_dir` from `mykg_config.yaml` (default
+    `mykg_web_fetch`). GitHub repo URLs get a per-repo directory
+    `github.com_<owner>_<repo>/` so different repos under `github.com` never
+    collide.
     """
     base = base or Path.cwd()
-    return base / "fetched_web" / seed_subdir_name(seed_url)
+    return base / output_dir / seed_subdir_name(seed_url)
 
 
 def infer_max_depth(url: str, configured_default: int) -> int:

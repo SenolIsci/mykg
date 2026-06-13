@@ -1239,7 +1239,7 @@ def _crawlee_ignored_options_notice(max_pages, max_depth, strategy, download_ass
               help="File of seed URLs (one per line, # comments ignored). "
                    "Mutually exclusive with URL; requires --output.")
 @click.option("--output", default=None, type=click.Path(path_type=Path),
-              help="Target folder (default: ./fetched_web/<domain>/; required with --url-list).")
+              help="Target folder (default: ./<fetch.output_dir>/<domain>/; required with --url-list).")
 @click.option("--max-pages", default=None, type=int, help="Cap on total fetched pages.")
 @click.option("--max-depth", default=None, type=int,
               help="Max crawl depth from seed (default: inferred — 0 for a "
@@ -1275,12 +1275,12 @@ def fetch_web(url, url_list, output, max_pages, max_depth, strategy, download_as
 
     Examples:
         mykg fetch-web https://example.com
-        mykg extract-graph ./fetched_web/example.com/
+        mykg extract-graph ./mykg_web_fetch/example.com/
 
         mykg fetch-web https://github.com/SenolIsci/mykg
-        mykg extract-graph ./fetched_web/github.com_SenolIsci_mykg/input/
+        mykg extract-graph ./mykg_web_fetch/github.com_SenolIsci_mykg/input/
 
-        mykg fetch-web --url-list urls.txt --output ./fetched_web/batch/
+        mykg fetch-web --url-list urls.txt --output ./mykg_web_fetch/batch/
     """
     from mykg.logging import setup
 
@@ -1328,7 +1328,7 @@ def fetch_web(url, url_list, output, max_pages, max_depth, strategy, download_as
 
     # --- Single seed (existing behaviour, plus GitHub-clone + depth inference) ---
     if url:
-        out_dir = Path(output) if output else fw.default_output_dir(url)
+        out_dir = Path(output) if output else fw.default_output_dir(url, _cfg.FETCH_OUTPUT_DIR)
         out_dir.mkdir(parents=True, exist_ok=True)
 
         if _cfg.FETCH_GITHUB_CLONE_ENABLED and fw.is_github_repo_url(url):

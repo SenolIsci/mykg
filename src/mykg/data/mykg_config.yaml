@@ -74,6 +74,7 @@ profiles:
       # call and deleted on exit; nothing is installed into mykg's interpreter.
       fetch:
         enabled: true                 # master toggle for the fetch-web command
+        output_dir: mykg_web_fetch    # default base folder for fetch-web output (./<output_dir>/<domain>/); overridden by --output
         strategy: same-domain         # link-following scope, passed to Crawlee's enqueue_links(strategy=...):
                                        #   same-domain — follow links to the same registrable domain, across subdomains (e.g. docs.example.com + www.example.com)
                                        #   same-origin — follow links matching scheme+host+port exactly (stricter than same-domain; subdomains excluded)
@@ -235,6 +236,7 @@ profiles:
       # call and deleted on exit; nothing is installed into mykg's interpreter.
       fetch:
         enabled: true                 # master toggle for the fetch-web command
+        output_dir: mykg_web_fetch    # default base folder for fetch-web output (./<output_dir>/<domain>/); overridden by --output
         strategy: same-domain         # link-following scope, passed to Crawlee's enqueue_links(strategy=...):
                                        #   same-domain — follow links to the same registrable domain, across subdomains (e.g. docs.example.com + www.example.com)
                                        #   same-origin — follow links matching scheme+host+port exactly (stricter than same-domain; subdomains excluded)
@@ -395,6 +397,7 @@ profiles:
       # call and deleted on exit; nothing is installed into mykg's interpreter.
       fetch:
         enabled: true                 # master toggle for the fetch-web command
+        output_dir: mykg_web_fetch    # default base folder for fetch-web output (./<output_dir>/<domain>/); overridden by --output
         strategy: same-domain         # link-following scope, passed to Crawlee's enqueue_links(strategy=...):
                                        #   same-domain — follow links to the same registrable domain, across subdomains (e.g. docs.example.com + www.example.com)
                                        #   same-origin — follow links matching scheme+host+port exactly (stricter than same-domain; subdomains excluded)
@@ -560,6 +563,7 @@ profiles:
       # call and deleted on exit; nothing is installed into mykg's interpreter.
       fetch:
         enabled: true                 # master toggle for the fetch-web command
+        output_dir: mykg_web_fetch    # default base folder for fetch-web output (./<output_dir>/<domain>/); overridden by --output
         strategy: same-domain         # link-following scope, passed to Crawlee's enqueue_links(strategy=...):
                                        #   same-domain — follow links to the same registrable domain, across subdomains (e.g. docs.example.com + www.example.com)
                                        #   same-origin — follow links matching scheme+host+port exactly (stricter than same-domain; subdomains excluded)
@@ -721,6 +725,7 @@ profiles:
       # call and deleted on exit; nothing is installed into mykg's interpreter.
       fetch:
         enabled: true                 # master toggle for the fetch-web command
+        output_dir: mykg_web_fetch    # default base folder for fetch-web output (./<output_dir>/<domain>/); overridden by --output
         strategy: same-domain         # link-following scope, passed to Crawlee's enqueue_links(strategy=...):
                                        #   same-domain — follow links to the same registrable domain, across subdomains (e.g. docs.example.com + www.example.com)
                                        #   same-origin — follow links matching scheme+host+port exactly (stricter than same-domain; subdomains excluded)
@@ -878,6 +883,7 @@ profiles:
       # call and deleted on exit; nothing is installed into mykg's interpreter.
       fetch:
         enabled: true                 # master toggle for the fetch-web command
+        output_dir: mykg_web_fetch    # default base folder for fetch-web output (./<output_dir>/<domain>/); overridden by --output
         strategy: same-domain         # link-following scope, passed to Crawlee's enqueue_links(strategy=...):
                                        #   same-domain — follow links to the same registrable domain, across subdomains (e.g. docs.example.com + www.example.com)
                                        #   same-origin — follow links matching scheme+host+port exactly (stricter than same-domain; subdomains excluded)

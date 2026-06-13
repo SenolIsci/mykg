@@ -36,6 +36,7 @@
   - [Human Review Gate](#human-review-gate---review)
   - [Locked Base Schema](#locked-base-schema---base-schema)
   - [SKOS Thesaurus](#skos-thesaurus---thesaurus)
+  - [Website / Repo Fetching](#website--repo-fetching-mykg-fetch-web)
   - [Append Mode](#append-mode)
   - [Merging Sessions](#merging-sessions)
   - [Walkthrough Report](#walkthrough-report)
@@ -98,7 +99,7 @@
 
 ```
 mykg extract-graph my_notes/        # any directory: .md, .pdf, .docx, .html, images
-mykg fetch-web https://example.com  # crawl a site to a local folder (raw HTML + manifest), then extract-graph it
+mykg fetch-web https://example.com  # crawl a site to ./mykg_web_fetch/<domain>/ (raw HTML + manifest), then extract-graph it
 ```
 It uses a **two-pass LLM pipeline**: Pass 1 induces a global RDFS/OWL schema from your document corpus; Pass 2 extracts typed entity and relationship instances per file against that schema. Non-Markdown inputs (`.pdf .docx .doc .pptx .png .jpg .jpeg .html .htm`) are converted to Markdown automatically before extraction. The result is exported to multiple formats: JSONL for property-graph consumers such as Neo4j, Turtle RDF for OWL toolchains, seven NetworkX formats for graph analysis and visualization, an Obsidian vault — a second brain of wikilinked Markdown notes your AI coding assistant (Claude Code, Cursor, Copilot) can read and reason over directly — and optionally a Neo4j LOAD CSV bundle with a paste-and-run Cypher script for one-step import into Neo4j Browser or `cypher-shell`.
 
@@ -481,6 +482,33 @@ mykg extract-graph my_notes/ --thesaurus ontology/terms.skos.ttl
 - `skos:closeMatch` → collapse with warning in `merge_log.json`
 - `skos:broader` / `skos:narrower` → advisory hints only
 
+### Website / Repo Fetching (`mykg fetch-web`)
+
+Crawl a website, or shallow-clone a GitHub repo, into a folder that's a ready-made `extract-graph` input:
+
+```bash
+# Crawl a website (same-domain, robots.txt-respecting)
+mykg fetch-web https://example.com
+mykg extract-graph ./mykg_web_fetch/example.com/
+
+# Shallow-clone a GitHub repo (git clone --depth 1, no Crawlee/venv)
+mykg fetch-web https://github.com/SenolIsci/mykg
+mykg extract-graph ./mykg_web_fetch/github.com_SenolIsci_mykg/input/
+
+# Fetch multiple seeds (one URL per line; mix of sites and GitHub repos)
+mykg fetch-web --url-list urls.txt --output ./mykg_web_fetch/batch/
+```
+
+- **GitHub URLs** (`https://github.com/<owner>/<repo>`) are detected automatically and routed to `git clone` — no Crawlee, no venv.
+- **Everything else** is crawled with Crawlee inside an ephemeral `uv` venv (same pattern as the MinerU venv used by `preprocess`), respecting `robots.txt`, `--max-pages`, `--max-depth`, and a configurable request delay/concurrency.
+- **Resumable** — `fetch_manifest.json` records a SHA-256 per page; re-running skips unchanged pages. `--force` re-fetches everything.
+- **Output dir** defaults to `./<fetch.output_dir>/<seed-domain>/` (configurable via `fetch.output_dir` in `mykg_config.yaml`, default `mykg_web_fetch`); `--output` overrides it and is required with `--url-list`.
+- **Downloaded assets** (PDFs, images, etc.) are filtered through the same `preprocess.extensions` allowlist used by `extract-graph`, so anything Crawlee saves is something `preprocess` already knows how to convert.
+
+All knobs live under `fetch:` in `mykg_config.yaml` — see [docs/architecture.md](docs/architecture.md#website-and-repo-fetching-mykg-fetch-web) for the full crawl/clone sequence diagrams. Run `mykg fetch-web --help` for the complete flag list.
+
+**From Claude Code**, the [`/mykg` skill](#agent-mode-claude-code-skill) handles fetch requests in plain English — no flags to remember. `/mykg fetch https://example.com and extract`, `/mykg download the github repo owner/repo`, and `/mykg fetch these urls: <url1> <url2> ... and extract` all work: the skill picks the right `fetch-web` invocation (single page, GitHub clone, or `--url-list` batch with an auto-generated temp file for inline URLs), runs it, and — for the "and extract" intents — chains straight into `extract-graph` on the fetched output (one fresh session per seed for multi-seed fetches), confirming with you before the LLM-bearing extraction step.
+
 ### Append Mode
 
 Re-run the pipeline on new or modified files without re-running Pass 1:
@@ -745,6 +773,7 @@ Examples:
 | `/mykg approve the schema` | `mykg approve-schema --session <latest>` |
 | `/mykg make a walkthrough` | `mykg walkthrough --session <latest>` |
 | `/mykg convert pdfs in ./inbox to ./md` | `mykg parse-docs --input ./inbox --output ./md` |
+| `/mykg fetch https://example.com and extract` | `mykg fetch-web https://example.com`, then `mykg extract-graph <printed output dir>` (fresh session) |
 
 Any flag mykg accepts on the CLI works here too — the skill reads `--help` rather than maintaining its own list, so `--from-step orphan_connect`, `--workers 8`, `--obsidian-vault`, etc. all flow through.
 

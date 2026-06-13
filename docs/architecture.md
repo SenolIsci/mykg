@@ -10,6 +10,7 @@ This document explains how **myKG** works at a conceptual level: the pipelines, 
 - [Orchestrator](#orchestrator)
 - [Extract Pipeline Steps](#extract-pipeline-steps)
 - [Merge Pipeline Steps](#merge-pipeline-steps)
+- [Website and Repo Fetching (`mykg fetch-web`)](#website-and-repo-fetching-mykg-fetch-web)
 - [Extract Pipeline](#extract-pipeline)
   - [Pass 1: Schema Induction](#pass-1-schema-induction)
   - [Pass 2: Instance Extraction](#pass-2-instance-extraction)
@@ -34,6 +35,7 @@ This document explains how **myKG** works at a conceptual level: the pipelines, 
 |---|---|
 | `mykg extract-graph <dir>` | Reads Markdown files, induces a schema, extracts entities and relationships, and exports the graph |
 | `mykg merge-graphs <A> <B>` | Combines two independently-produced sessions into one unified knowledge graph |
+| `mykg fetch-web <url>` | Crawls a website (or shallow-clones a GitHub repo) into a local folder that is a ready-made `extract-graph` input |
 
 Both pipelines run as a sequence of named steps. All intermediate state is written to disk after every step, so any step can be re-entered without repeating upstream work.
 
@@ -99,6 +101,126 @@ The merge pipeline (`mykg merge-graphs`) runs 12 steps. `schema_validate`, `huma
 | 10 | `orphan_connect` | ✓ | Reused from extract pipeline | `orphan_connections.json`, `orphan_log.json` |
 | 11 | `validate_graph` | — | Reused from extract pipeline | `nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, `networkx_output/`, `obsidian_vault/` |
 | 12 | `merge_manifest` | — | Writes the merge audit record: source session names, timestamp, schema deltas for each session, re-extraction strategy used, and synonym collapse events from schema merge | `merge_manifest.json` |
+
+---
+
+## Website and Repo Fetching (`mykg fetch-web`)
+
+`mykg fetch-web <url>` is a standalone acquisition command — it runs before `extract-graph`, has no session concept, and makes no LLM calls. Its job is narrow: produce a local folder that `extract-graph` (and, for non-Markdown content, the `preprocess` step) can consume directly. It does acquisition and provenance only; HTML→Markdown conversion still happens in `preprocess` (see below), not here.
+
+The command branches on the shape of each seed URL:
+
+- **A bare GitHub repo URL** (`https://github.com/<owner>/<repo>`, optionally with `.git`, a trailing slash, or a `/tree/...` sub-path) → **shallow `git clone`**, no Crawlee, no venv.
+- **Anything else** → **Crawlee same-domain crawl** inside an ephemeral `uv` venv (mirrors the MinerU venv pattern — nothing about Crawlee is installed into mykg's own interpreter).
+- **`--url-list <file>`** → each line is routed independently through one of the two branches above; all Crawlee seeds in the list share **one** venv and one subprocess, running concurrently up to `fetch.max_workers`.
+
+The output directory defaults to `./<fetch.output_dir>/<seed-domain>/` (configurable; default `mykg_web_fetch`), or `github.com_<owner>_<repo>/` for a GitHub seed. `--output` overrides this and is required when `--url-list` is used (no single auto-derived directory makes sense for N seeds).
+
+### Single-seed website crawl
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant CLI as mykg fetch-web
+    participant Venv as ephemeral uv venv
+    participant Crawler as _crawl_runner.py (Crawlee)
+    participant Site as target website
+    participant FS as output dir
+
+    User->>CLI: mykg fetch-web https://example.com
+    CLI->>CLI: infer_max_depth(url) (bare domain → fetch.max_depth, page → 0)
+    CLI->>FS: load_manifest() (prior fetch_manifest.json, if any)
+    CLI->>Venv: uv venv + uv pip install fetch.crawlee_spec
+    Venv-->>CLI: venv ready
+    CLI->>Crawler: spawn subprocess with build_crawl_config(...)
+    loop same-domain crawl (bounded by max_pages / max_depth)
+        Crawler->>Site: GET page (respects robots.txt, request_delay_seconds)
+        Site-->>Crawler: HTML / asset bytes
+        Crawler->>Crawler: local_path_for_url() + is_already_fetched() (resume/dedup by sha256)
+        Crawler->>FS: write page/asset under output dir
+    end
+    Crawler-->>CLI: per-page results (url, sha256, content_type, status)
+    CLI->>Venv: tear down venv (TemporaryDirectory cleanup)
+    CLI->>FS: write_manifest() → fetch_manifest.json
+    CLI-->>User: "Next: mykg extract-graph <output dir>"
+```
+
+### GitHub repo seed
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant CLI as mykg fetch-web
+    participant Git as git CLI
+    participant FS as output dir
+
+    User->>CLI: mykg fetch-web https://github.com/owner/repo
+    CLI->>CLI: is_github_repo_url(url) → (owner, repo)
+    Note over CLI: fetch.github_clone_enabled (default true) — Crawlee/venv skipped entirely
+    CLI->>Git: git clone --depth fetch.github_clone_depth <repo> <output>/_repo/
+    Git-->>FS: working tree + .git/ (kept for provenance)
+    CLI->>CLI: filter_repo_files(): walk _repo/ (skip .git/), copy .md + preprocess.extensions
+    CLI->>FS: write filtered files to <output>/input/
+    CLI->>FS: write_manifest(strategy="github_clone", pages={}, stats={files_total, files_copied, files_skipped})
+    CLI-->>User: "Next: mykg extract-graph <output>/input/"
+```
+
+### `--url-list` multi-seed fetch
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant CLI as mykg fetch-web
+    participant Venv as ephemeral uv venv (shared)
+    participant Crawler as _crawl_runner.py
+    participant Git as git CLI
+
+    User->>CLI: mykg fetch-web --url-list urls.txt --output ./mykg_web_fetch/batch
+    CLI->>CLI: parse_url_list() (one URL per line, # comments ignored)
+    loop for each seed URL
+        alt seed is a GitHub repo URL
+            CLI->>Git: clone_github_repo() + filter_repo_files() → <output>/<seed>/{_repo,input}/
+        else seed is a website
+            CLI->>CLI: queue seed_cfg via build_crawl_config() (own max_pages/max_depth — no shared budget)
+        end
+    end
+    CLI->>Venv: uv venv + uv pip install (once, only if any Crawlee seeds queued)
+    Venv->>Crawler: spawn subprocess with {"seeds": [...], "max_workers": fetch.max_workers}
+    par bounded by asyncio.Semaphore(max_workers)
+        Crawler->>Crawler: crawl(seed_cfg) for each website seed, concurrently
+    end
+    Crawler-->>CLI: {"seeds": [...]} (index-aligned with input seeds)
+    CLI->>Venv: tear down venv
+    CLI->>CLI: write top-level fetch_manifest.json (seed_url/strategy=null; "seeds": [...] with per-seed output_subdir/stats; pages/stats = union/sum)
+    CLI-->>User: per-seed output dirs, each a ready extract-graph input
+```
+
+### Resume and provenance
+
+Every page written carries its SHA-256 in `fetch_manifest.json["pages"]`. On a subsequent run against the same output directory, `load_manifest()` + `is_already_fetched()` skip re-downloading any URL whose content hash is unchanged — `--force` bypasses this and re-fetches everything. `fetch_manifest.json` is the only place URL provenance is recorded; the graph's `source_files` join back to the original URL via this manifest, but the URL itself is not threaded into nodes or edges.
+
+Guardrails are config-driven (`fetch.*` in `mykg_config.yaml`, Invariant 7): `respect_robots`, `max_pages`, `max_depth`, `request_delay_seconds` + `concurrency` for rate limiting, and `download_assets` gated by the same `preprocess.extensions` allowlist used by the preprocess step — so an asset Crawlee downloads is guaranteed to be a type `preprocess` already knows how to convert.
+
+### Chaining into `extract-graph`
+
+`fetch-web`'s output folder is consumed exactly like any other input directory:
+
+```bash
+mykg fetch-web https://example.com
+mykg extract-graph ./mykg_web_fetch/example.com/
+```
+
+For HTML pages, the `preprocess` step's `markdownify` branch (below) converts them to Markdown in-process during `extract-graph` — `fetch-web` never converts anything itself.
+
+### `/mykg` skill support
+
+The Claude Code skill (`src/mykg/data/skills/mykg/SKILL.md`) treats `fetch-web` as a **no-session** subcommand, the same category as `parse-docs`: it dispatches directly with no confirmation for the fetch itself. The skill maps free-form intent to the three branches above without the user needing to know any flags:
+
+- `/mykg fetch <url>` → `mykg fetch-web <url>`, defaulting `--output` to `./<fetch.output_dir>/<seed-domain>/` when the user doesn't name one.
+- `/mykg download the github repo <owner>/<repo>` → `mykg fetch-web https://github.com/<owner>/<repo>` — the CLI's own `is_github_repo_url()` detects the shape; the skill does no special-casing.
+- `/mykg fetch these urls: <url1> <url2> ...` (URLs typed inline, not a file path) → the skill writes each URL on its own line to a temp file (`mykg_urls.txt`) and calls `mykg fetch-web --url-list mykg_urls.txt --output <dir>`, since `--url-list` requires a file.
+
+For the chained **"fetch and extract"** intents, the skill runs the fetch first (unconditionally), then confirms once before the LLM-bearing step: for a single seed it proposes `mykg extract-graph <output dir>` (fresh session); for `--url-list` it lists every per-seed output subdir from `fetch_manifest.json["seeds"]` and proposes one fresh-session `extract-graph` run per subdir, letting the user approve all, none, or a subset.
 
 ---
 
@@ -347,6 +469,10 @@ The Claude Code skill in `src/mykg/data/skills/mykg/SKILL.md` exposes a single s
 | **Single config file** | `mykg_config.yaml` is the sole source of truth for all parameters | No hardcoded literals in pipeline or adapter code; switching provider, model, or tuning parameters requires only a config change |
 | **Pydantic for all data models** | All structured data between pipeline stages uses Pydantic BaseModel | Free JSON serialization, field validation, and type coercion at every pipeline boundary |
 | **Filesystem-backed agent provider** | Sixth `LLMAdapter` subclass that writes JSON tasks to a session-local inbox and polls a `.done` sentinel | Lets a Claude Code skill — or any other host with file access — supply LLM answers without modifying the 12-step pipeline, the orchestrator, or any of the 14 LLM call sites. The contract is JSON files on disk; testable with a mock drainer in `tmp_path` |
+| **Fetch-web as a standalone acquisition command** | `mykg fetch-web` has no session, no LLM calls, and no pipeline step of its own — it just writes a folder shaped like an `extract-graph` input | Acquisition and provenance are decoupled from extraction; the output folder can be inspected, edited, or reused independently before any LLM cost is incurred |
+| **GitHub URL → shallow clone, not crawl** | `is_github_repo_url()` routes `github.com/<owner>/<repo>` to `git clone --depth N`, skipping Crawlee and the venv entirely | A repo's source files are better obtained via git than by crawling rendered HTML pages; avoids paying the Crawlee venv cost when it adds no value |
+| **Ephemeral Crawlee venv (mirrors MinerU)** | Crawlee runs in a per-invocation `uv`-managed venv, deleted on exit | Keeps Crawlee's dependency footprint out of mykg's own interpreter, exactly like the MinerU pattern in `preprocess` (D48) |
+| **Per-seed independent caps in `--url-list`** | Each seed in a multi-seed fetch gets its own `max_pages`/`max_depth`; no global budget | One large seed can't starve the others; per-seed manifests stay independently interpretable |
 
 ### Schema and Ontology
 

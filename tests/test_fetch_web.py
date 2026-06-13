@@ -8,6 +8,7 @@ def test_fetch_config_constants_exist_with_defaults() -> None:
     from mykg import config
     # Constants exist and have the documented default types/values.
     assert isinstance(config.FETCH_ENABLED, bool)
+    assert config.FETCH_OUTPUT_DIR == "mykg_web_fetch"
     assert config.FETCH_STRATEGY in ("same-domain", "same-origin", "all")
     assert isinstance(config.FETCH_MAX_PAGES, int) and config.FETCH_MAX_PAGES > 0
     assert isinstance(config.FETCH_MAX_DEPTH, int)
@@ -45,7 +46,7 @@ def test_fetch_block_present_in_both_yaml_files() -> None:
             pipeline = prof.get("pipeline", {})
             assert "fetch" in pipeline, f"fetch block missing in {cfg_path} profile {name}"
             fetch = pipeline["fetch"]
-            for key in ("enabled", "strategy", "max_pages", "max_depth",
+            for key in ("enabled", "output_dir", "strategy", "max_pages", "max_depth",
                         "respect_robots", "request_delay_seconds", "concurrency",
                         "download_assets", "timeout_seconds", "uv_path",
                         "uv_python_version", "crawlee_spec", "install_timeout_seconds",
@@ -56,8 +57,8 @@ def test_fetch_block_present_in_both_yaml_files() -> None:
 
 def test_default_output_dir_uses_seed_domain(tmp_path) -> None:
     from mykg.fetch_web import default_output_dir
-    out = default_output_dir("https://example.com/docs/guide", base=tmp_path)
-    assert out == tmp_path / "fetched_web" / "example.com"
+    out = default_output_dir("https://example.com/docs/guide", "mykg_web_fetch", base=tmp_path)
+    assert out == tmp_path / "mykg_web_fetch" / "example.com"
 
 
 def test_build_crawl_config_reflects_overrides() -> None:
@@ -165,8 +166,8 @@ def test_local_path_for_url_plain_path_unchanged_by_collision_fix() -> None:
 
 def test_default_output_dir_sanitizes_netloc(tmp_path) -> None:
     from mykg.fetch_web import default_output_dir
-    out = default_output_dir("https://a@b:8080/", base=tmp_path)
-    assert out == tmp_path / "fetched_web" / "b_8080"
+    out = default_output_dir("https://a@b:8080/", "mykg_web_fetch", base=tmp_path)
+    assert out == tmp_path / "mykg_web_fetch" / "b_8080"
 
 
 def _load_runner_module():
@@ -456,8 +457,8 @@ def test_seed_subdir_name_github_vs_plain() -> None:
 
 def test_default_output_dir_github_repo(tmp_path) -> None:
     from mykg.fetch_web import default_output_dir
-    out = default_output_dir("https://github.com/SenolIsci/mykg", base=tmp_path)
-    assert out == tmp_path / "fetched_web" / "github.com_SenolIsci_mykg"
+    out = default_output_dir("https://github.com/SenolIsci/mykg", "mykg_web_fetch", base=tmp_path)
+    assert out == tmp_path / "mykg_web_fetch" / "github.com_SenolIsci_mykg"
 
 
 @pytest.mark.parametrize(

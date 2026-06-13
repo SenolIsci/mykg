@@ -237,6 +237,7 @@ PREPROCESS_EXTENSIONS: frozenset[str] = frozenset(
 # The asset allowlist reuses PREPROCESS_EXTENSIONS — no separate fetch list.
 # ---------------------------------------------------------------------------
 FETCH_ENABLED: bool = bool(_get_opt("fetch", "enabled", True))
+FETCH_OUTPUT_DIR: str = _get_opt("fetch", "output_dir", "mykg_web_fetch")
 FETCH_STRATEGY: str = _get_opt("fetch", "strategy", "same-domain")
 FETCH_MAX_PAGES: int = int(_get_opt("fetch", "max_pages", 500))
 FETCH_MAX_DEPTH: int = int(_get_opt("fetch", "max_depth", 10))
