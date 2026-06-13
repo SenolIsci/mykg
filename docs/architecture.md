@@ -185,13 +185,13 @@ sequenceDiagram
         end
     end
     CLI->>Venv: uv venv + uv pip install (once, only if any Crawlee seeds queued)
-    Venv->>Crawler: spawn subprocess with {"seeds": [...], "max_workers": fetch.max_workers}
+    Venv->>Crawler: spawn subprocess with seeds list and fetch.max_workers
     par bounded by asyncio.Semaphore(max_workers)
         Crawler->>Crawler: crawl(seed_cfg) for each website seed, concurrently
     end
-    Crawler-->>CLI: {"seeds": [...]} (index-aligned with input seeds)
+    Crawler-->>CLI: seeds results (index-aligned with input seeds)
     CLI->>Venv: tear down venv
-    CLI->>CLI: write top-level fetch_manifest.json (seed_url/strategy=null; "seeds": [...] with per-seed output_subdir/stats; pages/stats = union/sum)
+    CLI->>CLI: write top-level fetch_manifest.json (seed_url/strategy=null, seeds list with per-seed output_subdir/stats, pages/stats = union/sum)
     CLI-->>User: per-seed output dirs, each a ready extract-graph input
 ```
 
