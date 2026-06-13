@@ -242,6 +242,51 @@ Discovery walks the session's `input/` tree and matches each non-`.md` file agai
 
 The split between *one user-facing allowlist* and *an internal backend map* is deliberate: which tool can handle which format is a property of the format (MinerU does not natively accept HTML), so it's not user-configurable; whether to convert that format at all is a user choice, so it's a single line in YAML.
 
+```mermaid
+sequenceDiagram
+    actor Orchestrator
+    participant Step as step_preprocess
+    participant FS as input/ tree
+    participant Venv as ephemeral uv venv
+    participant MinerU as mykg parse-docs (MinerU)
+    participant MD as markdownify (in-process)
+
+    Orchestrator->>Step: run_preprocess(ctx)
+    Step->>FS: discover non-.md files, filter by preprocess.extensions
+    Note over Step: unmatched suffixes -> skipped_files (untouched on disk)
+    Step->>FS: stream-hash each candidate (sha256)
+    Step->>Step: load_prior_manifest() -> preprocess_manifest.json["source_files"]
+    loop for each candidate
+        alt sha256 matches prior entry and output_md exists
+            Step->>Step: reuse prior output_md, no conversion
+        else new, modified, or output missing
+            alt suffix is .html / .htm
+                Step->>MD: markdownify(html, strip=[img, a])
+                MD->>FS: write input/_preprocessed/<rel>/<stem>.md
+            else PDF / DOCX / PPTX / image
+                Step->>Step: add <rel> to preprocess_filelist.txt
+            end
+        end
+    end
+    opt at least one MinerU candidate queued
+        Step->>Venv: uv venv + uv pip install mineru[all] (once)
+        Step->>MinerU: parse-docs --file-list preprocess_filelist.txt
+        loop per file in list
+            MinerU->>MinerU: convert to <stem>/<backend>/<stem>.md + images/ + <stem>.mineru.json
+        end
+        MinerU-->>Step: per-file canonical .md locations
+        Step->>FS: _discover_canonical_md() (deepest <stem>.md match)
+        alt preprocess.keep_artifacts == false (default)
+            Step->>FS: flatten to input/_preprocessed/<rel>/<stem>.md, rmtree rest
+        else keep_artifacts == true
+            Note over Step: full MinerU layout retained for debugging
+        end
+        Step->>Venv: tear down venv
+    end
+    Step->>FS: write preprocess_manifest.json + preprocess.done (atomic)
+    Step-->>Orchestrator: done (ingest reads input/_preprocessed/ via rglob)
+```
+
 **Change detection.** Between runs, `step_preprocess` stream-hashes every non-`.md` source file and compares against `preprocess_manifest.json["source_files"]`. Files whose source SHA matches a prior entry (and whose converted `.md` still exists on disk) are skipped — MinerU is not re-invoked. The list of changed files is handed to `parse-docs` via `--file-list <intermediate/preprocess_filelist.txt>`, so argv stays O(1) in corpus size and re-running `extract-graph` after adding a single PDF only re-converts that PDF. Forcing a full re-conversion is `extract-graph --from-step preprocess`, which deletes the manifest and the converted output before running.
 
 **Artifact retention.** Each MinerU run writes a nested per-file output tree (`<stem>/<backend>/<stem>.md` plus `images/` and a `<stem>.mineru.json` sidecar). Under the default `preprocess.keep_artifacts: false`, `step_preprocess` keeps only the canonical `<stem>.md` (flattened to `input/_preprocessed/<rel_parent>/<stem>.md`) and removes the rest. Set `keep_artifacts: true` to retain the full MinerU layout when debugging. Standalone `mykg parse-docs` always keeps the full layout regardless of pipeline config.
