@@ -50,26 +50,30 @@ def _run(cmd: list[str], *, timeout: int, phase: str) -> None:
 
 
 @contextmanager
-def ephemeral_mineru_venv(
+def ephemeral_venv(
     python_version: str,
-    mineru_spec: str,
+    spec: str,
     uv_path: str,
     install_timeout: int,
+    *,
+    bin_name: str,
+    prefix: str,
 ) -> Iterator[Path]:
-    """Create a fresh Python venv with MinerU installed, yield its mineru binary.
+    """Create a fresh Python venv with `spec` installed, yield a named binary.
 
     The venv lives in a TemporaryDirectory and is deleted when the context
     exits (success or exception). uv auto-downloads the requested Python
-    interpreter if the host system lacks it.
+    interpreter if the host system lacks it. `bin_name` is the executable to
+    yield from the venv's bin/ dir (e.g. "mineru", or "python" to run a script).
     """
     resolved_uv = shutil.which(uv_path)
     if resolved_uv is None:
         raise RuntimeError(
             f"uv not found at {uv_path!r}; uv is a core mykg dependency, "
-            "reinstall mykg or set preprocess.uv_path in mykg_config.yaml."
+            "reinstall mykg or set the uv_path key in mykg_config.yaml."
         )
 
-    with tempfile.TemporaryDirectory(prefix="mykg-mineru-venv-") as tmp:
+    with tempfile.TemporaryDirectory(prefix=prefix) as tmp:
         venv_dir = Path(tmp) / "venv"
         log.info("uv_venv — creating venv at %s (python=%s)", venv_dir, python_version)
 
@@ -86,22 +90,40 @@ def ephemeral_mineru_venv(
                 "--python",
                 str(_venv_bin(venv_dir, "python")),
                 "-U",
-                mineru_spec,
+                spec,
             ],
             timeout=install_timeout,
-            phase=f"uv pip install {mineru_spec}",
+            phase=f"uv pip install {spec}",
         )
 
-        mineru_bin = _venv_bin(venv_dir, "mineru")
-        if not mineru_bin.exists():
-            raise RuntimeError(f"uv_venv — installed {mineru_spec} but {mineru_bin} not found")
+        target_bin = _venv_bin(venv_dir, bin_name)
+        if not target_bin.exists():
+            raise RuntimeError(f"uv_venv — installed {spec} but {target_bin} not found")
 
-        log.info("uv_venv — ready: %s", mineru_bin)
+        log.info("uv_venv — ready: %s", target_bin)
         try:
-            yield mineru_bin
+            yield target_bin
         finally:
             log.info("uv_venv — cleaning up %s", venv_dir)
-    # TemporaryDirectory context-manager has now deleted the tmp tree.
 
 
-__all__ = ["ephemeral_mineru_venv"]
+@contextmanager
+def ephemeral_mineru_venv(
+    python_version: str,
+    mineru_spec: str,
+    uv_path: str,
+    install_timeout: int,
+) -> Iterator[Path]:
+    """Thin wrapper over `ephemeral_venv` yielding the mineru binary (D48)."""
+    with ephemeral_venv(
+        python_version,
+        mineru_spec,
+        uv_path,
+        install_timeout,
+        bin_name="mineru",
+        prefix="mykg-mineru-venv-",
+    ) as mineru_bin:
+        yield mineru_bin
+
+
+__all__ = ["ephemeral_venv", "ephemeral_mineru_venv"]

@@ -4,7 +4,7 @@
 # ACTIVE PROFILE — change this one line to switch provider and all settings.
 # Available: ollama-local | anthropic-claude | openai | openrouter-free | claude-cli | agent-claude-code
 # =============================================================================
-profile: openrouter-free
+profile: openai
 
 # ---------------------------------------------------------------------------
 # Profiles — each is fully self-contained: provider, credentials, and pipeline.
@@ -69,6 +69,30 @@ profiles:
           - .jpeg
           - .html
           - .htm
+      # --- Fetch (optional web crawl via fetch-web command) --------------------
+      # The crawler runs inside an ephemeral uv-managed venv created per fetch-web
+      # call and deleted on exit; nothing is installed into mykg's interpreter.
+      fetch:
+        enabled: true                 # master toggle for the fetch-web command
+        strategy: same-domain         # link-following scope, passed to Crawlee's enqueue_links(strategy=...):
+                                       #   same-domain — follow links to the same registrable domain, across subdomains (e.g. docs.example.com + www.example.com)
+                                       #   same-origin — follow links matching scheme+host+port exactly (stricter than same-domain; subdomains excluded)
+                                       #   all         — follow any link found, including off-site domains (use with care: max_pages/max_depth become the only guardrails)
+        max_pages: 1000                # hard cap on total fetched pages (bounds runtime)
+        max_depth: 1                   # max crawl depth from the seed URL
+        respect_robots: true          # honor robots.txt disallow + crawl-delay
+        request_delay_seconds: 0.5    # politeness delay between requests
+        concurrency: 4                # max concurrent requests
+        download_assets: true         # download linked binaries whose suffix is in preprocess.extensions
+        timeout_seconds: 1800         # crawl run-phase timeout (30 min)
+        uv_path: uv                   # uv CLI path (uv is a core mykg dependency)
+        uv_python_version: "3.12"    # interpreter pinned for the ephemeral crawl venv
+        crawlee_spec: "crawlee[beautifulsoup]"   # spec installed via `uv pip install -U`
+        install_timeout_seconds: 1800 # install-phase timeout (30 min)
+        github_clone_enabled: true    # master toggle for the GitHub-repo git-clone path (vs Crawlee)
+        github_clone_depth: 1          # `git clone --depth N` — shallow clone (history depth only; full working tree is always cloned). 1 = latest commit's files only, no history. Increase (or set higher) only if you want .git/ history in _repo/ for provenance.
+        github_clone_timeout_seconds: 1800  # git clone timeout (30 min)
+        max_workers: 2                 # max concurrent seed crawls inside one shared venv for --url-list
       chunking:
         window_tokens: 25000     # = input_headroom / 4 = 25000  (keep small; many chunks batched together in pass1)
         overlap_tokens: 2500     # = window_tokens × 0.10 = 2500  (10% overlap preserves context at boundaries)
@@ -206,6 +230,30 @@ profiles:
           - .jpeg
           - .html
           - .htm
+      # --- Fetch (optional web crawl via fetch-web command) --------------------
+      # The crawler runs inside an ephemeral uv-managed venv created per fetch-web
+      # call and deleted on exit; nothing is installed into mykg's interpreter.
+      fetch:
+        enabled: true                 # master toggle for the fetch-web command
+        strategy: same-domain         # link-following scope, passed to Crawlee's enqueue_links(strategy=...):
+                                       #   same-domain — follow links to the same registrable domain, across subdomains (e.g. docs.example.com + www.example.com)
+                                       #   same-origin — follow links matching scheme+host+port exactly (stricter than same-domain; subdomains excluded)
+                                       #   all         — follow any link found, including off-site domains (use with care: max_pages/max_depth become the only guardrails)
+        max_pages: 1000                # hard cap on total fetched pages (bounds runtime)
+        max_depth: 1                   # max crawl depth from the seed URL
+        respect_robots: true          # honor robots.txt disallow + crawl-delay
+        request_delay_seconds: 0.5    # politeness delay between requests
+        concurrency: 4                # max concurrent requests
+        download_assets: true         # download linked binaries whose suffix is in preprocess.extensions
+        timeout_seconds: 1800         # crawl run-phase timeout (30 min)
+        uv_path: uv                   # uv CLI path (uv is a core mykg dependency)
+        uv_python_version: "3.12"    # interpreter pinned for the ephemeral crawl venv
+        crawlee_spec: "crawlee[beautifulsoup]"   # spec installed via `uv pip install -U`
+        install_timeout_seconds: 1800 # install-phase timeout (30 min)
+        github_clone_enabled: true    # master toggle for the GitHub-repo git-clone path (vs Crawlee)
+        github_clone_depth: 1          # `git clone --depth N` — shallow clone (history depth only; full working tree is always cloned). 1 = latest commit's files only, no history. Increase (or set higher) only if you want .git/ history in _repo/ for provenance.
+        github_clone_timeout_seconds: 1800  # git clone timeout (30 min)
+        max_workers: 2                 # max concurrent seed crawls inside one shared venv for --url-list
       chunking:
         window_tokens: 45000    # ≈ batch_token_target / 4
         overlap_tokens: 4500    # = window_tokens × 0.10
@@ -312,7 +360,7 @@ profiles:
       effort: medium            # passed as --effort to claude -p; "auto" = let CLI pick (no flag sent)
       context_window: 200000    # ① model's total context limit — root anchor for all budget calculations below
       max_output_tokens: 10000  # ② output cap; input_headroom = context_window − this = 100000
-      timeout: 600              # seconds per claude -p subprocess call
+      timeout: 1800             # seconds per claude -p subprocess call
       retry_429_max: 0          # claude-cli does not hit API rate limits
       retry_429_base_delay: 2.0
     pipeline:
@@ -342,6 +390,30 @@ profiles:
           - .jpeg
           - .html
           - .htm
+      # --- Fetch (optional web crawl via fetch-web command) --------------------
+      # The crawler runs inside an ephemeral uv-managed venv created per fetch-web
+      # call and deleted on exit; nothing is installed into mykg's interpreter.
+      fetch:
+        enabled: true                 # master toggle for the fetch-web command
+        strategy: same-domain         # link-following scope, passed to Crawlee's enqueue_links(strategy=...):
+                                       #   same-domain — follow links to the same registrable domain, across subdomains (e.g. docs.example.com + www.example.com)
+                                       #   same-origin — follow links matching scheme+host+port exactly (stricter than same-domain; subdomains excluded)
+                                       #   all         — follow any link found, including off-site domains (use with care: max_pages/max_depth become the only guardrails)
+        max_pages: 1000                # hard cap on total fetched pages (bounds runtime)
+        max_depth: 1                   # max crawl depth from the seed URL
+        respect_robots: true          # honor robots.txt disallow + crawl-delay
+        request_delay_seconds: 0.5    # politeness delay between requests
+        concurrency: 4                # max concurrent requests
+        download_assets: true         # download linked binaries whose suffix is in preprocess.extensions
+        timeout_seconds: 1800         # crawl run-phase timeout (30 min)
+        uv_path: uv                   # uv CLI path (uv is a core mykg dependency)
+        uv_python_version: "3.12"    # interpreter pinned for the ephemeral crawl venv
+        crawlee_spec: "crawlee[beautifulsoup]"   # spec installed via `uv pip install -U`
+        install_timeout_seconds: 1800 # install-phase timeout (30 min)
+        github_clone_enabled: true    # master toggle for the GitHub-repo git-clone path (vs Crawlee)
+        github_clone_depth: 1          # `git clone --depth N` — shallow clone (history depth only; full working tree is always cloned). 1 = latest commit's files only, no history. Increase (or set higher) only if you want .git/ history in _repo/ for provenance.
+        github_clone_timeout_seconds: 1800  # git clone timeout (30 min)
+        max_workers: 2                 # max concurrent seed crawls inside one shared venv for --url-list
       chunking:
         window_tokens: 2500     # = input_headroom / 4 = 25000  (keep small; many chunks batched together in pass1)
         overlap_tokens: 250     # = window_tokens × 0.10 = 2500  (10% overlap preserves context at boundaries)
@@ -349,11 +421,11 @@ profiles:
       # --- Pass 1: schema induction -------------------------------------------
       pass1:
         batch_token_target: 10000  # = input_headroom (200000 − 100000); MUST stay ≤ context_window − max_output_tokens
-        max_workers: 2          # claude-cli is serial — 1 worker only
+        max_workers: 1          # claude-cli is serial — 1 worker only
         per_file_batching: false  # set true for Option B: one batch per source file
       # --- Pass 2: instance extraction ----------------------------------------
       pass2:
-        max_workers: 2          # claude-cli is serial — 1 worker only
+        max_workers: 1          # claude-cli is serial — 1 worker only
         stateful_chunks: true   # pass prior-chunk nodes to next chunk so IDs stay stable across chunk boundaries
         prep_mode: batch_chunks                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
         concat_batch_token_target: 10000  # target token budget per virtual batch (≤ input_headroom = 100000); used when prep_mode=concat
@@ -370,7 +442,7 @@ profiles:
         top_k_per_orphan: 5     # max candidate connected nodes considered per orphan in Stage 1 scoring
         confidence_base: 0.5    # starting confidence for an inferred orphan edge before weighting
         confidence_weight: 0.5  # multiplier applied to co-occurrence frequency when computing final orphan edge confidence
-        max_workers: 2          # claude-cli is serial — 1 worker only
+        max_workers: 1          # claude-cli is serial — 1 worker only
         schema_max_restarts: 0  # max times the pipeline may restart Pass 2 after orphan_connect proposes new schema properties
         excerpt_window: 4000     # character window around an orphan mention used as LLM context in Stage 2
         excerpt_context: 1500    # characters of surrounding context added before/after the excerpt_window
@@ -483,6 +555,30 @@ profiles:
           - .jpeg
           - .html
           - .htm
+      # --- Fetch (optional web crawl via fetch-web command) --------------------
+      # The crawler runs inside an ephemeral uv-managed venv created per fetch-web
+      # call and deleted on exit; nothing is installed into mykg's interpreter.
+      fetch:
+        enabled: true                 # master toggle for the fetch-web command
+        strategy: same-domain         # link-following scope, passed to Crawlee's enqueue_links(strategy=...):
+                                       #   same-domain — follow links to the same registrable domain, across subdomains (e.g. docs.example.com + www.example.com)
+                                       #   same-origin — follow links matching scheme+host+port exactly (stricter than same-domain; subdomains excluded)
+                                       #   all         — follow any link found, including off-site domains (use with care: max_pages/max_depth become the only guardrails)
+        max_pages: 1000                # hard cap on total fetched pages (bounds runtime)
+        max_depth: 1                   # max crawl depth from the seed URL
+        respect_robots: true          # honor robots.txt disallow + crawl-delay
+        request_delay_seconds: 0.5    # politeness delay between requests
+        concurrency: 4                # max concurrent requests
+        download_assets: true         # download linked binaries whose suffix is in preprocess.extensions
+        timeout_seconds: 1800         # crawl run-phase timeout (30 min)
+        uv_path: uv                   # uv CLI path (uv is a core mykg dependency)
+        uv_python_version: "3.12"    # interpreter pinned for the ephemeral crawl venv
+        crawlee_spec: "crawlee[beautifulsoup]"   # spec installed via `uv pip install -U`
+        install_timeout_seconds: 1800 # install-phase timeout (30 min)
+        github_clone_enabled: true    # master toggle for the GitHub-repo git-clone path (vs Crawlee)
+        github_clone_depth: 1          # `git clone --depth N` — shallow clone (history depth only; full working tree is always cloned). 1 = latest commit's files only, no history. Increase (or set higher) only if you want .git/ history in _repo/ for provenance.
+        github_clone_timeout_seconds: 1800  # git clone timeout (30 min)
+        max_workers: 2                 # max concurrent seed crawls inside one shared venv for --url-list
       chunking:
         window_tokens: 28000    # = input_headroom / 4 ≈ 28000
         overlap_tokens: 2800    # = window_tokens × 0.10
@@ -620,6 +716,30 @@ profiles:
           - .jpeg
           - .html
           - .htm
+      # --- Fetch (optional web crawl via fetch-web command) --------------------
+      # The crawler runs inside an ephemeral uv-managed venv created per fetch-web
+      # call and deleted on exit; nothing is installed into mykg's interpreter.
+      fetch:
+        enabled: true                 # master toggle for the fetch-web command
+        strategy: same-domain         # link-following scope, passed to Crawlee's enqueue_links(strategy=...):
+                                       #   same-domain — follow links to the same registrable domain, across subdomains (e.g. docs.example.com + www.example.com)
+                                       #   same-origin — follow links matching scheme+host+port exactly (stricter than same-domain; subdomains excluded)
+                                       #   all         — follow any link found, including off-site domains (use with care: max_pages/max_depth become the only guardrails)
+        max_pages: 1000                # hard cap on total fetched pages (bounds runtime)
+        max_depth: 1                   # max crawl depth from the seed URL
+        respect_robots: true          # honor robots.txt disallow + crawl-delay
+        request_delay_seconds: 0.5    # politeness delay between requests
+        concurrency: 4                # max concurrent requests
+        download_assets: true         # download linked binaries whose suffix is in preprocess.extensions
+        timeout_seconds: 1800         # crawl run-phase timeout (30 min)
+        uv_path: uv                   # uv CLI path (uv is a core mykg dependency)
+        uv_python_version: "3.12"    # interpreter pinned for the ephemeral crawl venv
+        crawlee_spec: "crawlee[beautifulsoup]"   # spec installed via `uv pip install -U`
+        install_timeout_seconds: 1800 # install-phase timeout (30 min)
+        github_clone_enabled: true    # master toggle for the GitHub-repo git-clone path (vs Crawlee)
+        github_clone_depth: 1          # `git clone --depth N` — shallow clone (history depth only; full working tree is always cloned). 1 = latest commit's files only, no history. Increase (or set higher) only if you want .git/ history in _repo/ for provenance.
+        github_clone_timeout_seconds: 1800  # git clone timeout (30 min)
+        max_workers: 2                 # max concurrent seed crawls inside one shared venv for --url-list
       chunking:
         window_tokens: 6000     # = input_headroom / 4 ≈ 6000
         overlap_tokens: 600     # = window_tokens × 0.10
@@ -753,6 +873,30 @@ profiles:
           - .jpeg
           - .html
           - .htm
+      # --- Fetch (optional web crawl via fetch-web command) --------------------
+      # The crawler runs inside an ephemeral uv-managed venv created per fetch-web
+      # call and deleted on exit; nothing is installed into mykg's interpreter.
+      fetch:
+        enabled: true                 # master toggle for the fetch-web command
+        strategy: same-domain         # link-following scope, passed to Crawlee's enqueue_links(strategy=...):
+                                       #   same-domain — follow links to the same registrable domain, across subdomains (e.g. docs.example.com + www.example.com)
+                                       #   same-origin — follow links matching scheme+host+port exactly (stricter than same-domain; subdomains excluded)
+                                       #   all         — follow any link found, including off-site domains (use with care: max_pages/max_depth become the only guardrails)
+        max_pages: 1000                # hard cap on total fetched pages (bounds runtime)
+        max_depth: 1                   # max crawl depth from the seed URL
+        respect_robots: true          # honor robots.txt disallow + crawl-delay
+        request_delay_seconds: 0.5    # politeness delay between requests
+        concurrency: 4                # max concurrent requests
+        download_assets: true         # download linked binaries whose suffix is in preprocess.extensions
+        timeout_seconds: 1800         # crawl run-phase timeout (30 min)
+        uv_path: uv                   # uv CLI path (uv is a core mykg dependency)
+        uv_python_version: "3.12"    # interpreter pinned for the ephemeral crawl venv
+        crawlee_spec: "crawlee[beautifulsoup]"   # spec installed via `uv pip install -U`
+        install_timeout_seconds: 1800 # install-phase timeout (30 min)
+        github_clone_enabled: true    # master toggle for the GitHub-repo git-clone path (vs Crawlee)
+        github_clone_depth: 1          # `git clone --depth N` — shallow clone (history depth only; full working tree is always cloned). 1 = latest commit's files only, no history. Increase (or set higher) only if you want .git/ history in _repo/ for provenance.
+        github_clone_timeout_seconds: 1800  # git clone timeout (30 min)
+        max_workers: 2                 # max concurrent seed crawls inside one shared venv for --url-list
       chunking:
         window_tokens: 25000
         overlap_tokens: 2500
