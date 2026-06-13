@@ -142,17 +142,6 @@ If the skill crashes or the user kills Claude Code, in-flight tasks stay in the 
 
 ---
 
-## What stays unchanged
-
-- The 12 pipeline steps in `src/mykg/pipeline.py`.
-- All 14 LLM call sites across `pass1.py`, `pass2.py`, `name_normalizer.py`, `schema_merge.py`, `orphan_connector.py`, and `feedback.py`.
-- All `prompts/*.txt` template files.
-- The orchestrator's retry-once + feedback path.
-- `ThreadPoolExecutor` parallelism in `pass1`, `pass2`, and `orphan_connect` — `max_workers` blocking threads each call `complete()` in parallel; the skill drains them in parallel waves.
-- The five existing adapters (`anthropic`, `openai`, `openrouter`, `ollama`, `claude-cli`) — agent mode is additive.
-
----
-
 ## Limitations
 
 - The skill loop is bounded at 20 waves per invocation to avoid runaway Claude Code sessions. Long pipelines require multiple `/mykg --continue` invocations.
