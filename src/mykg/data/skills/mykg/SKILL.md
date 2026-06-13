@@ -80,11 +80,11 @@ Trigger this skill whenever the user types `/mykg <anything>`. Map the intent to
 The skill MUST NOT hand-code flag tables. The single source of truth is the live `--help` output. Once at the top of each skill turn, run the help commands for the subcommands you might dispatch and cache the output in shell variables for the rest of the turn:
 
 ```bash
-EXTRACT_HELP=$(mykg extract-graph --help 2>&1)
-WALKTHROUGH_HELP=$(mykg walkthrough --help 2>&1)
-APPROVE_HELP=$(mykg approve-schema --help 2>&1)
-PARSE_HELP=$(mykg parse-docs --help 2>&1)
-FETCH_HELP=$(mykg fetch-web --help 2>&1)
+EXTRACT_HELP=$(uv run mykg extract-graph --help 2>&1)
+WALKTHROUGH_HELP=$(uv run mykg walkthrough --help 2>&1)
+APPROVE_HELP=$(uv run mykg approve-schema --help 2>&1)
+PARSE_HELP=$(uv run mykg parse-docs --help 2>&1)
+FETCH_HELP=$(uv run mykg fetch-web --help 2>&1)
 ```
 
 Use these cached values to:
@@ -174,7 +174,7 @@ fi
 If `NEEDS_BUMP=1`, edit `mykg_config.yaml` in-place to set the active profile's `schema_max_restarts: 1`, then surface the change to the user as part of the Stage 2 confirmation:
 
 ```
-About to run: mykg extract-graph --session 2026-06-02T17-30-00 --from-step orphan_connect_fullsweep
+About to run: uv run mykg extract-graph --session 2026-06-02T17-30-00 --from-step orphan_connect_fullsweep
 
 Note: schema_max_restarts is currently 0 in profile `${ACTIVE_PROFILE}`. I will:
   1. Temporarily bump it to 1 (so the LLM may propose new schema properties for unconnected orphans).
@@ -215,7 +215,7 @@ After every YAML edit, show `git diff --no-color mykg_config.yaml | head -8` to 
 For destructive or expensive actions (anything that calls LLMs, anything `--from-step`, anything `--append`), restate the parsed command in one line and ask the user to confirm:
 
 ```
-About to run: mykg extract-graph ./docs --append --session 2026-06-02T17-30-00
+About to run: uv run mykg extract-graph ./docs --append --session 2026-06-02T17-30-00
 
 Reply "yes" to run, or correct me.
 ```
@@ -229,7 +229,7 @@ step(s), since those are the expensive/LLM-bearing part:
 
 ```
 Fetched → <output dir> (N pages / GitHub clone).
-About to run: mykg extract-graph <output dir>  (fresh session)
+About to run: uv run mykg extract-graph <output dir>  (fresh session)
 
 Reply "yes" to extract, or "no" to stop here.
 ```
@@ -241,9 +241,9 @@ that will get its own `extract-graph` run:
 ```
 Fetched 3 seeds → ./mykg_web_fetch/batch/{a.com, b.com, github.com_owner_repo/input}
 About to run, one fresh session each:
-  mykg extract-graph ./mykg_web_fetch/batch/a.com
-  mykg extract-graph ./mykg_web_fetch/batch/b.com
-  mykg extract-graph ./mykg_web_fetch/batch/github.com_owner_repo/input
+  uv run mykg extract-graph ./mykg_web_fetch/batch/a.com
+  uv run mykg extract-graph ./mykg_web_fetch/batch/b.com
+  uv run mykg extract-graph ./mykg_web_fetch/batch/github.com_owner_repo/input
 
 Reply "yes" to extract all, "no" to stop here, or name which ones to run.
 ```
@@ -251,7 +251,7 @@ Reply "yes" to extract all, "no" to stop here, or name which ones to run.
 **Fresh-vs-reuse ambiguity:** when the user's intent is plausibly either a fresh extract or a continuation of a recent session (e.g. they typed `/mykg ./more_docs` and a session exists from earlier today), the proposed command MUST use a fresh session (no `--session`). Surface the alternative explicitly in the confirmation line so the user can correct it in one word:
 
 ```
-About to run (fresh session): mykg extract-graph ./more_docs
+About to run (fresh session): uv run mykg extract-graph ./more_docs
 
 Reply "yes" to run, or say "resume the last session" / "append to the last session" to reuse session <most-recent>.
 ```
@@ -302,7 +302,7 @@ For a fresh run:
 SESSIONS_DIR=$(grep -E '^\s+sessions_dir:' mykg_config.yaml | head -1 | awk '{print $2}' || echo sessions)
 mkdir -p "$SESSIONS_DIR"
 
-nohup mykg extract-graph "$INPUT_DIR" $EXTRA_FLAGS \
+nohup uv run mykg extract-graph "$INPUT_DIR" $EXTRA_FLAGS \
   > /tmp/mykg_run.out 2>&1 &
 echo $! > /tmp/mykg.pid
 
@@ -325,7 +325,7 @@ if [ ! -d "$SESSION_ROOT" ]; then
   echo "Session $SESSION_NAME not found under $SESSIONS_DIR" >&2
   exit 1
 fi
-nohup mykg extract-graph "$INPUT_DIR" --session "$SESSION_NAME" $EXTRA_FLAGS \
+nohup uv run mykg extract-graph "$INPUT_DIR" --session "$SESSION_NAME" $EXTRA_FLAGS \
   > /tmp/mykg_run.out 2>&1 &
 echo $! > /tmp/mykg.pid
 ```
@@ -381,28 +381,28 @@ These subcommands do not write to the inbox. Run them in the foreground and repo
 **`walkthrough`:**
 
 ```bash
-mykg walkthrough $ARGS
+uv run mykg walkthrough $ARGS
 echo "Walkthrough: $SESSION_ROOT/walkthrough.md"
 ```
 
 **`approve-schema`:**
 
 ```bash
-mykg approve-schema $ARGS
+uv run mykg approve-schema $ARGS
 echo "Approved: $SESSION_ROOT/intermediate/schema_approved.flag"
 ```
 
 **`parse-docs`:**
 
 ```bash
-mykg parse-docs $ARGS
+uv run mykg parse-docs $ARGS
 echo "Converted markdown under: $OUTPUT_DIR"
 ```
 
 **`fetch-web`:**
 
 ```bash
-mykg fetch-web $ARGS
+uv run mykg fetch-web $ARGS
 # Single-seed: output ends with "Next: mykg extract-graph <path>" — capture <path>.
 # Multi-seed (--url-list): read fetch_manifest.json["seeds"][*]["output_subdir"]
 # under --output to get one <path> per seed.
