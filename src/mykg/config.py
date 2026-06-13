@@ -230,6 +230,31 @@ PREPROCESS_EXTENSIONS: frozenset[str] = frozenset(
 )
 
 # ---------------------------------------------------------------------------
+# Fetch-web — standalone website crawler (Crawlee in an ephemeral uv venv).
+# Mirrors the preprocess MinerU venv pattern (D48): nothing about Crawlee is
+# installed into mykg's own interpreter. The crawler writes raw HTML + a
+# fetch_manifest.json into a folder that `extract-graph` then consumes.
+# The asset allowlist reuses PREPROCESS_EXTENSIONS — no separate fetch list.
+# ---------------------------------------------------------------------------
+FETCH_ENABLED: bool = bool(_get_opt("fetch", "enabled", True))
+FETCH_STRATEGY: str = _get_opt("fetch", "strategy", "same-domain")
+FETCH_MAX_PAGES: int = int(_get_opt("fetch", "max_pages", 500))
+FETCH_MAX_DEPTH: int = int(_get_opt("fetch", "max_depth", 10))
+FETCH_RESPECT_ROBOTS: bool = bool(_get_opt("fetch", "respect_robots", True))
+FETCH_REQUEST_DELAY_SECONDS: float = float(
+    _get_opt("fetch", "request_delay_seconds", 0.5)
+)
+FETCH_CONCURRENCY: int = int(_get_opt("fetch", "concurrency", 4))
+FETCH_DOWNLOAD_ASSETS: bool = bool(_get_opt("fetch", "download_assets", True))
+FETCH_TIMEOUT_SECONDS: int = int(_get_opt("fetch", "timeout_seconds", 1800))
+FETCH_UV_PATH: str = _get_opt("fetch", "uv_path", "uv")
+FETCH_UV_PYTHON_VERSION: str = _get_opt("fetch", "uv_python_version", "3.12")
+FETCH_CRAWLEE_SPEC: str = _get_opt("fetch", "crawlee_spec", "crawlee[beautifulsoup]")
+FETCH_INSTALL_TIMEOUT_SECONDS: int = int(
+    _get_opt("fetch", "install_timeout_seconds", 1800)
+)
+
+# ---------------------------------------------------------------------------
 # JSON pretty-print (all intermediate files)
 # ---------------------------------------------------------------------------
 JSON_INDENT: int = _get("output", "json_indent")

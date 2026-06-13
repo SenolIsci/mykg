@@ -12,6 +12,8 @@ from pathlib import Path
 import click
 from dotenv import load_dotenv
 
+from mykg.uv_venv import ephemeral_venv
+
 
 def _cfg():
     from mykg import config
@@ -1181,6 +1183,120 @@ def parse_docs(
             f"{len(failures)} of {len(targets)} files failed conversion"
         )
     click.echo(f"Done. Output written to: {output_path}")
+
+
+@cli.command("fetch-web")
+@click.argument("url")
+@click.option("--output", default=None, type=click.Path(path_type=Path),
+              help="Target folder (default: ./fetched_web/<domain>/).")
+@click.option("--max-pages", default=None, type=int, help="Cap on total fetched pages.")
+@click.option("--max-depth", default=None, type=int, help="Max crawl depth from seed.")
+@click.option("--strategy", default=None,
+              type=click.Choice(["same-domain", "same-origin", "all"]),
+              help="Link-following scope (default from config; 'all' leaves the domain).")
+@click.option("--download-assets/--no-download-assets", default=None,
+              help="Download linked binaries in preprocess.extensions (default from config).")
+@click.option("--delay", default=None, type=float, help="Per-request delay seconds.")
+@click.option("--concurrency", default=None, type=int, help="Max concurrent requests.")
+@click.option("--no-robots", is_flag=True, help="Disable robots.txt compliance.")
+@click.option("--force", is_flag=True, help="Ignore prior manifest; re-fetch everything.")
+@click.option("--verbose", "-v", is_flag=True, help="Enable DEBUG-level logging.")
+def fetch_web(url, output, max_pages, max_depth, strategy, download_assets,
+              delay, concurrency, no_robots, force, verbose):
+    """Crawl a website and save raw HTML + fetch_manifest.json into a folder.
+
+    The folder is a normal `extract-graph` input: the preprocess step converts
+    the saved HTML to Markdown (and any downloaded PDFs/DOCX via MinerU). Crawlee
+    runs inside an ephemeral uv venv that is destroyed on exit — nothing about
+    the crawler is installed into mykg's own interpreter.
+
+    Example:
+        mykg fetch-web https://example.com
+        mykg extract-graph ./fetched_web/example.com/
+    """
+    from mykg.logging import setup
+
+    setup(log_file=None, verbose=verbose)
+
+    from mykg import config as _cfg
+    from mykg import fetch_web as fw
+
+    if not _cfg.FETCH_ENABLED:
+        raise click.ClickException(
+            "fetch-web is disabled (fetch.enabled: false in mykg_config.yaml)"
+        )
+
+    out_dir = Path(output) if output else fw.default_output_dir(url)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    prior = {} if force else fw.load_manifest(out_dir)
+
+    strat = strategy or _cfg.FETCH_STRATEGY
+    dl_assets = _cfg.FETCH_DOWNLOAD_ASSETS if download_assets is None else download_assets
+    allowed = sorted(_cfg.PREPROCESS_EXTENSIONS) if dl_assets else []
+
+    crawl_cfg = fw.build_crawl_config(
+        seed_url=url,
+        output_dir=str(out_dir),
+        strategy=strat,
+        max_pages=max_pages if max_pages is not None else _cfg.FETCH_MAX_PAGES,
+        max_depth=max_depth if max_depth is not None else _cfg.FETCH_MAX_DEPTH,
+        respect_robots=(False if no_robots else _cfg.FETCH_RESPECT_ROBOTS),
+        request_delay_seconds=delay if delay is not None else _cfg.FETCH_REQUEST_DELAY_SECONDS,
+        concurrency=concurrency if concurrency is not None else _cfg.FETCH_CONCURRENCY,
+        allowed_asset_exts=allowed,
+    )
+    crawl_cfg["already_fetched"] = {u: e.get("sha256") for u, e in prior.items()}
+
+    config_path = out_dir / ".fetch_config.json"
+    config_path.write_text(json.dumps(crawl_cfg, indent=2), encoding="utf-8")
+
+    runner = Path(__file__).parent / "data" / "_crawl_runner.py"
+
+    click.echo(f"Crawling {url} → {out_dir} (strategy={strat}, max_pages={crawl_cfg['max_pages']})")
+    with ephemeral_venv(
+        _cfg.FETCH_UV_PYTHON_VERSION,
+        _cfg.FETCH_CRAWLEE_SPEC,
+        _cfg.FETCH_UV_PATH,
+        _cfg.FETCH_INSTALL_TIMEOUT_SECONDS,
+        bin_name="python",
+        prefix="mykg-crawl-venv-",
+    ) as venv_python:
+        try:
+            proc = subprocess.run(
+                [str(venv_python), str(runner), str(config_path)],
+                check=False,
+                timeout=_cfg.FETCH_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise click.ClickException(
+                f"crawl timed out after {_cfg.FETCH_TIMEOUT_SECONDS}s"
+            ) from exc
+        if proc.returncode != 0:
+            raise click.ClickException(f"crawl runner failed with exit code {proc.returncode}")
+
+    results_path = out_dir / ".fetch_results.json"
+    if not results_path.exists():
+        raise click.ClickException("crawl runner produced no results file")
+    results = json.loads(results_path.read_text(encoding="utf-8"))
+
+    merged = dict(prior)
+    merged.update(results.get("pages", {}))
+    fw.write_manifest(
+        out_dir, seed_url=url, strategy=strat,
+        pages=merged, stats=results.get("stats", {}),
+        crawlee_version=results.get("crawlee_version", ""),
+    )
+    # Manifest is durable; the runner's transient I/O files are not — drop them
+    # so they don't leak into the extract-graph input folder. Only removed after
+    # the manifest write succeeds, so earlier failures leave them for debugging.
+    config_path.unlink(missing_ok=True)
+    results_path.unlink(missing_ok=True)
+    click.echo(
+        f"Done. {results.get('stats', {}).get('pages', 0)} pages, "
+        f"{results.get('stats', {}).get('assets', 0)} assets → {out_dir}\n"
+        f"Next: mykg extract-graph {out_dir}/"
+    )
 
 
 # Aliases for --from-step that encode the orphan-connect sweep mode.
