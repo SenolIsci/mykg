@@ -5,7 +5,7 @@ context_calculator.py — suggest mykg mykg_config.yaml token-budget parameters.
 Two modes:
 
   1. Manual mode — supply model parameters on the command line:
-       python context_calculator.py --context 32000 --max-output 16384
+       python context_calculator.py --context 64000 --max-output 32000
 
   2. Auto mode — read the active profile from mykg_config.yaml and measure
      the actual input corpus to suggest an optimal chunk divisor:
@@ -366,8 +366,8 @@ Examples:
   python context_calculator.py --from-config --input-dir ./input_files/my_corpus
 
   # Manual mode — supply all parameters explicitly:
-  python context_calculator.py --model openrouter-free --context 32000 --max-output 16384
-  python context_calculator.py --model claude-cli      --context 200000 --max-output 64000
+  python context_calculator.py --model openrouter-free --context 64000 --max-output 32000
+  python context_calculator.py --model claude-cli      --context 200000 --max-output 32000
   python context_calculator.py --context 128000 --input-headroom 96000 --chunk-divisor 8
         """,
     )

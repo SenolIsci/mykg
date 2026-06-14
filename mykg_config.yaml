@@ -19,19 +19,19 @@ profiles:
   # Requires OPENROUTER_API_KEY in env / .env.mykg
   #
   # Token budget chain (use context-calculator to recompute when switching models):
-  #   ① context_window    = 200000
-  #   ② max_output_tokens = 100000
-  #   ③ input_headroom    = ① − ② = 100000
-  #      batch_token_target = ③ × 0.95 = 95000  (5% safety margin)
-  #      window_tokens      = batch_token_target / 4 = 23000  (chunk size; many chunks batched up to batch_token_target)
-  #      overlap_tokens     = window_tokens × 0.10 = 2000
+  #   ① context_window    = 64000
+  #   ② max_output_tokens = 32000
+  #   ③ input_headroom    = ① − ② = 32000
+  #      batch_token_target = ③ × 0.95 ≈ 30000  (5% safety margin)
+  #      window_tokens      = batch_token_target / 4 ≈ 7500  (chunk size; many chunks batched up to batch_token_target)
+  #      overlap_tokens     = window_tokens × 0.10 = 750
   # ---------------------------------------------------------------------------
     provider: openrouter
     llm_retry:
       max_retries: 1        # retries on empty/blank response; set to 0 to disable
     llm:
-      context_window: 200000     # ① model's total context limit — root anchor for all budget calculations below
-      max_output_tokens: 100000   # ② output cap — sized to actual observed max (~12K tokens); avoids routing to slow providers
+      context_window: 64000     # ① model's total context limit — root anchor for all budget calculations below
+      max_output_tokens: 32000   # ② output cap — sized to actual observed max (~12K tokens); avoids routing to slow providers
       # If a chunk response hits the output cap, the JSON is truncated mid-stream causing parse errors.
       # Reduce window_tokens so the model has less to say per chunk, or raise max_output_tokens if the model supports it.
       base_url: https://openrouter.ai/api/v1
@@ -95,12 +95,12 @@ profiles:
         github_clone_timeout_seconds: 1800  # git clone timeout (30 min)
         max_workers: 2                 # max concurrent seed crawls inside one shared venv for --url-list
       chunking:
-        window_tokens: 25000     # = input_headroom / 4 = 25000  (keep small; many chunks batched together in pass1)
-        overlap_tokens: 2500     # = window_tokens × 0.10 = 2500  (10% overlap preserves context at boundaries)
+        window_tokens: 7500      # ≈ batch_token_target / 4  (keep small; many chunks batched together in pass1)
+        overlap_tokens: 750      # = window_tokens × 0.10  (10% overlap preserves context at boundaries)
         tiktoken_encoding: cl100k_base  # tokenizer used for token counting (matches most OpenAI-family models)
       # --- Pass 1: schema induction -------------------------------------------
       pass1:
-        batch_token_target: 100000  # = input_headroom (200000 − 100000); MUST stay ≤ context_window − max_output_tokens
+        batch_token_target: 30000  # = input_headroom × 0.95 (64000 − 32000) × 0.95; MUST stay ≤ context_window − max_output_tokens
         max_workers: 8
         per_file_batching: false  # set true for Option B: one batch per source file
       # --- Pass 2: instance extraction ----------------------------------------
@@ -108,8 +108,8 @@ profiles:
         max_workers: 8
         stateful_chunks: true   # pass prior-chunk nodes to next chunk so IDs stay stable across chunk boundaries
         prep_mode: concat                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
-        concat_batch_token_target: 100000  # target token budget per virtual batch (≤ input_headroom = 100000); used when prep_mode=concat
-        batch_token_target: 100000          # token budget per chunk batch (≤ input_headroom = 100000); used when prep_mode=batch_chunks
+        concat_batch_token_target: 30000  # target token budget per virtual batch (≤ input_headroom = 32000); used when prep_mode=concat
+        batch_token_target: 30000          # token budget per chunk batch (≤ input_headroom = 32000); used when prep_mode=batch_chunks
         batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
         batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
@@ -262,7 +262,7 @@ profiles:
         tiktoken_encoding: cl100k_base
       # --- Pass 1: schema induction -------------------------------------------
       pass1:
-        batch_token_target: 140000  # ≈ input_headroom × 0.95
+        batch_token_target: 64000  # ≈ input_headroom × 0.95
         max_workers: 8
         per_file_batching: false
       # --- Pass 2: instance extraction ----------------------------------------
@@ -270,8 +270,8 @@ profiles:
         max_workers: 8
         stateful_chunks: true
         prep_mode: concat                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
-        concat_batch_token_target: 140000  # target token budget per virtual batch (≤ batch_token_target); used when prep_mode=concat
-        batch_token_target: 140000         # token budget per chunk batch (≤ batch_token_target); used when prep_mode=batch_chunks
+        concat_batch_token_target: 64000  # target token budget per virtual batch (≤ batch_token_target); used when prep_mode=concat
+        batch_token_target: 64000         # token budget per chunk batch (≤ batch_token_target); used when prep_mode=batch_chunks
         batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
         batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
@@ -423,7 +423,7 @@ profiles:
         tiktoken_encoding: cl100k_base  # tokenizer used for token counting (matches most OpenAI-family models)
       # --- Pass 1: schema induction -------------------------------------------
       pass1:
-        batch_token_target: 10000  # = input_headroom (200000 − 100000); MUST stay ≤ context_window − max_output_tokens
+        batch_token_target: 64000  # = input_headroom (200000 − 100000); MUST stay ≤ context_window − max_output_tokens
         max_workers: 1          # claude-cli is serial — 1 worker only
         per_file_batching: false  # set true for Option B: one batch per source file
       # --- Pass 2: instance extraction ----------------------------------------
@@ -431,8 +431,8 @@ profiles:
         max_workers: 1          # claude-cli is serial — 1 worker only
         stateful_chunks: true   # pass prior-chunk nodes to next chunk so IDs stay stable across chunk boundaries
         prep_mode: concat                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
-        concat_batch_token_target: 10000  # target token budget per virtual batch (≤ input_headroom = 100000); used when prep_mode=concat
-        batch_token_target: 10000         # token budget per chunk batch (≤ input_headroom = 100000); used when prep_mode=batch_chunks
+        concat_batch_token_target: 64000  # target token budget per virtual batch (≤ input_headroom = 100000); used when prep_mode=concat
+        batch_token_target: 64000         # token budget per chunk batch (≤ input_headroom = 100000); used when prep_mode=batch_chunks
         batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
         batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
@@ -524,7 +524,7 @@ profiles:
       max_retries: 2        # retries on empty/blank response; set to 0 to disable
     llm:
       context_window: 128000      # ① model's total context limit
-      max_output_tokens: 16384    # ② output cap — gpt-4o max structured output
+      max_output_tokens: 32000    # ② output cap — gpt-4o max structured output
       model: gpt-5.4-mini-2026-03-17
       timeout: 1800                # seconds per LLM call before raising a timeout error
       retry_429_max: 5            # max retries on HTTP 429 rate-limit before giving up
@@ -589,7 +589,7 @@ profiles:
         tiktoken_encoding: cl100k_base
       # --- Pass 1: schema induction -------------------------------------------
       pass1:
-        batch_token_target: 111616  # = input_headroom (128000 − 16384)
+        batch_token_target: 64000  # = input_headroom (128000 − 16384)
         max_workers: 8
         per_file_batching: false
       # --- Pass 2: instance extraction ----------------------------------------
@@ -597,8 +597,8 @@ profiles:
         max_workers: 8
         stateful_chunks: true
         prep_mode: concat             # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
-        concat_batch_token_target: 111616  # target token budget per virtual batch (≤ input_headroom = 111616); used when prep_mode=concat
-        batch_token_target: 111616         # token budget per chunk batch (≤ input_headroom = 111616); used when prep_mode=batch_chunks
+        concat_batch_token_target: 64000  # target token budget per virtual batch (≤ input_headroom = 111616); used when prep_mode=concat
+        batch_token_target: 64000         # token budget per chunk batch (≤ input_headroom = 111616); used when prep_mode=batch_chunks
         batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
         batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
@@ -674,18 +674,18 @@ profiles:
   # Change llm.model to any model you have pulled (e.g. `ollama pull llama3.3`).
   #
   # Token budget chain — adjust for your model's actual context window:
-  #   ① context_window    = 32768   (llama3.3 / gemma2 default; check `ollama show <model>`)
-  #   ② max_output_tokens = 8192
-  #   ③ input_headroom    = ① − ② = 24576
-  #      batch_token_target = ③ × 0.95 = 23000  (5% safety margin)
-  #      window_tokens      = batch_token_target / 4 = 5500  (~25% of batch_token_target)
-  #      overlap_tokens     = window_tokens × 0.10 = 500
+  #   ① context_window    = 64000  (adjust per model; check `ollama show <model>`)
+  #   ② max_output_tokens = 32000
+  #   ③ input_headroom    = ① − ② = 32000
+  #      batch_token_target = ③ × 0.95 ≈ 30000  (5% safety margin)
+  #      window_tokens      = batch_token_target / 4 ≈ 7500  (~25% of batch_token_target)
+  #      overlap_tokens     = window_tokens × 0.10 = 750
   # ---------------------------------------------------------------------------
     provider: ollama
     llm_retry:
       max_retries: 2        # retries on empty/blank response; set to 0 to disable
     llm:
-      context_window: 32768       # ① model's total context limit — adjust per model
+      context_window: 64000      # ① model's total context limit — adjust per model
       max_output_tokens: 32000     # ② output cap
       model: llama3.3             # any model you have pulled via `ollama pull`
       base_url: http://localhost:11434
@@ -746,12 +746,12 @@ profiles:
         github_clone_timeout_seconds: 1800  # git clone timeout (30 min)
         max_workers: 2                 # max concurrent seed crawls inside one shared venv for --url-list
       chunking:
-        window_tokens: 6000     # = input_headroom / 4 ≈ 6000
-        overlap_tokens: 600     # = window_tokens × 0.10
+        window_tokens: 7500      # ≈ batch_token_target / 4
+        overlap_tokens: 750      # = window_tokens × 0.10
         tiktoken_encoding: cl100k_base
       # --- Pass 1: schema induction -------------------------------------------
       pass1:
-        batch_token_target: 24576   # = input_headroom (32768 − 8192)
+        batch_token_target: 30000   # = input_headroom × 0.95 (64000 − 32000) × 0.95
         max_workers: 2              # local GPU can usually handle a small degree of parallelism
         per_file_batching: false
       # --- Pass 2: instance extraction ----------------------------------------
@@ -759,8 +759,8 @@ profiles:
         max_workers: 8
         stateful_chunks: true
         prep_mode: concat                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
-        concat_batch_token_target: 24576   # target token budget per virtual batch (≤ input_headroom = 24576); used when prep_mode=concat
-        batch_token_target: 24576          # token budget per chunk batch (≤ input_headroom = 24576); used when prep_mode=batch_chunks
+        concat_batch_token_target: 30000   # target token budget per virtual batch (≤ input_headroom = 32000); used when prep_mode=concat
+        batch_token_target: 30000          # token budget per chunk batch (≤ input_headroom = 32000); used when prep_mode=batch_chunks
         batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
         batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:

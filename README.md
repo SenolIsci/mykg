@@ -168,6 +168,38 @@ The wizard walks you through three prompts:
 
 Switch provider by setting `profile:` at the top of [`mykg_config.yaml`](mykg_config.yaml).
 
+### Token Budgets
+
+Each profile's `llm:` and `pipeline:` blocks carry a chain of token-budget values sized for that model's context window:
+
+- `llm.context_window` — the model's total context limit
+- `llm.max_output_tokens` — the output cap reserved for each LLM response
+- `pipeline.pass1.batch_token_target` and `pipeline.pass2.concat_batch_token_target` / `batch_token_target` — input budget per LLM call, sized to `(context_window − max_output_tokens) × 0.95`
+- `pipeline.chunking.window_tokens` / `overlap_tokens` — chunk size and overlap for splitting large files, sized to roughly `batch_token_target / 4` and `window_tokens × 0.10`
+
+The shipped values are tuned per profile (e.g. `claude-cli`/`anthropic-claude` assume a 200K context window, `openrouter-free`/`ollama-local` assume 64K). **If you switch to a different model — especially on `ollama-local` or `openrouter-free` — check that model's actual context window and rescale these values**, otherwise `window_tokens + max_output_tokens` may exceed what the model can actually handle, causing truncated or failed responses.
+
+Use the bundled `context-calculator` tool to recompute the chain for a new model:
+
+```bash
+# Compute a full token-budget chain from context window + output cap:
+context-calculator --context 64000 --max-output 32000
+
+# Or measure your actual corpus and suggest values for the active profile:
+context-calculator --from-config --input-dir my_notes/
+```
+
+`--from-config` reads the active profile from `mykg_config.yaml`, measures token counts across your input files, and writes suggested values to `mykg_config_candidate.yaml` for review before copying them into `mykg_config.yaml`.
+
+### Hitting API Rate Limits (HTTP 429)
+
+If you see repeated `429` errors during `pass1`, `pass2`, or the orphan-connection pass, your account's requests-per-minute limit is lower than the number of concurrent calls mykg is making. Each profile sets these independently under `pipeline:`:
+
+- `pass1.max_workers` — concurrent schema-induction batch calls
+- `pass2.max_workers` — concurrent per-file extraction calls
+- `orphan_pass.max_workers` — concurrent orphan-connection calls
+
+Lower these (e.g. from `8` down to `2`–`4`) in the active profile to reduce concurrent requests. This is especially likely on `openrouter-free` (free-tier models have very low per-minute caps) and on lower-tier `anthropic-claude`/`openai` accounts. `llm.retry_429_max` / `llm.retry_429_base_delay` control automatic backoff on a 429, but per Invariant 13 a persistent 429 is a signal to reduce `max_workers`, not just retry harder. `claude-cli` and `agent-claude-code` are unaffected — both are serial by design (`max_workers: 1`).
 
 ### API Keys
 
