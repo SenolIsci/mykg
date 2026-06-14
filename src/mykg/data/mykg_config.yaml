@@ -262,16 +262,16 @@ profiles:
         tiktoken_encoding: cl100k_base
       # --- Pass 1: schema induction -------------------------------------------
       pass1:
-        batch_token_target: 182000  # ≈ input_headroom × 0.95
-        max_workers: 8
+        batch_token_target: 140000  # ≈ input_headroom × 0.95
+        max_workers: 4
         per_file_batching: false
       # --- Pass 2: instance extraction ----------------------------------------
       pass2:
-        max_workers: 8
+        max_workers: 4
         stateful_chunks: true
         prep_mode: per_file                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
-        concat_batch_token_target: 182000  # target token budget per virtual batch (≤ batch_token_target); used when prep_mode=concat
-        batch_token_target: 182000         # token budget per chunk batch (≤ batch_token_target); used when prep_mode=batch_chunks
+        concat_batch_token_target: 140000  # target token budget per virtual batch (≤ batch_token_target); used when prep_mode=concat
+        batch_token_target: 140000         # token budget per chunk batch (≤ batch_token_target); used when prep_mode=batch_chunks
         batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
         batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
@@ -596,7 +596,7 @@ profiles:
       pass2:
         max_workers: 8
         stateful_chunks: true
-        prep_mode: per_file                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
+        prep_mode: batch_chunks             # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
         concat_batch_token_target: 111616  # target token budget per virtual batch (≤ input_headroom = 111616); used when prep_mode=concat
         batch_token_target: 111616         # token budget per chunk batch (≤ input_headroom = 111616); used when prep_mode=batch_chunks
         batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks

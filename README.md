@@ -17,7 +17,7 @@
 [![Visitors](https://visitor-badge.laobi.icu/badge?page_id=SenolIsci.mykg)](https://github.com/SenolIsci/mykg)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-senolisci-0077B5?logo=linkedin)](https://www.linkedin.com/in/senolisci/)
 
-**myKG** automatically generates a confidence-scored knowledge graph from a directory of mixed documents — Markdown, PDF, Word, PowerPoint, HTML, and images — grounded in an induced RDFS/OWL ontology.
+**myKG** automatically generates a confidence-scored knowledge graph from a set of mixed documents — Markdown, PDF, Word, PowerPoint, HTML, and images — grounded in an induced RDFS/OWL ontology.
 
 ## Contents
 
@@ -511,7 +511,7 @@ All knobs live under `fetch:` in `mykg_config.yaml` — see [docs/architecture.m
 
 ```bash
 /mykg fetch https://example.com and extract
-/mykg download the github repo owner/repo
+/mykg download the repo: https://github.com/SenolIsci/mykg
 /mykg fetch these urls: <url1> <url2> ... and extract
 ```
 
