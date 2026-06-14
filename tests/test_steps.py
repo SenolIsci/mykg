@@ -113,8 +113,12 @@ def test_run_pass2_step_writes_extractions(tmp_path):
     assert (ctx.intermediate_dir / "raw_extractions.json").exists()
 
 
-def test_run_pass2_step_append_merges_new_file(tmp_path):
+def test_run_pass2_step_append_merges_new_file(tmp_path, monkeypatch):
     """Append mode runs pass2 only on new files and merges into existing extractions."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS2_PREP_MODE", "per_file")
+
     adapter = MagicMock()
     adapter.complete.return_value = MOCK_EXTRACTION
     ctx = _make_ctx(tmp_path, adapter)
@@ -150,8 +154,12 @@ def test_run_pass2_step_append_merges_new_file(tmp_path):
     assert merged["existing.md"]["nodes"][0]["id"] == "person-bob"
 
 
-def test_run_pass2_step_append_preserves_existing_chunk_index(tmp_path):
+def test_run_pass2_step_append_preserves_existing_chunk_index(tmp_path, monkeypatch):
     """Append mode extends chunk_node_index without overwriting existing entries."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS2_PREP_MODE", "per_file")
+
     adapter = MagicMock()
     adapter.complete.return_value = MOCK_EXTRACTION
     ctx = _make_ctx(tmp_path, adapter)
@@ -540,8 +548,12 @@ def test_run_schema_validate_raises_when_neither_file_exists(tmp_path):
         run_schema_validate(ctx)
 
 
-def test_on_file_done_writes_shard_not_full_rewrite(tmp_path):
+def test_on_file_done_writes_shard_not_full_rewrite(tmp_path, monkeypatch):
     """on_file_done writes shard files; the monolithic raw_extractions.json is not written."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS2_PREP_MODE", "per_file")
+
     adapter = MagicMock()
     adapter.complete.return_value = MOCK_EXTRACTION
 
@@ -620,8 +632,12 @@ def test_shards_loaded_on_restart(tmp_path):
     assert "b.md" in merged
 
 
-def test_backward_compat_monolithic_fallback(tmp_path):
+def test_backward_compat_monolithic_fallback(tmp_path, monkeypatch):
     """When no shard dir exists, monolithic raw_extractions.json is loaded as fallback."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS2_PREP_MODE", "per_file")
+
     adapter = MagicMock()
     adapter.complete.return_value = MOCK_EXTRACTION
 

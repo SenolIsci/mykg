@@ -87,7 +87,11 @@ def test_load_manifest_missing(tmp_path):
         _load_manifest(ctx)
 
 
-def test_run_pass2_step_fresh_extraction(tmp_path):
+def test_run_pass2_step_fresh_extraction(tmp_path, monkeypatch):
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS2_PREP_MODE", "per_file")
+
     ctx = _make_ctx(tmp_path)
     _write_schema(ctx)
     (ctx.intermediate_dir / "flattened_schema.json").write_text(
@@ -103,8 +107,12 @@ def test_run_pass2_step_fresh_extraction(tmp_path):
     assert "doc.md" in raw
 
 
-def test_run_pass2_step_skips_shards_already_present(tmp_path):
+def test_run_pass2_step_skips_shards_already_present(tmp_path, monkeypatch):
     """With existing shards, pass2 skips those files."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS2_PREP_MODE", "per_file")
+
     ctx = _make_ctx(tmp_path)
     _write_schema(ctx)
     (ctx.intermediate_dir / "flattened_schema.json").write_text(
