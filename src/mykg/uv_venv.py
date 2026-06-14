@@ -9,7 +9,6 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from mykg.config import LOG_ERROR_OUTPUT_MAX_CHARS
 from mykg.logging import get
 
 log = get("mykg.uv_venv")
@@ -40,6 +39,11 @@ def _run(cmd: list[str], *, timeout: int, phase: str) -> None:
     duration = time.monotonic() - t0
 
     if proc.returncode != 0:
+        # Imported lazily so that importing this module (transitively via cli.py)
+        # does not force config.py to load — that lets `mykg init` run in a
+        # directory that has no mykg_config.yaml yet.
+        from mykg.config import LOG_ERROR_OUTPUT_MAX_CHARS
+
         stderr = (proc.stderr or "").strip()[:LOG_ERROR_OUTPUT_MAX_CHARS]
         stdout = (proc.stdout or "").strip()[:LOG_ERROR_OUTPUT_MAX_CHARS]
         raise RuntimeError(
