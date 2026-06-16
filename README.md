@@ -825,7 +825,7 @@ Full design and contract: [docs/agent-mode.md](docs/agent-mode.md). Skill source
 
 ## Roadmap
 
-- **Query knowledge graph** — natural-language and structured queries directly against the extracted graph; planned support for SPARQL, graph traversal, and LLM-assisted Q&A over nodes and edges
+- in preparation.
 
 ---
 
