@@ -22,6 +22,7 @@ class OllamaAdapter(LLMAdapter):
         timeout: int,
         stream: bool,
         max_tokens: int,
+        context_window: int,
         retry_429_max: int = 5,
         retry_429_base_delay: float = 2.0,
         error_gate: ErrorGate | None = None,
@@ -31,6 +32,7 @@ class OllamaAdapter(LLMAdapter):
         self._timeout = timeout
         self._stream = stream
         self._max_tokens = max_tokens
+        self._context_window = context_window
         self._retry_429_max = retry_429_max
         self._retry_429_base_delay = retry_429_base_delay
         self._error_gate = error_gate
@@ -54,6 +56,11 @@ class OllamaAdapter(LLMAdapter):
                 "prompt": f"<system>\n{system}\n</system>\n\n{user}",
                 "stream": self._stream,
                 "options": {
+                    # num_ctx sizes the model's context window (prompt + output).
+                    # Without it Ollama silently falls back to a small default
+                    # (often 4096), truncating large Pass 1 prompts to ~1 output
+                    # token. Set it from the profile's configured context_window.
+                    "num_ctx": self._context_window,
                     "num_predict": effective_max_tokens,
                 },
             }

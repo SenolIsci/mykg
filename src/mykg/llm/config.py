@@ -41,6 +41,7 @@ def load_adapter(
             timeout=section["timeout"],
             stream=section["stream"],
             max_tokens=section["max_output_tokens"],
+            context_window=section["context_window"],
             retry_429_max=section.get("retry_429_max", _cfg.LLM_RETRY_429_MAX),
             retry_429_base_delay=section.get("retry_429_base_delay", _cfg.LLM_RETRY_429_BASE_DELAY),
             error_gate=error_gate,

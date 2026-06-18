@@ -212,18 +212,22 @@ def test_ollama_adapter_complete_with_max_tokens():
             timeout=120,
             stream=False,
             max_tokens=8096,
+            context_window=64000,
             retry_429_max=3,
             retry_429_base_delay=1.0,
         )
         result = adapter.complete("system prompt", "user prompt")
 
     assert result == "hello"
-    # Verify the payload includes options with num_predict
+    # Verify the payload includes options with num_predict and num_ctx
     call_args = mock_urlopen.call_args
     request = call_args[0][0]
     payload = json.loads(request.data.decode())
     assert "options" in payload
     assert payload["options"]["num_predict"] == 8096
+    # num_ctx must be sent so large prompts are not truncated by Ollama's
+    # small default context window.
+    assert payload["options"]["num_ctx"] == 64000
 
 
 def test_ollama_adapter_stores_max_tokens():
@@ -236,6 +240,7 @@ def test_ollama_adapter_stores_max_tokens():
         timeout=120,
         stream=False,
         max_tokens=4096,
+        context_window=64000,
         retry_429_max=3,
         retry_429_base_delay=1.0,
     )
@@ -252,6 +257,7 @@ def test_config_creates_ollama_adapter_with_max_tokens():
             "timeout": 120,
             "stream": False,
             "max_output_tokens": 8096,
+            "context_window": 64000,
             "retry_429_max": 3,
             "retry_429_base_delay": 1.0,
         },
@@ -264,6 +270,7 @@ def test_config_creates_ollama_adapter_with_max_tokens():
     assert isinstance(adapter, OllamaAdapter)
     assert adapter._model == "gemma4:31b"
     assert adapter._max_tokens == 8096
+    assert adapter._context_window == 64000
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +298,7 @@ def _ollama_adapter(retry_max: int = 3, base_delay: float = 1.0) -> "OllamaAdapt
         timeout=30,
         stream=False,
         max_tokens=4096,
+        context_window=64000,
         retry_429_max=retry_max,
         retry_429_base_delay=base_delay,
     )
@@ -594,6 +602,7 @@ def test_config_load_adapter_ollama_passes_retry_429():
             "timeout": 120,
             "stream": False,
             "max_output_tokens": 8096,
+            "context_window": 64000,
             "retry_429_max": 7,
             "retry_429_base_delay": 3.0,
         },
