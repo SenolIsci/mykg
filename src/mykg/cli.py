@@ -108,7 +108,7 @@ _PROFILE_META = {
         "key_var": None,
         "key_hint": None,
         "key_url": None,
-        "default_model": "llama3.3",
+        "default_model": "gemma4:e4b",
     },
     "claude-cli": {
         "label": "Claude CLI (uses claude -p)",

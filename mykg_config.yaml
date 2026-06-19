@@ -64,6 +64,7 @@ profiles:
           - .docx
           - .doc
           - .pptx
+          - .xlsx
           - .png
           - .jpg
           - .jpeg
@@ -226,6 +227,7 @@ profiles:
           - .docx
           - .doc
           - .pptx
+          - .xlsx
           - .png
           - .jpg
           - .jpeg
@@ -387,6 +389,7 @@ profiles:
           - .docx
           - .doc
           - .pptx
+          - .xlsx
           - .png
           - .jpg
           - .jpeg
@@ -553,6 +556,7 @@ profiles:
           - .docx
           - .doc
           - .pptx
+          - .xlsx
           - .png
           - .jpg
           - .jpeg
@@ -686,7 +690,7 @@ profiles:
       max_retries: 2        # retries on empty/blank response; set to 0 to disable
     llm:
       context_window: 64000      # ① model's total context limit — adjust per model
-      max_output_tokens: 32000     # ② output cap
+      max_output_tokens: 8000     # ② output cap
       model: gemma4:e4b             # any model you have pulled via `ollama pull`
       base_url: http://localhost:11434
       timeout: 1800                # seconds per LLM call; local inference can be slow
@@ -715,6 +719,7 @@ profiles:
           - .docx
           - .doc
           - .pptx
+          - .xlsx
           - .png
           - .jpg
           - .jpeg
@@ -744,23 +749,23 @@ profiles:
         github_clone_enabled: true    # master toggle for the GitHub-repo git-clone path (vs Crawlee)
         github_clone_depth: 1          # `git clone --depth N` — shallow clone (history depth only; full working tree is always cloned). 1 = latest commit's files only, no history. Increase (or set higher) only if you want .git/ history in _repo/ for provenance.
         github_clone_timeout_seconds: 1800  # git clone timeout (30 min)
-        max_workers: 2                 # max concurrent seed crawls inside one shared venv for --url-list
+        max_workers: 1                 # max concurrent seed crawls inside one shared venv for --url-list
       chunking:
-        window_tokens: 7500      # ≈ batch_token_target / 4
-        overlap_tokens: 750      # = window_tokens × 0.10
+        window_tokens: 2000      # ≈ batch_token_target / 4
+        overlap_tokens: 200      # = window_tokens × 0.10
         tiktoken_encoding: cl100k_base
       # --- Pass 1: schema induction -------------------------------------------
       pass1:
-        batch_token_target: 30000   # = input_headroom × 0.95 (64000 − 32000) × 0.95
-        max_workers: 2              # local GPU can usually handle a small degree of parallelism
+        batch_token_target: 8000   # = input_headroom × 0.95 (64000 − 32000) × 0.95
+        max_workers: 1              # local GPU can usually handle a small degree of parallelism
         per_file_batching: false
       # --- Pass 2: instance extraction ----------------------------------------
       pass2:
-        max_workers: 8
+        max_workers: 1
         stateful_chunks: true
         prep_mode: concat                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
-        concat_batch_token_target: 30000   # target token budget per virtual batch (≤ input_headroom = 32000); used when prep_mode=concat
-        batch_token_target: 30000          # token budget per chunk batch (≤ input_headroom = 32000); used when prep_mode=batch_chunks
+        concat_batch_token_target: 2000   # target token budget per virtual batch (≤ input_headroom = 32000); used when prep_mode=concat
+        batch_token_target: 2000          # token budget per chunk batch (≤ input_headroom = 32000); used when prep_mode=batch_chunks
         batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
         batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
@@ -873,6 +878,7 @@ profiles:
           - .docx
           - .doc
           - .pptx
+          - .xlsx
           - .png
           - .jpg
           - .jpeg
