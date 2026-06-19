@@ -15,6 +15,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/SenolIsci/mykg?style=flat-square&logo=github)](https://github.com/SenolIsci/mykg/stargazers)
 [![GitHub Issues](https://img.shields.io/github/issues/SenolIsci/mykg.svg)](https://github.com/SenolIsci/mykg/issues)
 [![Visitors](https://visitor-badge.laobi.icu/badge?page_id=SenolIsci.mykg)](https://github.com/SenolIsci/mykg)
+[![Medium](https://img.shields.io/badge/Medium-000000?logo=medium&logoColor=white)](https://medium.com/@senol.isci)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-senolisci-0077B5?logo=linkedin)](https://www.linkedin.com/in/senolisci/)
 
 **myKG** automatically generates a confidence-scored knowledge graph from a set of mixed documents — Markdown, PDF, Word, PowerPoint, Excel, HTML, and images — grounded in an induced RDFS/OWL ontology.
@@ -28,6 +29,7 @@
 - [Features](#features)
 - [Command line](#command-line)
 - [Quick Start](#quick-start)
+- [Articles & Tutorials](#articles--tutorials)
 - [Configuration](#configuration)
 - [Extract Pipeline](#extract-pipeline)
   - [Running](#running)
@@ -141,6 +143,15 @@ ollama pull llama3.3
 mykg init
 mykg extract-graph my_notes/
 ```
+
+## Articles & Tutorials
+
+Walkthroughs and case studies on [Medium](https://medium.com/@senol.isci):
+
+- [How I Turned My Website Into a Knowledge Graph with myKG](https://medium.com/@senol.isci/how-i-turned-my-website-into-a-knowledge-graph-with-mykg-7dc85ac894c3)
+- [How to Build a Second Brain You Can Actually Trust](https://medium.com/@senol.isci/how-to-build-a-second-brain-you-can-actually-trust-52ac621188b7)
+- [Build an LLM Wiki for Your AI Agents](https://medium.com/@senol.isci/build-an-llm-wiki-for-your-ai-agents-b993af38d7c4)
+- [From Documents to a Living Knowledge Graph: Introducing myKG](https://medium.com/@senol.isci/from-documents-to-a-living-knowledge-graph-introducing-mykg-fab7cea22de5)
 
 ## Configuration
 
