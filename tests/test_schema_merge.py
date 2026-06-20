@@ -234,8 +234,9 @@ def test_harmonize_injects_locked_block():
     adapter.complete.return_value = json.dumps(_REDUCED_SCHEMA)
     harmonize_schema(_SMALL_SCHEMA, _RAW_PROPOSALS, adapter, locked_block=_LOCKED_BLOCK)
     system_prompt = adapter.complete.call_args[0][0]
-    assert _LOCKED_BLOCK in system_prompt
-    assert system_prompt.startswith(_HARMONIZE_SYSTEM_PROMPT)
+    # Exact match pins the placement and spacing of the block, not just its presence,
+    # so a prompt-format regression that weakens the lock signal is caught.
+    assert system_prompt == _HARMONIZE_SYSTEM_PROMPT + "\n\n" + _LOCKED_BLOCK
 
 
 def test_harmonize_no_locked_block_unchanged():
@@ -251,8 +252,8 @@ def test_review_quality_injects_locked_block():
     adapter.complete.return_value = json.dumps(_SMALL_SCHEMA)
     review_schema_quality(_SMALL_SCHEMA, adapter, locked_block=_LOCKED_BLOCK)
     system_prompt = adapter.complete.call_args[0][0]
-    assert _LOCKED_BLOCK in system_prompt
-    assert system_prompt.startswith(_QUALITY_SYSTEM_PROMPT)
+    # Exact match (mirrors the harmonize test) guards placement + spacing of the block.
+    assert system_prompt == _QUALITY_SYSTEM_PROMPT + "\n\n" + _LOCKED_BLOCK
 
 
 def test_review_quality_no_locked_block_unchanged():
