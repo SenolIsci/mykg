@@ -84,7 +84,7 @@ def run_pass1_step(ctx: PipelineContext) -> None:
     write_schema(schema, ctx.intermediate_dir, TRIGGER_PASS1_MERGE)
 
     log.info("Step 3 — harmonizing schema (semantic near-duplicate collapse) …")
-    schema = harmonize_schema(schema, proposals, ctx.adapter)
+    schema = harmonize_schema(schema, proposals, ctx.adapter, locked_block=locked_block)
     n_concepts_h = len(schema.get("concepts", []))
     n_props_h = len(schema.get("properties", []))
     log.info(
@@ -95,7 +95,7 @@ def run_pass1_step(ctx: PipelineContext) -> None:
     write_schema(schema, ctx.intermediate_dir, TRIGGER_SCHEMA_HARMONIZE)
 
     log.info("Step 3 — reviewing schema quality …")
-    schema = review_schema_quality(schema, ctx.adapter)
+    schema = review_schema_quality(schema, ctx.adapter, locked_block=locked_block)
     n_concepts_q = len(schema.get("concepts", []))
     n_props_q = len(schema.get("properties", []))
     log.info(

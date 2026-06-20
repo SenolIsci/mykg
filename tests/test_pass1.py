@@ -359,6 +359,46 @@ def test_run_pass1_step_applies_quality_review(tmp_path):
     assert "schema_quality" in triggers
 
 
+def test_run_pass1_step_propagates_locked_block_to_cleanup_prompts(tmp_path):
+    """End-to-end wiring: with a base schema, run_pass1_step must inject the locked
+    block into BOTH cleanup-pass system prompts (harmonize + quality review), not just
+    the Pass 1 extraction prompt. Guards against someone dropping the locked_block
+    argument from either call site — which the per-function unit tests cannot catch.
+    """
+    response = json.dumps(
+        {
+            "concepts": [{"type": "Vehicle", "parent": None, "attributes": ["name"]}],
+            "properties": [],
+        }
+    )
+    # SequenceAdapter records every (system, user) call: pass1 batch(es), then
+    # harmonize, then quality review. With one batch that is 3 calls.
+    adapter = SequenceAdapter([response, response, response])
+    ctx = _make_step_ctx(tmp_path, adapter)
+    ctx.base_schema = {
+        "locked_classes": {
+            "Vehicle": {"type": "Vehicle", "parent": None, "attributes": ["name"]}
+        },
+        "locked_properties": {
+            "owns": {"name": "owns", "domain": "Person", "range": "Vehicle", "attributes": []}
+        },
+    }
+    run_pass1_step(ctx)
+
+    # The locked block lists the locked class/property names; assert both reach the
+    # harmonize and quality system prompts. Identify each pass by its base prompt.
+    from mykg.schema_merge import _HARMONIZE_SYSTEM_PROMPT, _QUALITY_SYSTEM_PROMPT
+
+    harmonize_systems = [s for s, _ in adapter.calls if s.startswith(_HARMONIZE_SYSTEM_PROMPT)]
+    quality_systems = [s for s, _ in adapter.calls if s.startswith(_QUALITY_SYSTEM_PROMPT)]
+    assert harmonize_systems, "harmonize_schema was never called"
+    assert quality_systems, "review_schema_quality was never called"
+    for system in harmonize_systems + quality_systems:
+        assert "Vehicle" in system, "locked class name missing from cleanup prompt"
+        assert "owns" in system, "locked property name missing from cleanup prompt"
+        assert "DO NOT RENAME, REMOVE, OR DUPLICATE" in system
+
+
 # ---------------------------------------------------------------------------
 # List-type guard tests
 # ---------------------------------------------------------------------------

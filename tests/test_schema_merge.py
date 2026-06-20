@@ -2,6 +2,8 @@ import json
 from unittest.mock import MagicMock
 
 from mykg.schema_merge import (
+    _HARMONIZE_SYSTEM_PROMPT,
+    _QUALITY_SYSTEM_PROMPT,
     _normalize_schema,
     harmonize_schema,
     harmonize_schema_for_merge,
@@ -216,6 +218,50 @@ def test_harmonize_falls_back_on_wrong_structure():
     adapter.complete.return_value = json.dumps({"concepts": []})
     result = harmonize_schema(_SMALL_SCHEMA, _RAW_PROPOSALS, adapter)
     assert result is _SMALL_SCHEMA
+
+
+# base-schema lock injection (D27) — the locked block must reach the cleanup-pass
+# system prompt so this unlocked pass is told which names it must not rename/remove.
+
+_LOCKED_BLOCK = (
+    "EXISTING SCHEMA (DO NOT RENAME, REMOVE, OR DUPLICATE THESE):\n"
+    "Classes: OrderHeader\nProperties: writes\n"
+)
+
+
+def test_harmonize_injects_locked_block():
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps(_REDUCED_SCHEMA)
+    harmonize_schema(_SMALL_SCHEMA, _RAW_PROPOSALS, adapter, locked_block=_LOCKED_BLOCK)
+    system_prompt = adapter.complete.call_args[0][0]
+    # Exact match pins the placement and spacing of the block, not just its presence,
+    # so a prompt-format regression that weakens the lock signal is caught.
+    assert system_prompt == _HARMONIZE_SYSTEM_PROMPT + "\n\n" + _LOCKED_BLOCK
+
+
+def test_harmonize_no_locked_block_unchanged():
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps(_REDUCED_SCHEMA)
+    harmonize_schema(_SMALL_SCHEMA, _RAW_PROPOSALS, adapter)
+    system_prompt = adapter.complete.call_args[0][0]
+    assert system_prompt == _HARMONIZE_SYSTEM_PROMPT
+
+
+def test_review_quality_injects_locked_block():
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps(_SMALL_SCHEMA)
+    review_schema_quality(_SMALL_SCHEMA, adapter, locked_block=_LOCKED_BLOCK)
+    system_prompt = adapter.complete.call_args[0][0]
+    # Exact match (mirrors the harmonize test) guards placement + spacing of the block.
+    assert system_prompt == _QUALITY_SYSTEM_PROMPT + "\n\n" + _LOCKED_BLOCK
+
+
+def test_review_quality_no_locked_block_unchanged():
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps(_SMALL_SCHEMA)
+    review_schema_quality(_SMALL_SCHEMA, adapter)
+    system_prompt = adapter.complete.call_args[0][0]
+    assert system_prompt == _QUALITY_SYSTEM_PROMPT
 
 
 def test_harmonize_calls_llm_once():
