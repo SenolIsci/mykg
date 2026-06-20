@@ -151,20 +151,30 @@ def _normalize_schema(schema: dict) -> dict:
     return schema
 
 
-def harmonize_schema(schema: dict, proposals: list[dict], adapter: LLMAdapter) -> dict:
+def harmonize_schema(
+    schema: dict, proposals: list[dict], adapter: LLMAdapter, locked_block: str = ""
+) -> dict:
     """LLM pass that collapses semantic near-duplicates the algorithmic merge missed.
 
     Sees both the merged schema and all raw batch proposals so it can detect concepts
     that were kept separate only because their names differed slightly across batches.
     Returns the improved schema, or the original if the response is unparseable.
+
+    ``locked_block`` is the base-schema lock notice (D27). When non-empty it is appended
+    to the system prompt so this unlocked pass is told which names it must not rename,
+    remove, or duplicate — the same mechanism Pass 1 extraction uses. Empty by default,
+    so behaviour is unchanged when no base schema is in play.
     """
     proposals_block = json.dumps(proposals, indent=2)
     merged_block = json.dumps(schema, indent=2)
     user = "MERGED SCHEMA:\n" + merged_block + "\n\nRAW PROPOSALS:\n" + proposals_block
+    system = _HARMONIZE_SYSTEM_PROMPT
+    if locked_block:
+        system = system + "\n\n" + locked_block
     try:
         raw = llm_complete_with_retry(
             adapter,
-            _HARMONIZE_SYSTEM_PROMPT,
+            system,
             user,
             context_label="schema_harmonize",
         )
@@ -198,17 +208,25 @@ def _reject_empty_schema(improved: dict, original: dict, label: str) -> dict | N
     return None
 
 
-def review_schema_quality(schema: dict, adapter: LLMAdapter) -> dict:
+def review_schema_quality(schema: dict, adapter: LLMAdapter, locked_block: str = "") -> dict:
     """Call the LLM to review the merged schema for quality issues.
 
     Returns the improved schema dict, or the original if the LLM response
     cannot be parsed or has the wrong structure.
+
+    ``locked_block`` is the base-schema lock notice (D27). When non-empty it is appended
+    to the system prompt so this unlocked pass — whose instructions explicitly tell the
+    LLM to remove "singleton" concepts and rename "generic" properties — is told which
+    names it must not touch. Empty by default; behaviour unchanged without a base schema.
     """
     user = json.dumps(schema, indent=2)
+    system = _QUALITY_SYSTEM_PROMPT
+    if locked_block:
+        system = system + "\n\n" + locked_block
     try:
         raw = llm_complete_with_retry(
             adapter,
-            _QUALITY_SYSTEM_PROMPT,
+            system,
             user,
             context_label="schema_quality_review",
         )
