@@ -134,3 +134,59 @@ def test_empty_chunk_index_returns_empty():
         top_k=10,
     )
     assert result == {}
+
+
+def test_unknown_added_concept_yields_no_targets():
+    """A concept name not present in new_schema's concepts contributes no chunks."""
+    result = compute_backfill_chunks(
+        added_concepts=["Nonexistent"],  # not in NEW_SCHEMA["concepts"]
+        added_properties=[],
+        new_schema=NEW_SCHEMA,
+        chunk_node_index=CHUNK_INDEX,
+        top_k=10,
+    )
+    assert result == {}
+
+
+def test_malformed_chunk_index_key_is_skipped():
+    """Non-integer chunk-index keys are ignored rather than raising."""
+    idx = {
+        "old.md": {
+            "1": ["officer-patton"],  # valid → selected
+            "notanint": ["officer-bradley"],  # malformed key → skipped
+        },
+    }
+    result = compute_backfill_chunks(
+        added_concepts=[],
+        added_properties=[NEW_SCHEMA["properties"][0]],  # Officer is domain
+        new_schema=NEW_SCHEMA,
+        chunk_node_index=idx,
+        top_k=10,
+    )
+    assert result == {"old.md": {1}}
+
+
+def test_new_concept_with_siblings_targets_sibling_type_chunks():
+    """A new subclass also targets chunks containing SIBLING-type nodes."""
+    schema = {
+        "concepts": [
+            {"type": "MilitaryUnit", "parent": None, "attributes": ["name"]},
+            {"type": "Division", "parent": "MilitaryUnit", "attributes": ["name"]},
+            {"type": "Brigade", "parent": "MilitaryUnit", "attributes": ["name"]},  # new
+        ],
+        "properties": [],
+    }
+    idx = {
+        "a.md": {"1": ["division-first"]},  # sibling type
+        "b.md": {"1": ["militaryunit-generic"]},  # parent type
+        "c.md": {"1": ["officer-x"]},  # unrelated
+    }
+    result = compute_backfill_chunks(
+        added_concepts=["Brigade"],
+        added_properties=[],
+        new_schema=schema,
+        chunk_node_index=idx,
+        top_k=10,
+    )
+    # parent (MilitaryUnit) and sibling (Division) chunks selected; officer chunk not
+    assert result == {"a.md": {1}, "b.md": {1}}
