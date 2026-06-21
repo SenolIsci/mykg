@@ -306,12 +306,17 @@ def run(steps: list[Step], ctx: PipelineContext) -> None:
                 log.info("SKIP %s — append mode", step.name)
                 continue
 
-            # In append mode, ingest must always run (detect new files) and pass2
+            # In append mode, preprocess and ingest must always run, and pass2
             # must always run when new files exist (raw_extractions.json is preserved
             # for merge but still needs updating — _is_done would skip it otherwise).
+            # preprocess is force-run so its own SHA-based change detection (D49) can
+            # convert newly-added non-MD files; _is_done would otherwise skip it because
+            # the preprocess.done sentinel survives from the initial run. The step is a
+            # cheap no-op when no source files changed (and when preprocess is disabled).
             # In --append-with-grow-schema mode, pass1 must also be force-run so a
             # stale schema.json doesn't cause _is_done to skip the locked re-induction.
             _append_force = ctx.append and step.name in (
+                "preprocess",
                 "ingest",
                 *(("pass1", "schema_validate", "schema_flatten") if ctx.grow_schema else ()),
                 *(("pass2",) if ctx.append_new_files else ()),

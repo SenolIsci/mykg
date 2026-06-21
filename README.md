@@ -43,6 +43,7 @@
   - [Locked Base Schema](#locked-base-schema---base-schema)
   - [SKOS Thesaurus](#skos-thesaurus---thesaurus)
   - [Website / Repo Fetching](#website--repo-fetching-mykg-fetch-web)
+  - [Standalone Document Conversion](#standalone-document-conversion-mykg-parse-docs)
   - [Append Mode](#append-mode)
     - [Incremental Schema Growth](#incremental-schema-growth---append-with-grow-schema)
   - [Merging Sessions](#merging-sessions)
@@ -567,6 +568,28 @@ All knobs live under `fetch:` in `mykg_config.yaml` — see [docs/architecture.m
 
 All work: the skill picks the right `fetch-web` invocation (single page, GitHub clone, or `--url-list` batch with an auto-generated temp file for inline URLs), runs it, and — for the "and extract" intents — chains straight into `extract-graph` on the fetched output (one fresh session per seed for multi-seed fetches), confirming with you before the LLM-bearing extraction step.
 
+### Standalone Document Conversion (`mykg parse-docs`)
+
+`extract-graph` already converts non-Markdown inputs (PDF, DOCX, images, …) to Markdown automatically via the `preprocess` step — on both the initial run and on `--append`. You only need `parse-docs` when you want to convert documents **on their own**, without running a pipeline or creating a session: inspecting MinerU output, building a Markdown corpus to commit, or feeding another tool.
+
+```bash
+# Convert a single file
+mykg parse-docs --input report.pdf --output ./md/
+
+# Convert every non-.md file under a directory (recursive; structure preserved)
+mykg parse-docs --input raw_docs/ --output ./md/
+
+# Convert only specific files (relative to --input; repeatable)
+mykg parse-docs --input raw_docs/ --output ./md/ --file a.pdf --file sub/b.docx
+```
+
+- **MinerU in an ephemeral venv** — conversion runs MinerU inside a throwaway `uv`-managed venv that is built per invocation and deleted on exit; nothing is installed into mykg's own interpreter. The multi-GB install is paid once per call and reused across every file in that call.
+- **Extension allowlist** — candidate files are filtered through `preprocess.extensions` from `mykg_config.yaml` (the same allowlist `extract-graph` uses). `.html`/`.htm` are always hard-skipped (MinerU cannot convert HTML — use `extract-graph`, which routes HTML through `markdownify`). Pass `--no-filter` to send every non-`.md` file to MinerU regardless of suffix.
+- **Large corpora** — use `--file-list <path>` (one rel-path per line) instead of repeated `--file` flags to avoid the OS argv-size limit. `--file` and `--file-list` are mutually exclusive.
+- **No session** — `parse-docs` is a pure file-to-file utility: it does not create a session or touch `mykg_sessions/`. Per-file failures are logged and the run continues, exiting non-zero at the end if any file failed.
+
+Run `mykg parse-docs --help` for the complete flag list. **From Claude Code**, `/mykg convert pdfs in ./inbox to ./md` maps to the right invocation automatically.
+
 ### Append Mode
 
 Re-run the pipeline on new or modified files without re-running Pass 1:
@@ -574,6 +597,8 @@ Re-run the pipeline on new or modified files without re-running Pass 1:
 ```bash
 mykg extract-graph my_notes/ --session <name> --append
 ```
+
+The input directory may contain PDF, DOCX, HTML, TXT, and image files alongside `.md` — newly-added non-Markdown files are converted automatically during the append run (the same incremental `preprocess` step the initial run uses, subject to `preprocess.enabled`). No separate `mykg parse-docs` step is needed. Only new or changed source files are converted; unchanged ones are skipped by content hash.
 
 #### Incremental Schema Growth (`--append-with-grow-schema`)
 
@@ -587,14 +612,7 @@ This runs a **locked Pass 1** over only the changed files: the LLM may add new c
 
 The flag implies `--append` (no need to pass both) and is mutually exclusive with `--from-step` and `--base-schema` (the session's existing `schema.ttl` is auto-loaded as the locked base).
 
-> **Note:** Append mode currently only supports adding or updating `.md` files. Mixed-format inputs (PDF, DOCX, HTML, etc. — i.e. anything requiring the `preprocess` step) are not yet supported on the `--append` code path. As a workaround, convert non-Markdown files to Markdown manually with `mykg parse-docs` first, then point `--append` at the converted output:
->
-> ```bash
-> mykg parse-docs --input raw_docs/ --output my_notes/
-> mykg extract-graph my_notes/ --session <name> --append
-> ```
->
-> `parse-docs` recurses subdirectories and preserves their structure at the output; per-file failures (e.g. an unsupported format in the input tree) are logged and the run continues, exiting non-zero at the end if any file failed.
+> **Mixed-format inputs:** Both `--append` and `--append-with-grow-schema` automatically preprocess newly-added non-Markdown files (PDF, DOCX, HTML, TXT, images). Just drop the new files into the input directory and append — the `preprocess` step runs incrementally, converting only the new or changed sources (unchanged files are skipped by content hash) and feeding the converted Markdown straight into extraction. No separate `mykg parse-docs` step is required.
 
 ### Merging Sessions
 

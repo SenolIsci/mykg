@@ -9,14 +9,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
 
 from mykg.cli import cli
 from mykg.orchestrator import PipelineContext, Step, run
-from mykg.steps.step_ingest import _load_manifest, _sha256, run_ingest
+from mykg.steps.step_ingest import _load_manifest, _run_append_ingest, _sha256, run_ingest
+from mykg.steps.step_preprocess import run_preprocess
 
 # ---------------------------------------------------------------------------
 # 1. SHA256 helper
@@ -318,6 +321,197 @@ def test_orchestrator_grow_schema_forces_pass1_and_schema_steps(tmp_path):
     assert "schema_flatten" in executed, "schema_flatten must be force-run in grow_schema mode"
     assert "human_review" not in executed, "human_review stays skipped without --review"
     assert "pass2" in executed
+
+
+# ---------------------------------------------------------------------------
+# 6b. Orchestrator: preprocess force-run in append mode (non-MD support)
+# ---------------------------------------------------------------------------
+
+
+def _preprocess_force_steps(executed: list) -> list[Step]:
+    """Build a minimal step list whose preprocess step records execution.
+
+    The preprocess output (preprocess.done) is pre-created by the caller so that
+    _is_done would normally skip it — the test proves _append_force overrides that.
+    """
+
+    def preprocess_fn(c):
+        executed.append("preprocess")
+
+    def ingest_fn(c):
+        executed.append("ingest")
+        c.append_new_files = set()  # no downstream work needed for this assertion
+
+    return [
+        Step(name="preprocess", fn=preprocess_fn, outputs=["preprocess.done"]),
+        Step(name="ingest", fn=ingest_fn, outputs=["file_manifest.json"]),
+    ]
+
+
+def test_orchestrator_append_forces_preprocess_despite_sentinel(tmp_path):
+    """In plain --append mode preprocess must RUN again even though preprocess.done
+    already exists (so its SHA-based change detection can convert new non-MD files)."""
+    ctx = _make_ctx(tmp_path, append=True)
+
+    # Required by the append pre-check in run(), plus the preprocess + ingest
+    # outputs so _is_done returns True for them.
+    (ctx.intermediate_dir / "schema.json").write_text("{}")
+    (ctx.intermediate_dir / "preprocess.done").write_text("done")
+    (ctx.intermediate_dir / "file_manifest.json").write_text("{}")
+
+    executed: list = []
+    run(_preprocess_force_steps(executed), ctx)
+
+    assert "preprocess" in executed, (
+        "preprocess must be force-run in append mode despite the surviving sentinel"
+    )
+
+
+def test_orchestrator_grow_schema_forces_preprocess_despite_sentinel(tmp_path):
+    """--append-with-grow-schema must also force-run preprocess (it implies --append,
+    and _append_force keys off ctx.append, so the same fix covers both flavors)."""
+    ctx = _make_ctx(tmp_path, append=True)
+    ctx.grow_schema = True
+
+    (ctx.intermediate_dir / "schema.json").write_text("{}")
+    (ctx.intermediate_dir / "preprocess.done").write_text("done")
+    (ctx.intermediate_dir / "file_manifest.json").write_text("{}")
+
+    executed: list = []
+    run(_preprocess_force_steps(executed), ctx)
+
+    assert "preprocess" in executed, (
+        "preprocess must be force-run in --append-with-grow-schema mode too"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 6c. Real delta flow through run_preprocess (HTML/TXT — no MinerU, no LLM)
+# ---------------------------------------------------------------------------
+
+
+def _preprocess_ctx(tmp_path: Path) -> PipelineContext:
+    input_dir = tmp_path / "input"
+    intermediate_dir = tmp_path / "intermediate"
+    output_dir = tmp_path / "output"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    intermediate_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return PipelineContext(
+        input_dir=input_dir,
+        output_dir=output_dir,
+        intermediate_dir=intermediate_dir,
+        adapter=None,
+    )
+
+
+def _preprocess_subdir(ctx: PipelineContext) -> Path:
+    import mykg.config as _cfg
+
+    return ctx.input_dir / _cfg.PREPROCESS_SUBDIR if _cfg.PREPROCESS_SUBDIR else ctx.input_dir
+
+
+def test_append_delta_converts_new_non_md_file(tmp_path):
+    """Two-stage delta: an initial non-MD file is converted, then a NEW one is added
+    and only that new file is converted on re-run (the first is reused by SHA).
+
+    Uses .txt input so the whole flow runs in-process (shutil.copy2) — no MinerU
+    subprocess, no LLM. This is the real append delta the orchestrator fix enables.
+    """
+    ctx = _preprocess_ctx(tmp_path)
+    (ctx.input_dir / "first.txt").write_text("first document content")
+
+    with patch("mykg.config.PREPROCESS_ENABLED", True):
+        # Stage 1 — initial conversion.
+        run_preprocess(ctx)
+
+        sub = _preprocess_subdir(ctx)
+        assert (sub / "first.md").exists()
+        manifest = json.loads((ctx.intermediate_dir / "preprocess_manifest.json").read_text())
+        assert "first.txt" in manifest["source_files"]
+        first_sha = manifest["source_files"]["first.txt"]["sha256"]
+
+        # Stage 2 — drop a NEW file and re-run (sentinel + manifest now exist,
+        # mirroring an --append re-entry where preprocess is force-run).
+        (ctx.input_dir / "second.txt").write_text("second document content")
+        run_preprocess(ctx)
+
+    manifest2 = json.loads((ctx.intermediate_dir / "preprocess_manifest.json").read_text())
+    # Both sources are now recorded.
+    assert "first.txt" in manifest2["source_files"]
+    assert "second.txt" in manifest2["source_files"]
+    # The new file's markdown exists.
+    assert (sub / "second.md").exists()
+    # The first file was NOT re-converted — its SHA entry is unchanged and exactly
+    # one file was skipped as unchanged.
+    assert manifest2["source_files"]["first.txt"]["sha256"] == first_sha
+    assert manifest2["unchanged_count"] == 1
+
+
+def test_append_delta_ingest_picks_up_preprocessed_md(tmp_path):
+    """The preprocess→ingest handoff: a freshly-converted .md under _preprocessed/
+    is discovered by _run_append_ingest and lands in ctx.append_new_files."""
+    ctx = _preprocess_ctx(tmp_path)
+    ctx.append = True
+    (ctx.input_dir / "note.txt").write_text("some note content")
+
+    with patch("mykg.config.PREPROCESS_ENABLED", True):
+        run_preprocess(ctx)
+
+    # An existing manifest with no entries simulates a prior session that had no
+    # markdown from this source yet; the converted note.md must be detected as new.
+    (ctx.intermediate_dir / "file_manifest.json").write_text("{}")
+    _run_append_ingest(ctx)
+
+    sub_name = _preprocess_subdir(ctx).name
+    matches = [f for f in ctx.append_new_files if f.endswith("note.md")]
+    assert matches, (
+        f"ingest must discover the converted .md under {sub_name}/; "
+        f"append_new_files={ctx.append_new_files}"
+    )
+
+
+@pytest.mark.live
+def test_append_delta_real_mineru_pdf(tmp_path):
+    """Real MinerU PDF→MD through the append delta (gated by -m live; not in default run).
+
+    Exercises the actual ephemeral-venv MinerU path — no mocking. Stops at the
+    preprocess/manifest layer, so no LLM/API key is needed (MinerU is LLM-free).
+    """
+    if shutil.which("uv") is None:
+        pytest.skip("uv not available for the ephemeral MinerU venv")
+
+    pdf_src = (
+        Path(__file__).resolve().parents[1]
+        / "_input_files3"
+        / "ODNI-UAP-D001, USPER NARRATIVE, SENIOR USIC OFFICIAL.pdf"
+    )
+    if not pdf_src.exists():
+        pytest.skip(f"PDF fixture not found at {pdf_src}")
+
+    ctx = _preprocess_ctx(tmp_path)
+    shutil.copy2(pdf_src, ctx.input_dir / "doc.pdf")
+
+    with patch("mykg.config.PREPROCESS_ENABLED", True):
+        # Stage 1 — real MinerU conversion of the PDF.
+        run_preprocess(ctx)
+        sub = _preprocess_subdir(ctx)
+        converted = sub / "doc.md"
+        assert converted.exists(), "MinerU must produce doc.md under the preprocess subdir"
+        assert converted.read_text().strip(), "converted markdown must be non-empty"
+
+        manifest = json.loads((ctx.intermediate_dir / "preprocess_manifest.json").read_text())
+        pdf_sha = manifest["source_files"]["doc.pdf"]["sha256"]
+
+        # Stage 2 — add a cheap .txt file and re-run; the PDF must be reused by SHA
+        # (not re-converted), proving the incremental delta works across formats.
+        (ctx.input_dir / "extra.txt").write_text("extra note")
+        run_preprocess(ctx)
+
+    manifest2 = json.loads((ctx.intermediate_dir / "preprocess_manifest.json").read_text())
+    assert manifest2["source_files"]["doc.pdf"]["sha256"] == pdf_sha
+    assert "extra.txt" in manifest2["source_files"]
+    assert manifest2["unchanged_count"] >= 1, "the already-converted PDF must be skipped on re-run"
 
 
 # ---------------------------------------------------------------------------
