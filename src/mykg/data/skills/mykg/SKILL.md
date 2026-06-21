@@ -50,6 +50,8 @@ Trigger this skill whenever the user types `/mykg <anything>`. Map the intent to
 | `/mykg extract more from ./more_docs` | `mykg extract-graph ./more_docs` (**fresh session** — "more" is NOT an explicit reuse signal; this is just another extract) |
 | `/mykg extract ./docs with human review` | `mykg extract-graph ./docs --review` (**fresh session — no `--session`**) |
 | `/mykg append the new notes in ./docs` | `mykg extract-graph ./docs --append --session <auto-detect-most-recent>` (explicit reuse via `append`) |
+| `/mykg append and grow schema from ./docs` | `mykg extract-graph ./docs --append --grow-schema --session <auto-detect-most-recent>` (explicit reuse via `append`; locked Pass 1 runs over changed files to expand the schema) |
+| `/mykg expand the schema with new docs in ./docs` | `mykg extract-graph ./docs --append --grow-schema --session <auto-detect-most-recent>` ("expand schema" → `--grow-schema`) |
 | `/mykg resume the last session` | `mykg extract-graph --session <most-recent>` (explicit reuse via `resume the last session`) |
 | `/mykg approve the schema` | `mykg approve-schema --session <most-recent>` (session-only subcommand) |
 | `/mykg make a walkthrough` | `mykg walkthrough --session <most-recent>` (session-only subcommand) |
@@ -109,9 +111,35 @@ From the user's `/mykg <free text>` message extract:
    6. **Reuse required but missing.** If rules 2/3/4 fire but no session exists under `$SESSIONS_DIR`, fail clearly: `"No existing sessions under <SESSIONS_DIR>. Run /mykg extract <dir> first to create one."`
 
 **Never auto-detect-most-recent purely because a previous skill turn produced a session.** The previous-turn memory only matters when the *current* user message also contains one of the explicit signals in rules 1-4. A bare `/mykg ./more_docs` after a prior session must still create a fresh session.
-4. **Flags** — anything the user named that maps to a flag the cached `--help` confirms (`--review`, `--append`, `--from-step <step>`, `--workers <N>`, `--obsidian-vault`, `--base-schema`, `--thesaurus`, `--verbose`, `--confidence-agg`, etc.). Forward verbatim.
+4. **Flags** — anything the user named that maps to a flag the cached `--help` confirms (`--review`, `--append`, `--from-step <step>`, `--workers <N>`, `--obsidian-vault`, `--base-schema`, `--thesaurus`, `--verbose`, `--confidence-agg`, `--grow-schema`, etc.). Forward verbatim.
 
 `extract-graph` without `--append` or `--from-step` does not need a pre-existing session — it auto-creates one.
+
+### `--grow-schema` — expanding the schema incrementally (D52)
+
+**Use case:** you have an existing session with an induced schema (e.g. Project, Person, Organization) and you add new documents that introduce entity types or relationships the current schema doesn't cover (e.g. a tech-stack document that describes technologies). Plain `--append` freezes the schema — Pass 1 is skipped, so new concept types and properties are never induced, and the new documents are extracted against the old vocabulary. `--grow-schema` solves this: it runs a **locked Pass 1** over the changed files only, allowing the LLM to propose new concepts and properties while preserving everything already in the schema.
+
+**How it works:**
+1. The session's existing `schema.ttl` is auto-loaded as a locked base schema — existing classes and properties cannot be renamed, removed, or re-parented.
+2. Pass 1 runs over **only the changed files** (not the whole corpus), so cost is O(changed files).
+3. The LLM may add new concepts, new properties, or new attributes to existing types. It cannot modify locked entries.
+4. Pass 2 extracts the new files against the grown schema. If new properties were added, a **surgical back-fill** may re-extract old chunks that contain nodes of the new properties' domain/range types (configurable via `append.grow_schema_backfill_top_k_chunks_per_type`, default 10; set 0 to disable).
+5. All downstream steps (assemble, orphan pass, validate) re-run over the full corpus so the graph stays consistent.
+
+**When the schema delta is empty** (the new documents don't introduce new types), the run collapses to a plain `--append` — no wasted LLM cost.
+
+**Intent triggers** — add `--grow-schema` when the user says any of: "grow schema", "expand schema", "grow the schema", "expand the vocabulary", "add new types", "learn new concepts from", "update the schema with". Always pair with `--append` (the CLI enforces this). `--grow-schema` is mutually exclusive with `--from-step` and `--base-schema`.
+
+**Confirmation note:** in Stage 2, mention that locked Pass 1 will run (costs LLM calls) vs plain `--append` which skips Pass 1:
+
+```
+About to run: uv run mykg extract-graph ./docs --append --grow-schema --session 2026-06-21T11-22-38
+
+This will run a locked Pass 1 over the new files (LLM calls) to expand the schema,
+then extract. Plain --append would skip Pass 1 and keep the schema frozen.
+
+Reply "yes" to run, or "just append" to skip schema growth.
+```
 
 ### `fetch-web` flags and special cases
 
