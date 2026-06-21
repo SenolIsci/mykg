@@ -270,7 +270,7 @@ def test_orchestrator_skips_pass1_when_output_exists(tmp_path):
 
 
 def test_orchestrator_grow_schema_forces_pass1_and_schema_steps(tmp_path):
-    """In --append --grow-schema mode pass1/schema_validate/schema_flatten must RUN
+    """In --append-with-grow-schema mode pass1/schema_validate/schema_flatten must RUN
     again even though their outputs already exist (D52), while human_review stays
     skipped (no --review)."""
     ctx = _make_ctx(tmp_path, append=True)

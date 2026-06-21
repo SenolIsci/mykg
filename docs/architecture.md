@@ -325,11 +325,11 @@ After each LLM call, the pipeline validates the response: edges whose type is no
 
 **Per-file shards.** When a file finishes, its results are written immediately to a per-file shard on disk. On restart, files with existing shards are skipped. Only unfinished files are re-extracted.
 
-### Incremental Schema Growth (`--append --grow-schema`)
+### Incremental Schema Growth (`--append-with-grow-schema`)
 
-Plain `--append` re-runs only on new or modified files against the existing, frozen schema — Pass 1 is skipped, so the schema can never grow. `--grow-schema` (which requires `--append`) lifts that restriction at bounded cost.
+Plain `--append` re-runs only on new or modified files against the existing, frozen schema — Pass 1 is skipped, so the schema can never grow. `--append-with-grow-schema` lifts that restriction at bounded cost (it implies `--append`).
 
-When `--grow-schema` is set, the session's existing `intermediate/schema.ttl` is auto-loaded as a **locked base schema** (the same lock mechanism used by `--base-schema`): the LLM may ADD new concepts and properties but cannot rename, remove, or restructure the existing ones. Passing `--base-schema` alongside `--grow-schema` is an error — the base is auto-derived from the session.
+When `--append-with-grow-schema` is set, the session's existing `intermediate/schema.ttl` is auto-loaded as a **locked base schema** (the same lock mechanism used by `--base-schema`): the LLM may ADD new concepts and properties but cannot rename, remove, or restructure the existing ones. Passing `--base-schema` alongside `--append-with-grow-schema` is an error — the base is auto-derived from the session.
 
 The flow has three parts:
 

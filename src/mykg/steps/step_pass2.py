@@ -170,11 +170,11 @@ def _run(
             _log_and_write(ctx, existing_raw, existing_chunk)
             return
 
-    # --append --grow-schema (D52): when the locked Pass 1 grew the schema, surgically
-    # back-fill the OLD files so instances of the new types are picked up there too.
-    # Changed files are excluded — they are (re-)extracted in full by the todo path
-    # below against the already-grown schema. When the delta is empty this is a no-op
-    # and the run collapses to a plain append (changed files only).
+    # --append-with-grow-schema (D52): when the locked Pass 1 grew the schema,
+    # surgically back-fill the OLD files so instances of the new types are picked up
+    # there too. Changed files are excluded — they are (re-)extracted in full by the
+    # todo path below against the already-grown schema. When the delta is empty this
+    # is a no-op and the run collapses to a plain append (changed files only).
     if ctx.grow_schema and existing_raw:
         _grow_schema_backfill(ctx, manifest, schema, flat, existing_raw, existing_chunk, concat_map)
 

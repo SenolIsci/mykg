@@ -1,4 +1,4 @@
-"""grow_schema_backfill — chunk selector for --append --grow-schema (D52).
+"""grow_schema_backfill — chunk selector for --append-with-grow-schema (D52).
 
 When the locked Pass 1 grows the schema (new concepts and/or properties), the
 already-extracted OLD files are stale: they were extracted against the smaller

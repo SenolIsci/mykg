@@ -398,7 +398,7 @@ def test_run_pass1_step_propagates_locked_block_to_cleanup_prompts(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Unit 3 — --grow-schema scopes locked Pass 1 to changed files only (D52)
+# Unit 3 — --append-with-grow-schema scopes locked Pass 1 to changed files only (D52)
 # ---------------------------------------------------------------------------
 
 

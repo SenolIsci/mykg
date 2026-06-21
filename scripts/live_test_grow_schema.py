@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Live end-to-end test of mykg `--append --grow-schema` against OpenRouter.
+"""Live end-to-end test of mykg `--append-with-grow-schema` against OpenRouter.
 
 Runs two real pipeline stages and emits a reusable, idempotent report:
 
   STAGE 1  initial `extract-graph <input_dir>` (auto-creates a session)
   STAGE 2  copy <new_file> into <input_dir>, then
-           `extract-graph <input_dir> --append --grow-schema --session <s1>`
+           `extract-graph <input_dir> --append-with-grow-schema --session <s1>`
 
 It reports the stage-2 schema delta, back-fill evidence (whether the OLD
 file's shard was rewritten), and node/edge changes.
@@ -181,7 +181,7 @@ def _resolve_model(config_path: Path, profile: str) -> str:
 # --------------------------------------------------------------------------- #
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Live e2e test of mykg --append --grow-schema against OpenRouter."
+        description="Live e2e test of mykg --append-with-grow-schema against OpenRouter."
     )
     parser.add_argument("--profile", default="openrouter-free",
                         help="LLM profile to activate (default: openrouter-free)")
@@ -273,7 +273,7 @@ def main() -> int:
             "model": model,
             "stage1_cmd": "mykg extract-graph " + " ".join(stage1_cmd),
             "stage2_cmd": (
-                f"mykg extract-graph {args.input_dir} --append --grow-schema "
+                f"mykg extract-graph {args.input_dir} --append-with-grow-schema "
                 f"--session {s1} --obsidian-vault"
             ),
             "stage1_session": s1,
@@ -310,7 +310,7 @@ def main() -> int:
         )
 
         # ================= STAGE 2 =================
-        _log("STAGE 2: copy new file + append --grow-schema")
+        _log("STAGE 2: copy new file + append-with-grow-schema")
         new_file_dst = input_dir / new_file_src.name
         if new_file_dst.exists() and _sha256_path(new_file_dst) == _sha256_path(new_file_src):
             _log(f"new file already present and identical: {new_file_dst.name}")
@@ -321,7 +321,7 @@ def main() -> int:
             report["new_file_state"] = "copied"
 
         stage2_args = [
-            args.input_dir, "--append", "--grow-schema",
+            args.input_dir, "--append-with-grow-schema",
             "--session", s1, "--obsidian-vault",
         ]
         rc2 = _run_cli(["extract-graph", *stage2_args])
@@ -553,7 +553,7 @@ def _write_report(path: Path, r: dict) -> None:
         return ", ".join(xs) if xs else "(none)"
 
     lines = [
-        "# mykg `--append --grow-schema` live test report",
+        "# mykg `--append-with-grow-schema` live test report",
         "",
         f"_Generated: {now}_",
         "",
@@ -575,7 +575,7 @@ def _write_report(path: Path, r: dict) -> None:
         f"- Nodes: {r.get('stage1_nodes', '-')}",
         f"- Edges: {r.get('stage1_edges', '-')}",
         "",
-        "## Stage 2 — append --grow-schema",
+        "## Stage 2 — append-with-grow-schema",
         "",
         f"- New file: {r.get('new_file_state', '-')}",
         f"- **Schema delta empty?** {r.get('delta_empty', '-')}",

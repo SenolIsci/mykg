@@ -15,7 +15,7 @@ log = get("mykg.steps.pass1")
 
 
 def run_pass1_step(ctx: PipelineContext) -> None:
-    # --append --grow-schema (D52): run the locked re-induction over ONLY the changed
+    # --append-with-grow-schema (D52): run the locked re-induction over ONLY the changed
     # files so the LLM sees just the new material when proposing additions. The append
     # ingest step does not chunk (it only hashes), so all_chunks must be (re)built here
     # from the changed files in the manifest. Falls through to the all-files paths below

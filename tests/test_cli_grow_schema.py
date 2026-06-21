@@ -1,4 +1,4 @@
-"""CLI validation tests for --grow-schema (Unit 1 / D52).
+"""CLI validation tests for --append-with-grow-schema (Unit 1 / D52).
 
 These exercise the early validation gates only — they never reach an LLM call.
 """
@@ -15,25 +15,28 @@ def test_grow_schema_help_lists_flag():
     runner = CliRunner()
     result = runner.invoke(cli, ["extract-graph", "--help"])
     assert result.exit_code == 0
-    assert "--grow-schema" in result.output
+    assert "--append-with-grow-schema" in result.output
 
 
-def test_grow_schema_requires_append(tmp_path):
-    """--grow-schema without --append must fail with a clear message."""
+def test_grow_schema_implies_append(tmp_path):
+    """--append-with-grow-schema without explicit --append must still work
+    (the flag implies --append). This test only checks that the 'requires
+    --append' error does NOT fire — it will fail later when no session schema
+    exists, which is the expected next gate."""
     runner = CliRunner()
     input_dir = tmp_path / "input"
     input_dir.mkdir()
     result = runner.invoke(
         cli,
-        ["extract-graph", str(input_dir), "--grow-schema"],
-        catch_exceptions=False,
+        ["extract-graph", str(input_dir), "--append-with-grow-schema"],
+        catch_exceptions=True,
     )
-    assert result.exit_code != 0
-    assert "requires --append" in result.output
+    # Must NOT fail with "requires --append"
+    assert "requires --append" not in (result.output or "")
 
 
 def test_grow_schema_excludes_explicit_base_schema(tmp_path, monkeypatch):
-    """--grow-schema must reject an explicit --base-schema (it auto-loads the session)."""
+    """--append-with-grow-schema must reject an explicit --base-schema (it auto-loads the session)."""
     runner = CliRunner()
     sessions = tmp_path / "mykg_sessions"
     session = sessions / "s1"
@@ -52,8 +55,7 @@ def test_grow_schema_excludes_explicit_base_schema(tmp_path, monkeypatch):
         [
             "extract-graph",
             str(src),
-            "--append",
-            "--grow-schema",
+            "--append-with-grow-schema",
             "--session",
             "s1",
             "--base-schema",
@@ -66,13 +68,12 @@ def test_grow_schema_excludes_explicit_base_schema(tmp_path, monkeypatch):
 
 
 def test_grow_schema_errors_when_session_schema_ttl_missing(tmp_path, monkeypatch):
-    """--grow-schema must fail clearly if the session has no schema.ttl to lock."""
+    """--append-with-grow-schema must fail clearly if the session has no schema.ttl to lock."""
     runner = CliRunner()
     sessions = tmp_path / "mykg_sessions"
     session = sessions / "s1"
     (session / "intermediate").mkdir(parents=True)
     (session / "input").mkdir()
-    # schema.json present so append's "no existing pipeline" guard passes, but no schema.ttl
     (session / "intermediate" / "schema.json").write_text("{}")
     monkeypatch.setattr("mykg.cli._sessions_root", lambda: sessions)
 
@@ -83,8 +84,7 @@ def test_grow_schema_errors_when_session_schema_ttl_missing(tmp_path, monkeypatc
         [
             "extract-graph",
             str(src),
-            "--append",
-            "--grow-schema",
+            "--append-with-grow-schema",
             "--session",
             "s1",
         ],
@@ -95,7 +95,7 @@ def test_grow_schema_errors_when_session_schema_ttl_missing(tmp_path, monkeypatc
 
 
 def test_grow_schema_and_from_step_mutually_exclusive(tmp_path):
-    """--grow-schema inherits append's mutual exclusion with --from-step."""
+    """--append-with-grow-schema inherits append's mutual exclusion with --from-step."""
     runner = CliRunner()
     input_dir = tmp_path / "input"
     input_dir.mkdir()
@@ -104,8 +104,7 @@ def test_grow_schema_and_from_step_mutually_exclusive(tmp_path):
         [
             "extract-graph",
             str(input_dir),
-            "--append",
-            "--grow-schema",
+            "--append-with-grow-schema",
             "--from-step",
             "pass2",
         ],

@@ -292,7 +292,7 @@ MERGE_SURGICAL_TOP_K_CHUNKS_PER_PROPERTY: int = _get_opt(
 MERGE_ORPHAN_SCHEMA_MAX_RESTARTS: int = _get_opt("merge_graphs", "orphan_pass_max_restarts", 1)
 
 # ---------------------------------------------------------------------------
-# Append — incremental schema growth (--append --grow-schema, D52)
+# Append — incremental schema growth (--append-with-grow-schema, D52)
 # ---------------------------------------------------------------------------
 # Cap on how many old chunks are surgically re-extracted per newly added
 # concept/property when the locked Pass 1 grows the schema. 0 = disable

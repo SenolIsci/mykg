@@ -1,4 +1,4 @@
-"""End-to-end integration test for --append --grow-schema (Unit 7 / D52).
+"""End-to-end integration test for --append-with-grow-schema (Unit 7 / D52).
 
 Uses a content-aware stub LLM adapter (no network). Verifies:
   (a) initial build over a small corpus;
@@ -187,7 +187,7 @@ def test_grow_schema_end_to_end(tmp_path):
     assert "Person" in types0 and "Organization" in types0
     assert "Project" not in types0
 
-    # (b) add a new doc, re-run with --append --grow-schema (schema.ttl auto-loaded)
+    # (b) add a new doc, re-run with --append-with-grow-schema (schema.ttl auto-loaded)
     (input_dir / "new_project.md").write_text("Alice leads the Prometheus project at Acme Corp.")
     base = parse_base_schema((ctx.intermediate_dir / "schema.ttl").read_text())
 

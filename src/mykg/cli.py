@@ -594,12 +594,13 @@ def _print_next_steps(
     help="Skip Pass 1, re-run only on new/modified files, then re-assemble and re-export",
 )
 @click.option(
-    "--grow-schema",
+    "--append-with-grow-schema",
+    "grow_schema",
     is_flag=True,
-    help="With --append: run Pass 1 in LOCKED mode over changed files so the LLM may ADD "
-    "new concepts/properties to the existing schema, then surgically back-fill old files "
-    "when the schema grows. Requires --append; the session schema.ttl is auto-loaded as "
-    "the locked base, so --base-schema must not be passed.",
+    help="Implies --append AND runs Pass 1 in LOCKED mode over changed files so the LLM "
+    "may ADD new concepts/properties to the existing schema, then surgically back-fill "
+    "old files when the schema grows. The session schema.ttl is auto-loaded as the "
+    "locked base, so --base-schema must not be passed.",
 )
 @click.option(
     "--session",
@@ -641,6 +642,9 @@ def extract_graph(
     from mykg.logging import setup
     from mykg.orchestrator import PipelineContext, run
     from mykg.pipeline import STEPS
+
+    if grow_schema:
+        append = True
 
     sessions_root = _sessions_root()
 
@@ -698,23 +702,17 @@ def extract_graph(
         raise click.ClickException("--append and --from-step are mutually exclusive.")
 
     if grow_schema:
-        if not append:
-            raise click.ClickException("--grow-schema requires --append.")
-        # --grow-schema inherits append's mutual exclusion with --from-step (above)
-        # and auto-loads the session schema as the locked base, so an explicit
-        # --base-schema would conflict.
         if base_schema:
             raise click.ClickException(
-                "--grow-schema auto-loads the session's schema.ttl as the locked base; "
-                "do not pass --base-schema."
+                "--append-with-grow-schema auto-loads the session's schema.ttl as the "
+                "locked base; do not pass --base-schema."
             )
-        # Fail fast (before any adapter / API-key resolution) if there is no schema
-        # to lock — the base is parsed later, after the adapter is loaded.
         _session_schema_ttl = Path(intermediate_dir) / "schema.ttl"
         if not _session_schema_ttl.exists():
             raise click.ClickException(
-                f"--grow-schema needs an existing schema to lock, but {_session_schema_ttl} "
-                "was not found. Run without --grow-schema first to induce a schema."
+                f"--append-with-grow-schema needs an existing schema to lock, but "
+                f"{_session_schema_ttl} was not found. Run a full extract first to "
+                "induce a schema."
             )
 
     orphan_incremental = False
@@ -742,10 +740,6 @@ def extract_graph(
 
     base = None
     if grow_schema:
-        # Auto-load the session's existing schema as the locked base so Pass 1 runs
-        # in LOCKED mode (D52): the LLM may ADD entries but cannot rename/remove the
-        # locked ones. schema.ttl is the TBox-only view written after the prior run;
-        # its existence was already verified in the validation block above.
         from mykg.base_schema import parse_base_schema
 
         session_schema_ttl = Path(intermediate_dir) / "schema.ttl"
