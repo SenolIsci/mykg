@@ -325,6 +325,22 @@ After each LLM call, the pipeline validates the response: edges whose type is no
 
 **Per-file shards.** When a file finishes, its results are written immediately to a per-file shard on disk. On restart, files with existing shards are skipped. Only unfinished files are re-extracted.
 
+### Incremental Schema Growth (`--append --grow-schema`)
+
+Plain `--append` re-runs only on new or modified files against the existing, frozen schema — Pass 1 is skipped, so the schema can never grow. `--grow-schema` (which requires `--append`) lifts that restriction at bounded cost.
+
+When `--grow-schema` is set, the session's existing `intermediate/schema.ttl` is auto-loaded as a **locked base schema** (the same lock mechanism used by `--base-schema`): the LLM may ADD new concepts and properties but cannot rename, remove, or restructure the existing ones. Passing `--base-schema` alongside `--grow-schema` is an error — the base is auto-derived from the session.
+
+The flow has three parts:
+
+1. **Changed-files-only locked Pass 1.** Pass 1 is re-run, but only over the new/modified files, with the existing vocabulary injected as a locked block. The merge step unions any genuinely new concepts/properties into the locked schema.
+
+2. **Changed-file extraction.** Pass 2 extracts the new/modified files against the now-grown schema, exactly as plain `--append` does.
+
+3. **Schema-delta surgical back-fill.** When — and only when — the locked Pass 1 actually grew the schema, the already-extracted OLD files are stale: they were extracted before the new types existed. The back-fill selector decides which OLD chunks are worth re-extracting, using only `chunk_node_index.json` (no source text is re-read). A new property `D → R` targets old chunks that already contain a node of type `D` or `R`; a new concept targets old chunks containing nodes of its parent or sibling type (a root concept with no parent/siblings yields no targets). Candidates are ranked by co-occurrence count and capped per type by `pipeline.append.grow_schema_backfill_top_k_chunks_per_type` (default 10; `0` disables back-fill). Only those chunks are re-extracted surgically; all other shards are reused.
+
+This keeps the graph consistent — instances of a newly-added type appear in BOTH the new and the old documents — while staying sub-linear in corpus size (Invariant 16). The selector is a heuristic: false negatives are backstopped by the orphan pass and future runs, and a false positive costs only one no-op LLM call, bounded by the top-K cap. All exported formats are kept in sync by the same export-time validation as a fresh run (Invariant 14).
+
 ### Assembly and Deduplication
 
 Once all files are extracted, the assembler combines everything into a single consistent graph.

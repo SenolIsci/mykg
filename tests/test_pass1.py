@@ -376,9 +376,7 @@ def test_run_pass1_step_propagates_locked_block_to_cleanup_prompts(tmp_path):
     adapter = SequenceAdapter([response, response, response])
     ctx = _make_step_ctx(tmp_path, adapter)
     ctx.base_schema = {
-        "locked_classes": {
-            "Vehicle": {"type": "Vehicle", "parent": None, "attributes": ["name"]}
-        },
+        "locked_classes": {"Vehicle": {"type": "Vehicle", "parent": None, "attributes": ["name"]}},
         "locked_properties": {
             "owns": {"name": "owns", "domain": "Person", "range": "Vehicle", "attributes": []}
         },
@@ -397,6 +395,59 @@ def test_run_pass1_step_propagates_locked_block_to_cleanup_prompts(tmp_path):
         assert "Vehicle" in system, "locked class name missing from cleanup prompt"
         assert "owns" in system, "locked property name missing from cleanup prompt"
         assert "DO NOT RENAME, REMOVE, OR DUPLICATE" in system
+
+
+# ---------------------------------------------------------------------------
+# Unit 3 — --grow-schema scopes locked Pass 1 to changed files only (D52)
+# ---------------------------------------------------------------------------
+
+
+def test_grow_schema_pass1_uses_only_changed_files(tmp_path):
+    """With grow_schema + append_new_files, locked Pass 1 must chunk ONLY the changed
+    files from the manifest, never the unchanged old files."""
+    response = json.dumps(
+        {
+            "concepts": [{"type": "Person", "parent": None, "attributes": ["name"]}],
+            "properties": [],
+        }
+    )
+    adapter = SequenceAdapter([response, response, response])
+    ctx = _make_step_ctx(tmp_path, adapter)
+    ctx.all_chunks = None  # append ingest does not chunk
+    ctx.grow_schema = True
+    ctx.append = True
+    ctx.append_new_files = {"new.md"}
+
+    manifest = {
+        "old.md": {"content": "OLDFILEMARKER content about Acme.", "sha256": "x"},
+        "new.md": {"content": "NEWFILEMARKER content about Bob.", "sha256": "y"},
+    }
+    (ctx.intermediate_dir / "file_manifest.json").write_text(json.dumps(manifest))
+
+    run_pass1_step(ctx)
+
+    all_user_text = "\n".join(user for _, user in adapter.calls)
+    assert "NEWFILEMARKER" in all_user_text, "changed file content must reach Pass 1"
+    assert "OLDFILEMARKER" not in all_user_text, "unchanged file must NOT reach locked Pass 1"
+
+
+def test_grow_schema_pass1_ignores_changed_files_absent_from_manifest(tmp_path):
+    """A changed-file name not present in the manifest is skipped (no crash)."""
+    response = json.dumps(
+        {"concepts": [{"type": "Person", "parent": None, "attributes": ["name"]}], "properties": []}
+    )
+    adapter = SequenceAdapter([response, response, response])
+    ctx = _make_step_ctx(tmp_path, adapter)
+    ctx.all_chunks = None
+    ctx.grow_schema = True
+    ctx.append = True
+    ctx.append_new_files = {"new.md", "ghost.md"}
+    manifest = {"new.md": {"content": "NEWFILEMARKER text.", "sha256": "y"}}
+    (ctx.intermediate_dir / "file_manifest.json").write_text(json.dumps(manifest))
+
+    run_pass1_step(ctx)  # must not raise
+    schema = json.loads((ctx.intermediate_dir / "schema.json").read_text())
+    assert any(c["type"] == "Person" for c in schema["concepts"])
 
 
 # ---------------------------------------------------------------------------

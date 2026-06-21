@@ -15,11 +15,32 @@ log = get("mykg.steps.pass1")
 
 
 def run_pass1_step(ctx: PipelineContext) -> None:
+    # --append --grow-schema (D52): run the locked re-induction over ONLY the changed
+    # files so the LLM sees just the new material when proposing additions. The append
+    # ingest step does not chunk (it only hashes), so all_chunks must be (re)built here
+    # from the changed files in the manifest. Falls through to the all-files paths below
+    # when not in grow-schema mode.
+    if ctx.grow_schema and ctx.append_new_files:
+        manifest_path = ctx.intermediate_dir / "file_manifest.json"
+        if not manifest_path.exists():
+            raise RuntimeError(
+                "grow_schema: file_manifest.json not found — re-run from the ingest step."
+            )
+        file_contents: dict[str, str | dict] = json.loads(manifest_path.read_text())
+        ctx.all_chunks = []
+        changed = [f for f in ctx.append_new_files if f in file_contents]
+        for fname in changed:
+            ctx.all_chunks.extend(chunk_file(fname, _content_from_entry(file_contents[fname])))
+        log.info(
+            "Step 2 — grow_schema: locked Pass 1 over %d changed file(s) → %d chunk(s)",
+            len(changed),
+            len(ctx.all_chunks),
+        )
     # Recovery path for --from-step pass1: ingest was skipped but file_manifest.json exists.
-    if ctx.all_chunks is None:
+    elif ctx.all_chunks is None:
         manifest_path = ctx.intermediate_dir / "file_manifest.json"
         if manifest_path.exists():
-            file_contents: dict[str, str | dict] = json.loads(manifest_path.read_text())
+            file_contents = json.loads(manifest_path.read_text())
             ctx.all_chunks = []
             for fname, entry in file_contents.items():
                 ctx.all_chunks.extend(chunk_file(fname, _content_from_entry(entry)))

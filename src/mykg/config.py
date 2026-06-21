@@ -242,18 +242,14 @@ FETCH_STRATEGY: str = _get_opt("fetch", "strategy", "same-domain")
 FETCH_MAX_PAGES: int = int(_get_opt("fetch", "max_pages", 500))
 FETCH_MAX_DEPTH: int = int(_get_opt("fetch", "max_depth", 10))
 FETCH_RESPECT_ROBOTS: bool = bool(_get_opt("fetch", "respect_robots", True))
-FETCH_REQUEST_DELAY_SECONDS: float = float(
-    _get_opt("fetch", "request_delay_seconds", 0.5)
-)
+FETCH_REQUEST_DELAY_SECONDS: float = float(_get_opt("fetch", "request_delay_seconds", 0.5))
 FETCH_CONCURRENCY: int = int(_get_opt("fetch", "concurrency", 4))
 FETCH_DOWNLOAD_ASSETS: bool = bool(_get_opt("fetch", "download_assets", True))
 FETCH_TIMEOUT_SECONDS: int = int(_get_opt("fetch", "timeout_seconds", 1800))
 FETCH_UV_PATH: str = _get_opt("fetch", "uv_path", "uv")
 FETCH_UV_PYTHON_VERSION: str = _get_opt("fetch", "uv_python_version", "3.12")
 FETCH_CRAWLEE_SPEC: str = _get_opt("fetch", "crawlee_spec", "crawlee[beautifulsoup]")
-FETCH_INSTALL_TIMEOUT_SECONDS: int = int(
-    _get_opt("fetch", "install_timeout_seconds", 1800)
-)
+FETCH_INSTALL_TIMEOUT_SECONDS: int = int(_get_opt("fetch", "install_timeout_seconds", 1800))
 FETCH_GITHUB_CLONE_ENABLED: bool = bool(_get_opt("fetch", "github_clone_enabled", True))
 FETCH_GITHUB_CLONE_DEPTH: int = int(_get_opt("fetch", "github_clone_depth", 1))
 FETCH_GITHUB_CLONE_TIMEOUT_SECONDS: int = int(
@@ -294,6 +290,16 @@ MERGE_SURGICAL_TOP_K_CHUNKS_PER_PROPERTY: int = _get_opt(
     "merge_graphs", "surgical_top_k_chunks_per_property", 0
 )
 MERGE_ORPHAN_SCHEMA_MAX_RESTARTS: int = _get_opt("merge_graphs", "orphan_pass_max_restarts", 1)
+
+# ---------------------------------------------------------------------------
+# Append — incremental schema growth (--append --grow-schema, D52)
+# ---------------------------------------------------------------------------
+# Cap on how many old chunks are surgically re-extracted per newly added
+# concept/property when the locked Pass 1 grows the schema. 0 = disable
+# back-fill entirely. Mirrors merge_graphs.surgical_top_k_chunks_per_property.
+APPEND_GROW_SCHEMA_BACKFILL_TOP_K_CHUNKS_PER_TYPE: int = _get_opt(
+    "append", "grow_schema_backfill_top_k_chunks_per_type", 10
+)
 
 # ---------------------------------------------------------------------------
 # Agent provider (D49) — inbox/outbox filesystem contract with host skill

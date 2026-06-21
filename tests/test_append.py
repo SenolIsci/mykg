@@ -269,6 +269,57 @@ def test_orchestrator_skips_pass1_when_output_exists(tmp_path):
     assert "pass2" in executed
 
 
+def test_orchestrator_grow_schema_forces_pass1_and_schema_steps(tmp_path):
+    """In --append --grow-schema mode pass1/schema_validate/schema_flatten must RUN
+    again even though their outputs already exist (D52), while human_review stays
+    skipped (no --review)."""
+    ctx = _make_ctx(tmp_path, append=True)
+    ctx.grow_schema = True
+
+    # Pre-populate all schema outputs so plain append would skip them.
+    (ctx.intermediate_dir / "schema.json").write_text('{"concepts":[],"properties":[]}')
+    (ctx.intermediate_dir / "schema.ttl").write_text("")
+    (ctx.intermediate_dir / "schema_validate.done").write_text("done")
+    (ctx.intermediate_dir / "schema_approved.flag").write_text("auto-approved")
+    (ctx.intermediate_dir / "flattened_schema.json").write_text("{}")
+
+    executed = []
+
+    def ingest_fn(c):
+        executed.append("ingest")
+        c.append_new_files = {"new.md"}  # simulate a detected new file
+
+    def make(name):
+        def _fn(c):
+            executed.append(name)
+
+        return _fn
+
+    def pass2_fn(c):
+        executed.append("pass2")
+        (c.intermediate_dir / "raw_extractions.json").write_text("{}")
+        (c.intermediate_dir / "chunk_node_index.json").write_text("{}")
+
+    steps = [
+        Step(name="ingest", fn=ingest_fn, outputs=["file_manifest.json"]),
+        Step(
+            name="pass1", fn=make("pass1"), outputs=["schema.json", "schema.ttl"], is_llm_step=True
+        ),
+        Step(name="schema_validate", fn=make("schema_validate"), outputs=["schema_validate.done"]),
+        Step(name="human_review", fn=make("human_review"), outputs=["schema_approved.flag"]),
+        Step(name="schema_flatten", fn=make("schema_flatten"), outputs=["flattened_schema.json"]),
+        Step(name="pass2", fn=pass2_fn, outputs=["raw_extractions.json", "chunk_node_index.json"]),
+    ]
+
+    run(steps, ctx)
+
+    assert "pass1" in executed, "pass1 must be force-run in grow_schema mode"
+    assert "schema_validate" in executed, "schema_validate must be force-run in grow_schema mode"
+    assert "schema_flatten" in executed, "schema_flatten must be force-run in grow_schema mode"
+    assert "human_review" not in executed, "human_review stays skipped without --review"
+    assert "pass2" in executed
+
+
 # ---------------------------------------------------------------------------
 # 7. Orchestrator: missing schema error
 # ---------------------------------------------------------------------------

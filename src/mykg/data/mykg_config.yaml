@@ -178,6 +178,8 @@ profiles:
         surgical_top_k_chunks_per_property: 5  # 0 = no cap; >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
         human_review: false             # pause for human review of merged schema; overridden by --human-review CLI flag
         orphan_pass_max_restarts: 1     # max schema-gap restart loops during merge orphan pass (0 = disabled)
+      append:
+        grow_schema_backfill_top_k_chunks_per_type: 10  # --append --grow-schema: 0 = disable back-fill; >0 = top-K old chunks re-extracted per newly added concept/property (ranked by domain/range/hierarchy node co-occurrence) (D52)
 
   # ---------------------------------------------------------------------------
   anthropic-claude:
@@ -341,6 +343,8 @@ profiles:
         surgical_top_k_chunks_per_property: 5  # 0 = no cap; >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
         human_review: false             # pause for human review of merged schema; overridden by --human-review CLI flag
         orphan_pass_max_restarts: 1     # max schema-gap restart loops during merge orphan pass (0 = disabled)
+      append:
+        grow_schema_backfill_top_k_chunks_per_type: 10  # --append --grow-schema: 0 = disable back-fill; >0 = top-K old chunks re-extracted per newly added concept/property (ranked by domain/range/hierarchy node co-occurrence) (D52)
 
   # ---------------------------------------------------------------------------
   claude-cli:
@@ -501,6 +505,8 @@ profiles:
         surgical_top_k_chunks_per_property: 5  # 0 = no cap; >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
         human_review: false             # pause for human review of merged schema; overridden by --human-review CLI flag
         orphan_pass_max_restarts: 1     # max schema-gap restart loops during merge orphan pass (0 = disabled)
+      append:
+        grow_schema_backfill_top_k_chunks_per_type: 10  # --append --grow-schema: 0 = disable back-fill; >0 = top-K old chunks re-extracted per newly added concept/property (ranked by domain/range/hierarchy node co-occurrence) (D52)
 
   # ---------------------------------------------------------------------------
   openai:
@@ -670,6 +676,8 @@ profiles:
         surgical_top_k_chunks_per_property: 0  # 0 = no cap; >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
         human_review: false             # pause for human review of merged schema; overridden by --human-review CLI flag
         orphan_pass_max_restarts: 1     # max schema-gap restart loops during merge orphan pass (0 = disabled)
+      append:
+        grow_schema_backfill_top_k_chunks_per_type: 10  # --append --grow-schema: 0 = disable back-fill; >0 = top-K old chunks re-extracted per newly added concept/property (ranked by domain/range/hierarchy node co-occurrence) (D52)
 
   # ---------------------------------------------------------------------------
   ollama-local:
@@ -833,6 +841,8 @@ profiles:
         surgical_top_k_chunks_per_property: 0  # 0 = no cap; >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
         human_review: false             # pause for human review of merged schema; overridden by --human-review CLI flag
         orphan_pass_max_restarts: 1     # max schema-gap restart loops during merge orphan pass (0 = disabled)
+      append:
+        grow_schema_backfill_top_k_chunks_per_type: 10  # --append --grow-schema: 0 = disable back-fill; >0 = top-K old chunks re-extracted per newly added concept/property (ranked by domain/range/hierarchy node co-occurrence) (D52)
 
   # ---------------------------------------------------------------------------
   agent-claude-code:
@@ -986,3 +996,5 @@ profiles:
         surgical_top_k_chunks_per_property: 0
         human_review: false
         orphan_pass_max_restarts: 0
+      append:
+        grow_schema_backfill_top_k_chunks_per_type: 10  # --append --grow-schema: 0 = disable back-fill; >0 = top-K old chunks re-extracted per newly added concept/property (D52)

@@ -534,9 +534,7 @@ def _print_next_steps(
         )
     elif profile == "agent-claude-code":
         _install_agent_skill(force=reinstall_skill)
-        claude_status = _write_claude_md_snippet(
-            Path.cwd(), refresh=force or reinstall_claude_md
-        )
+        claude_status = _write_claude_md_snippet(Path.cwd(), refresh=force or reinstall_claude_md)
         click.echo(f"[claude.md] {claude_status}")
         click.echo("\nThen, in Claude Code:")
         click.echo("  1. Restart the app so the skill loader picks up the new entry.")
@@ -596,6 +594,14 @@ def _print_next_steps(
     help="Skip Pass 1, re-run only on new/modified files, then re-assemble and re-export",
 )
 @click.option(
+    "--grow-schema",
+    is_flag=True,
+    help="With --append: run Pass 1 in LOCKED mode over changed files so the LLM may ADD "
+    "new concepts/properties to the existing schema, then surgically back-fill old files "
+    "when the schema grows. Requires --append; the session schema.ttl is auto-loaded as "
+    "the locked base, so --base-schema must not be passed.",
+)
+@click.option(
     "--session",
     default=None,
     help="Session name under mykg_sessions/ to resume or append; omit to auto-create",
@@ -625,6 +631,7 @@ def extract_graph(
     workers,
     confidence_agg,
     append,
+    grow_schema,
     session,
     obsidian_vault,
     neo4j_csv,
@@ -690,6 +697,26 @@ def extract_graph(
     if append and from_step:
         raise click.ClickException("--append and --from-step are mutually exclusive.")
 
+    if grow_schema:
+        if not append:
+            raise click.ClickException("--grow-schema requires --append.")
+        # --grow-schema inherits append's mutual exclusion with --from-step (above)
+        # and auto-loads the session schema as the locked base, so an explicit
+        # --base-schema would conflict.
+        if base_schema:
+            raise click.ClickException(
+                "--grow-schema auto-loads the session's schema.ttl as the locked base; "
+                "do not pass --base-schema."
+            )
+        # Fail fast (before any adapter / API-key resolution) if there is no schema
+        # to lock — the base is parsed later, after the adapter is loaded.
+        _session_schema_ttl = Path(intermediate_dir) / "schema.ttl"
+        if not _session_schema_ttl.exists():
+            raise click.ClickException(
+                f"--grow-schema needs an existing schema to lock, but {_session_schema_ttl} "
+                "was not found. Run without --grow-schema first to induce a schema."
+            )
+
     orphan_incremental = False
     if from_step:
         from_step, orphan_incremental = _resolve_from_step(from_step)
@@ -714,7 +741,17 @@ def extract_graph(
     logging.getLogger(__name__).info("LLM endpoint: %s", adapter.endpoint_label())
 
     base = None
-    if base_schema:
+    if grow_schema:
+        # Auto-load the session's existing schema as the locked base so Pass 1 runs
+        # in LOCKED mode (D52): the LLM may ADD entries but cannot rename/remove the
+        # locked ones. schema.ttl is the TBox-only view written after the prior run;
+        # its existence was already verified in the validation block above.
+        from mykg.base_schema import parse_base_schema
+
+        session_schema_ttl = Path(intermediate_dir) / "schema.ttl"
+        base = parse_base_schema(session_schema_ttl.read_text())
+        base["_source"] = str(session_schema_ttl)
+    elif base_schema:
         from mykg.base_schema import parse_base_schema
 
         base = parse_base_schema(Path(base_schema).read_text())
@@ -738,6 +775,7 @@ def extract_graph(
         pass2_workers=workers,
         confidence_agg=confidence_agg,
         append=append,
+        grow_schema=grow_schema,
         orphan_incremental=orphan_incremental,
     )
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -978,9 +1016,7 @@ def _build_parse_docs_targets(
         for f in files:
             resolved = f if f.is_absolute() else (input_path / f)
             ok, reason = _passes_filter(resolved)
-            rel_parent = (
-                f.parent if not f.is_absolute() and f.parent != Path(".") else Path()
-            )
+            rel_parent = f.parent if not f.is_absolute() and f.parent != Path(".") else Path()
             per_file_out = output_path / rel_parent
             if ok:
                 targets.append((resolved, per_file_out))
@@ -1119,9 +1155,7 @@ def parse_docs(
         )
 
     allowed_exts = None if no_filter else _cfg.PREPROCESS_EXTENSIONS
-    targets, skipped = _build_parse_docs_targets(
-        input_path, output_path, files, allowed_exts
-    )
+    targets, skipped = _build_parse_docs_targets(input_path, output_path, files, allowed_exts)
 
     if skipped:
         for src, reason in skipped:
@@ -1179,9 +1213,7 @@ def parse_docs(
             f"{len(failures)} failed — output under: {output_path}",
             err=True,
         )
-        raise click.ClickException(
-            f"{len(failures)} of {len(targets)} files failed conversion"
-        )
+        raise click.ClickException(f"{len(failures)} of {len(targets)} files failed conversion")
     click.echo(f"Done. Output written to: {output_path}")
 
 
@@ -1195,7 +1227,9 @@ def _github_clone_seed(seed_url, out_dir, _cfg, fw, *, ignored_notice=None):
     input_dir = out_dir / "input"
     click.echo(f"Cloning {owner}/{repo} (depth={_cfg.FETCH_GITHUB_CLONE_DEPTH}) → {repo_dir}")
     fw.clone_github_repo(
-        owner, repo, repo_dir,
+        owner,
+        repo,
+        repo_dir,
         depth=_cfg.FETCH_GITHUB_CLONE_DEPTH,
         timeout_seconds=_cfg.FETCH_GITHUB_CLONE_TIMEOUT_SECONDS,
     )
@@ -1220,14 +1254,22 @@ def _github_clone_seed(seed_url, out_dir, _cfg, fw, *, ignored_notice=None):
     }
 
 
-def _crawlee_ignored_options_notice(max_pages, max_depth, strategy, download_assets,
-                                     delay, concurrency, no_robots, force):
+def _crawlee_ignored_options_notice(
+    max_pages, max_depth, strategy, download_assets, delay, concurrency, no_robots, force
+):
     """One-line notice when Crawlee-only options are passed for a GitHub seed."""
-    non_default = any([
-        max_pages is not None, max_depth is not None, strategy is not None,
-        download_assets is not None, delay is not None, concurrency is not None,
-        no_robots, force,
-    ])
+    non_default = any(
+        [
+            max_pages is not None,
+            max_depth is not None,
+            strategy is not None,
+            download_assets is not None,
+            delay is not None,
+            concurrency is not None,
+            no_robots,
+            force,
+        ]
+    )
     if not non_default:
         return None
     return "Note: Crawlee options (--max-pages, --max-depth, etc.) are ignored for GitHub repo URLs (git-clone path)."
@@ -1235,27 +1277,57 @@ def _crawlee_ignored_options_notice(max_pages, max_depth, strategy, download_ass
 
 @cli.command("fetch-web")
 @click.argument("url", required=False)
-@click.option("--url-list", default=None, type=click.Path(exists=True, dir_okay=False, path_type=Path),
-              help="File of seed URLs (one per line, # comments ignored). "
-                   "Mutually exclusive with URL; requires --output.")
-@click.option("--output", default=None, type=click.Path(path_type=Path),
-              help="Target folder (default: ./<fetch.output_dir>/<domain>/; required with --url-list).")
+@click.option(
+    "--url-list",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="File of seed URLs (one per line, # comments ignored). "
+    "Mutually exclusive with URL; requires --output.",
+)
+@click.option(
+    "--output",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Target folder (default: ./<fetch.output_dir>/<domain>/; required with --url-list).",
+)
 @click.option("--max-pages", default=None, type=int, help="Cap on total fetched pages.")
-@click.option("--max-depth", default=None, type=int,
-              help="Max crawl depth from seed (default: inferred — 0 for a "
-                   "specific page, fetch.max_depth for a bare domain).")
-@click.option("--strategy", default=None,
-              type=click.Choice(["same-domain", "same-origin", "all"]),
-              help="Link-following scope (default from config; 'all' leaves the domain).")
-@click.option("--download-assets/--no-download-assets", default=None,
-              help="Download linked binaries in preprocess.extensions (default from config).")
+@click.option(
+    "--max-depth",
+    default=None,
+    type=int,
+    help="Max crawl depth from seed (default: inferred — 0 for a "
+    "specific page, fetch.max_depth for a bare domain).",
+)
+@click.option(
+    "--strategy",
+    default=None,
+    type=click.Choice(["same-domain", "same-origin", "all"]),
+    help="Link-following scope (default from config; 'all' leaves the domain).",
+)
+@click.option(
+    "--download-assets/--no-download-assets",
+    default=None,
+    help="Download linked binaries in preprocess.extensions (default from config).",
+)
 @click.option("--delay", default=None, type=float, help="Per-request delay seconds.")
 @click.option("--concurrency", default=None, type=int, help="Max concurrent requests.")
 @click.option("--no-robots", is_flag=True, help="Disable robots.txt compliance.")
 @click.option("--force", is_flag=True, help="Ignore prior manifest; re-fetch everything.")
 @click.option("--verbose", "-v", is_flag=True, help="Enable DEBUG-level logging.")
-def fetch_web(url, url_list, output, max_pages, max_depth, strategy, download_assets,
-              delay, concurrency, no_robots, force, verbose):
+def fetch_web(
+    url,
+    url_list,
+    output,
+    max_pages,
+    max_depth,
+    strategy,
+    download_assets,
+    delay,
+    concurrency,
+    no_robots,
+    force,
+    verbose,
+):
     """Crawl a website (or clone a GitHub repo) and write fetch_manifest.json.
 
     The folder is a normal `extract-graph` input: the preprocess step converts
@@ -1305,11 +1377,22 @@ def fetch_web(url, url_list, output, max_pages, max_depth, strategy, download_as
     dl_assets = _cfg.FETCH_DOWNLOAD_ASSETS if download_assets is None else download_assets
     allowed = sorted(_cfg.PREPROCESS_EXTENSIONS) if dl_assets else []
     ignored_notice = _crawlee_ignored_options_notice(
-        max_pages, max_depth, strategy, download_assets, delay, concurrency, no_robots, force,
+        max_pages,
+        max_depth,
+        strategy,
+        download_assets,
+        delay,
+        concurrency,
+        no_robots,
+        force,
     )
 
     def _seed_crawl_cfg(seed_url, seed_out_dir, prior):
-        depth = max_depth if max_depth is not None else fw.infer_max_depth(seed_url, _cfg.FETCH_MAX_DEPTH)
+        depth = (
+            max_depth
+            if max_depth is not None
+            else fw.infer_max_depth(seed_url, _cfg.FETCH_MAX_DEPTH)
+        )
         cfg = fw.build_crawl_config(
             seed_url=seed_url,
             output_dir=str(seed_out_dir),
@@ -1334,8 +1417,11 @@ def fetch_web(url, url_list, output, max_pages, max_depth, strategy, download_as
         if _cfg.FETCH_GITHUB_CLONE_ENABLED and fw.is_github_repo_url(url):
             entry = _github_clone_seed(url, out_dir, _cfg, fw, ignored_notice=ignored_notice)
             fw.write_manifest(
-                out_dir, seed_url=url, strategy="github_clone",
-                pages={}, stats=entry["stats"],
+                out_dir,
+                seed_url=url,
+                strategy="github_clone",
+                pages={},
+                stats=entry["stats"],
             )
             return
 
@@ -1345,7 +1431,9 @@ def fetch_web(url, url_list, output, max_pages, max_depth, strategy, download_as
         config_path = out_dir / ".fetch_config.json"
         config_path.write_text(json.dumps(crawl_cfg, indent=2), encoding="utf-8")
 
-        click.echo(f"Crawling {url} → {out_dir} (strategy={strat}, max_pages={crawl_cfg['max_pages']}, max_depth={crawl_cfg['max_depth']})")
+        click.echo(
+            f"Crawling {url} → {out_dir} (strategy={strat}, max_pages={crawl_cfg['max_pages']}, max_depth={crawl_cfg['max_depth']})"
+        )
         with ephemeral_venv(
             _cfg.FETCH_UV_PYTHON_VERSION,
             _cfg.FETCH_CRAWLEE_SPEC,
@@ -1375,8 +1463,11 @@ def fetch_web(url, url_list, output, max_pages, max_depth, strategy, download_as
         merged = dict(prior)
         merged.update(results.get("pages", {}))
         fw.write_manifest(
-            out_dir, seed_url=url, strategy=strat,
-            pages=merged, stats=results.get("stats", {}),
+            out_dir,
+            seed_url=url,
+            strategy=strat,
+            pages=merged,
+            stats=results.get("stats", {}),
             crawlee_version=results.get("crawlee_version", ""),
         )
         config_path.unlink(missing_ok=True)
@@ -1404,7 +1495,9 @@ def fetch_web(url, url_list, output, max_pages, max_depth, strategy, download_as
             owner, repo = fw.is_github_repo_url(seed_url)
             seed_out_dir = out_root / f"github.com_{owner}_{repo}"
             seed_out_dir.mkdir(parents=True, exist_ok=True)
-            entry = _github_clone_seed(seed_url, seed_out_dir, _cfg, fw, ignored_notice=ignored_notice)
+            entry = _github_clone_seed(
+                seed_url, seed_out_dir, _cfg, fw, ignored_notice=ignored_notice
+            )
             seed_entries.append(entry)
         else:
             seed_out_dir = out_root / fw.seed_subdir_name(seed_url)
@@ -1459,20 +1552,25 @@ def fetch_web(url, url_list, output, max_pages, max_depth, strategy, download_as
             merged.update(seed_result.get("pages", {}))
             stats = seed_result.get("stats", {})
             fw.write_manifest(
-                seed_out_dir, seed_url=seed_url, strategy=strat,
-                pages=merged, stats=stats,
+                seed_out_dir,
+                seed_url=seed_url,
+                strategy=strat,
+                pages=merged,
+                stats=stats,
                 crawlee_version=seed_result.get("crawlee_version", ""),
             )
             click.echo(
                 f"Done. {stats.get('pages', 0)} pages, {stats.get('assets', 0)} assets → {seed_out_dir}"
             )
-            seed_entries.append({
-                "seed_url": seed_url,
-                "strategy": strat,
-                "output_subdir": seed_out_dir.relative_to(out_root).as_posix(),
-                "stats": stats,
-                "pages": merged,
-            })
+            seed_entries.append(
+                {
+                    "seed_url": seed_url,
+                    "strategy": strat,
+                    "output_subdir": seed_out_dir.relative_to(out_root).as_posix(),
+                    "stats": stats,
+                    "pages": merged,
+                }
+            )
 
         config_path.unlink(missing_ok=True)
         results_path.unlink(missing_ok=True)
@@ -1486,12 +1584,13 @@ def fetch_web(url, url_list, output, max_pages, max_depth, strategy, download_as
                 summed_stats[key] = summed_stats.get(key, 0) + val
         union_pages.update(entry["pages"])
 
-    manifest_seeds = [
-        {k: v for k, v in entry.items() if k != "pages"} for entry in seed_entries
-    ]
+    manifest_seeds = [{k: v for k, v in entry.items() if k != "pages"} for entry in seed_entries]
     fw.write_manifest(
-        out_root, seed_url=None, strategy=None,
-        pages=union_pages, stats=summed_stats,
+        out_root,
+        seed_url=None,
+        strategy=None,
+        pages=union_pages,
+        stats=summed_stats,
         seeds=manifest_seeds,
     )
     click.echo(f"Done. {len(seed_entries)} seed(s) fetched → {out_root}")

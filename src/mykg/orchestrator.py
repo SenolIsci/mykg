@@ -55,6 +55,10 @@ class PipelineContext(BaseModel):
     thesaurus: Any = None  # SynonymIndex | None — Any to avoid forward-ref issues
     review: bool = False
     append: bool = False
+    # --append --grow-schema (D52): run locked Pass 1 over changed files only so the
+    # LLM may ADD new concepts/properties to the existing (locked) schema, then
+    # surgically back-fill old files when the schema actually grows.
+    grow_schema: bool = False
     # Runtime fields populated by steps
     all_chunks: list | None = None
     file_contents: dict[str, str] | None = None
@@ -286,16 +290,30 @@ def run(steps: list[Step], ctx: PipelineContext) -> None:
     while True:
         schema_restart_triggered = False
 
+        # In --grow-schema mode, pass1/schema_validate must run again so the locked
+        # Pass 1 can add new concepts/properties. human_review stays skipped unless
+        # --review is also set, in which case it is un-skipped so the gate (handled
+        # below via requires_review_flag) can pause for review of the grown schema.
+        # All other append skips remain in force (D52).
+        append_skip = APPEND_SKIP_STEPS
+        if ctx.grow_schema:
+            append_skip = APPEND_SKIP_STEPS - {"pass1", "schema_validate"}
+            if ctx.review:
+                append_skip = append_skip - {"human_review"}
+
         for step in steps:
-            if ctx.append and step.name in APPEND_SKIP_STEPS:
+            if ctx.append and step.name in append_skip:
                 log.info("SKIP %s — append mode", step.name)
                 continue
 
             # In append mode, ingest must always run (detect new files) and pass2
             # must always run when new files exist (raw_extractions.json is preserved
             # for merge but still needs updating — _is_done would skip it otherwise).
+            # In --grow-schema mode, pass1 must also be force-run so a stale schema.json
+            # does not cause _is_done to skip the locked re-induction.
             _append_force = ctx.append and step.name in (
                 "ingest",
+                *(("pass1", "schema_validate", "schema_flatten") if ctx.grow_schema else ()),
                 *(("pass2",) if ctx.append_new_files else ()),
             )
             if _is_done(step, ctx) and not _append_force:

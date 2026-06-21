@@ -8,6 +8,7 @@ from mykg.orchestrator import PipelineContext
 from mykg.pass2 import run_pass2, run_pass2_batched
 from mykg.pass2_concat import build_concat_batches, make_virtual_files
 from mykg.schema_flattener import flatten_schema
+from mykg.steps.grow_schema_backfill import compute_backfill_chunks
 
 log = get("mykg.steps.pass2")
 
@@ -169,6 +170,14 @@ def _run(
             _log_and_write(ctx, existing_raw, existing_chunk)
             return
 
+    # --append --grow-schema (D52): when the locked Pass 1 grew the schema, surgically
+    # back-fill the OLD files so instances of the new types are picked up there too.
+    # Changed files are excluded — they are (re-)extracted in full by the todo path
+    # below against the already-grown schema. When the delta is empty this is a no-op
+    # and the run collapses to a plain append (changed files only).
+    if ctx.grow_schema and existing_raw:
+        _grow_schema_backfill(ctx, manifest, schema, flat, existing_raw, existing_chunk, concat_map)
+
     if not todo:
         _log_and_write(ctx, existing_raw, existing_chunk)
         return
@@ -245,3 +254,123 @@ def _log_and_write(
     (ctx.intermediate_dir / "raw_extractions.done").write_text("")
     ctx.raw_extractions = raw
     ctx.chunk_node_index = chunk_node_index
+
+
+def _grow_schema_delta(base_schema: dict | None, schema: dict) -> tuple[list[str], list[dict]]:
+    """Return (added_concepts, added_properties) of the grown schema vs the locked base.
+
+    The locked base (ctx.base_schema) holds the ORIGINAL pre-growth vocabulary as
+    locked_classes/locked_properties, so the delta is exactly what the locked Pass 1
+    added. added_properties are the full property dicts from the grown schema (needed
+    for domain/range), filtered to the newly-added names.
+    """
+    locked_classes = (base_schema or {}).get("locked_classes", {})
+    locked_properties = (base_schema or {}).get("locked_properties", {})
+    added_concepts = [
+        c["type"] for c in schema.get("concepts", []) if c["type"] not in locked_classes
+    ]
+    added_properties = [
+        p for p in schema.get("properties", []) if p["name"] not in locked_properties
+    ]
+    return added_concepts, added_properties
+
+
+def _grow_schema_backfill(
+    ctx: PipelineContext,
+    manifest: dict,
+    schema: dict,
+    flat: dict,
+    existing_raw: dict,
+    existing_chunk: dict,
+    concat_map: dict,
+) -> None:
+    """Surgically re-extract OLD files for newly-added schema types (D52, Invariant 16).
+
+    Mutates existing_raw / existing_chunk in place and rewrites the affected shards.
+    No-op when the schema did not grow, when back-fill is disabled (top_k == 0), or
+    when no old chunk carries a relevant signal type. Handles concat prep mode by
+    resolving virtual batch contents from the concat map (existing_raw is keyed by
+    virtual batch name in that mode).
+    """
+    added_concepts, added_properties = _grow_schema_delta(ctx.base_schema, schema)
+    if not added_concepts and not added_properties:
+        log.info("Step 6 — grow_schema: schema unchanged, no back-fill needed")
+        return
+
+    log.info(
+        "Step 6 — grow_schema delta: +%d concept(s) %s, +%d property(ies) %s",
+        len(added_concepts),
+        added_concepts,
+        len(added_properties),
+        [p["name"] for p in added_properties],
+    )
+
+    top_k = _cfg.APPEND_GROW_SCHEMA_BACKFILL_TOP_K_CHUNKS_PER_TYPE
+    backfill = compute_backfill_chunks(
+        added_concepts, added_properties, schema, existing_chunk, top_k
+    )
+    # In concat mode, existing_raw is keyed by virtual batch names; resolve their
+    # contents from the concat map so back-fill targets can be re-extracted.
+    if concat_map:
+        real_contents = {f: _content_from_entry(manifest[f]) for f in manifest}
+        virtual_contents = make_virtual_files(real_contents, concat_map)
+        manifest = {**manifest, **virtual_contents}
+        changed_real = ctx.append_new_files or set()
+        # A virtual batch is "changed" iff it bundles a changed real file (it will be
+        # re-extracted in full by the todo path), so exclude it from back-fill.
+        changed = {
+            vname
+            for vname, entry in concat_map.items()
+            if any(rf in changed_real for rf in entry.get("files", []))
+        }
+    else:
+        changed = ctx.append_new_files or set()
+
+    # Never re-extract the changed files here — they are (re-)extracted in full by the
+    # normal todo path against the already-grown schema.
+    backfill = {f: idxs for f, idxs in backfill.items() if f in existing_raw and f not in changed}
+    if not backfill:
+        log.info("Step 6 — grow_schema: no old chunks selected for back-fill")
+        return
+
+    affected = {f: _content_from_entry(manifest[f]) for f in backfill if f in manifest}
+    if not affected:
+        log.warning("Step 6 — grow_schema: back-fill targets not in manifest; skipping")
+        return
+
+    log.info(
+        "Step 6 — grow_schema back-fill: re-extracting %d old file(s), chunks %s",
+        len(affected),
+        {f: sorted(idxs) for f, idxs in backfill.items()},
+    )
+
+    shard_dir = ctx.intermediate_dir / "raw_extractions_shards"
+    chunk_shard_dir = ctx.intermediate_dir / "chunk_index_shards"
+    shard_dir.mkdir(exist_ok=True)
+    chunk_shard_dir.mkdir(exist_ok=True)
+
+    def _on_file_done_backfill(fname: str, result: dict, file_idx: dict) -> None:
+        existing_raw[fname] = result
+        existing_chunk[fname] = file_idx
+        slug = _fname_slug(fname)
+        (shard_dir / f"{slug}.json").write_text(
+            json.dumps({"_fname": fname, "data": result}, indent=_cfg.JSON_INDENT)
+        )
+        (chunk_shard_dir / f"{slug}.json").write_text(
+            json.dumps({"_fname": fname, "data": file_idx}, indent=_cfg.JSON_INDENT)
+        )
+
+    new_raw, new_chunk, _failed = run_pass2(
+        affected,
+        schema,
+        flat,
+        ctx.adapter,
+        max_workers=ctx.pass2_workers,
+        on_file_done=_on_file_done_backfill,
+        error_gate=ctx.error_gate,
+        reextract_chunks=backfill,
+        prior_extractions=existing_raw,
+        prior_chunk_index=existing_chunk,
+    )
+    existing_raw.update(new_raw)
+    existing_chunk.update(new_chunk)
