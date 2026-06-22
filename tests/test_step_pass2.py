@@ -265,9 +265,34 @@ def test_concat_shards_keyed_by_real_files(tmp_path, monkeypatch):
     shard_files = {p.name for p in shard_dir.glob("*.json")}
     assert shard_files == {"a.md.json", "b.md.json"}
     assert not any(n.startswith("concat_batch_") for n in shard_files)
-    # Concat uses the batched engine → writes pass2_batch_map.json, not the legacy map.
-    assert (ctx.intermediate_dir / "pass2_batch_map.json").exists()
+    # Concat keeps the original whole-file-packing + window-sized-call path; it does
+    # not persist a batch/concat map (resumability keys on real filenames now).
     assert not (ctx.intermediate_dir / "pass2_concat_map.json").exists()
+
+
+def test_concat_fans_out_to_member_shards(tmp_path, monkeypatch):
+    """A multi-file concat batch writes one real-keyed shard per member file, each
+    carrying the batch result (assembler dedup collapses the duplication later)."""
+    ctx = _concat_ctx(
+        tmp_path,
+        monkeypatch,
+        response='{"nodes": [{"id": "person-x", "type": "Person", '
+        '"attributes": {"name": {"value": "X", "confidence": 1.0}}}], "edges": []}',
+    )
+    # Two tiny same-dir files → one virtual batch → fan-out to two real shards.
+    (ctx.intermediate_dir / "file_manifest.json").write_text(
+        json.dumps({"dir/a.md": "Alice.", "dir/b.md": "Bob."})
+    )
+
+    run_pass2_step(ctx)
+
+    shard_dir = ctx.intermediate_dir / "raw_extractions_shards"
+    names = {p.name for p in shard_dir.glob("*.json")}
+    assert names == {"dir_a.md.json", "dir_b.md.json"}
+    for n in names:
+        data = json.loads((shard_dir / n).read_text())
+        assert data["_fname"].startswith("dir/")
+        assert len(data["data"]["nodes"]) == 1  # the batch result, fanned out to each
 
 
 def test_concat_append_detects_only_changed_file(tmp_path, monkeypatch):

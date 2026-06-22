@@ -6,7 +6,8 @@ import shutil
 from mykg import config as _cfg
 from mykg.logging import get
 from mykg.orchestrator import PipelineContext
-from mykg.pass2 import run_pass2, run_pass2_batched, run_pass2_concat
+from mykg.pass2 import run_pass2, run_pass2_batched
+from mykg.pass2_concat import build_concat_batches, make_virtual_files
 from mykg.schema_flattener import flatten_schema
 from mykg.steps.grow_schema_backfill import compute_backfill_chunks
 
@@ -182,9 +183,7 @@ def _run(
     shard_dir.mkdir(exist_ok=True)
     chunk_shard_dir.mkdir(exist_ok=True)
 
-    def _on_file_done(fname: str, result: dict, file_idx: dict) -> None:
-        existing_raw[fname] = result
-        existing_chunk[fname] = file_idx
+    def _write_shard(fname: str, result: dict, file_idx: dict) -> None:
         slug = _fname_slug(fname)
         (shard_dir / f"{slug}.json").write_text(
             json.dumps({"_fname": fname, "data": result}, indent=_cfg.JSON_INDENT)
@@ -193,27 +192,48 @@ def _run(
             json.dumps({"_fname": fname, "data": file_idx}, indent=_cfg.JSON_INDENT)
         )
 
+    def _on_file_done(fname: str, result: dict, file_idx: dict) -> None:
+        existing_raw[fname] = result
+        existing_chunk[fname] = file_idx
+        _write_shard(fname, result, file_idx)
+
     if _cfg.PASS2_PREP_MODE == "concat":
-        new_raw, new_chunk, _failed, batch_map = run_pass2_concat(
-            todo,
+        # Original concat behaviour: bin-pack WHOLE files into virtual batches
+        # (dir+prefix grouping, never splitting a file at the packing stage), then
+        # run_pass2 re-chunks each virtual file at window_tokens and makes one LLM
+        # call per window. The ONLY change vs the original is shard keying: the
+        # virtual-batch result is fanned out to one REAL-file-keyed shard per member
+        # file (so --append change-detection, orphan-shard freedom, and the surgical
+        # schema-gap path all work). concat_map is rebuilt in-memory each run; it is
+        # not persisted (resumability now keys on real filenames).
+        concat_map = build_concat_batches(todo, _cfg.PASS2_CONCAT_BATCH_TOKEN_TARGET)
+        virtual_todo = make_virtual_files(todo, concat_map)
+        log.info(
+            "Step 6 — concat: %d real file(s) → %d virtual batch(es)",
+            sum(len(e["files"]) for e in concat_map.values()),
+            len(virtual_todo),
+        )
+
+        def _on_file_done_concat(vname: str, result: dict, file_idx: dict) -> None:
+            # Fan the virtual-batch result out to each member real file. The
+            # assembler's node/edge dedup collapses the duplication (same as
+            # batch_chunks over-attribution).
+            for real_fname in concat_map.get(vname, {}).get("files", [vname]):
+                existing_raw[real_fname] = result
+                existing_chunk[real_fname] = file_idx
+                _write_shard(real_fname, result, file_idx)
+
+        new_raw, new_chunk, _failed = run_pass2(
+            virtual_todo,
             schema,
             flat,
             ctx.adapter,
-            batch_token_target=_cfg.PASS2_CONCAT_BATCH_TOKEN_TARGET,
-            per_file=False,
             max_workers=ctx.pass2_workers,
             schema_hints=ctx.schema_hints or None,
-            on_file_done=_on_file_done,
+            on_file_done=_on_file_done_concat,
+            # skip_files omitted: virtual names regenerate each run; the real-file
+            # todo filter above already removed already-done real files.
             error_gate=ctx.error_gate,
-            intermediate_dir=ctx.intermediate_dir,
-            batch_retry_max=_cfg.PASS2_BATCH_RETRY_MAX,
-        )
-        (ctx.intermediate_dir / "pass2_batch_map.json").write_text(
-            json.dumps(batch_map, indent=_cfg.JSON_INDENT)
-        )
-        log.info(
-            "Step 6 — batch map: %d batch(es) written to pass2_batch_map.json",
-            len(batch_map),
         )
     elif _cfg.PASS2_PREP_MODE == "batch_chunks":
         new_raw, new_chunk, _failed, batch_map = run_pass2_batched(
@@ -250,8 +270,11 @@ def _run(
             error_gate=ctx.error_gate,
         )
 
-    existing_raw.update(new_raw)
-    existing_chunk.update(new_chunk)
+    if _cfg.PASS2_PREP_MODE != "concat":
+        # concat's new_raw/new_chunk are keyed by virtual batch names; the fan-out
+        # in _on_file_done_concat already populated existing_raw with real keys.
+        existing_raw.update(new_raw)
+        existing_chunk.update(new_chunk)
     _log_and_write(ctx, existing_raw, existing_chunk)
 
 
