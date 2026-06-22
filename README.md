@@ -213,8 +213,8 @@ context-calculator --from-config --input-dir my_notes/
 
 Controls how source files are packed into Pass 2 LLM calls (set per profile in `mykg_config.yaml`):
 
-- **`batch_chunks`** *(default)* — packs chunks across files into token-bounded batches; best throughput and per-file incremental `--append`.
-- **`concat`** — merges small files into directory-grouped batches for cross-file context; re-reads the whole corpus on `--append`.
+- **`batch_chunks`** *(default)* — packs chunks across files into token-bounded batches, ignoring file boundaries; best throughput and extraction density.
+- **`concat`** — merges whole small files into directory-grouped batches (one LLM call per window) for cross-file context.
 - **`per_file`** — one file per extraction unit; cleanest provenance (every entity traces to one source file).
 
 See [docs/architecture.md](docs/architecture.md#choosing-a-prep-mode) for the full comparison.
