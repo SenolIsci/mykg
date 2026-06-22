@@ -324,6 +324,14 @@ Pass 2 runs against the induced schema. For each document, it extracts the speci
 
 After each LLM call, the pipeline validates the response: edges whose type is not in the schema are rejected, as are edges that reference node IDs not present in the same extraction. Any node that exists solely to anchor a rejected edge is also dropped. Missing attributes are backfilled with a null value and zero confidence — they are never silently omitted.
 
+**Prep modes (`pass2.prep_mode`).** How files are packed into LLM calls is selectable; all three modes write per-file shards keyed by **real source filename**, so resumability and `--append` change-detection work identically across modes:
+
+- **`per_file`** — one LLM call per file. Most calls; simplest.
+- **`batch_chunks`** — every file is chunked, chunks are pooled and packed into token-bounded batches (one LLM call per batch). A large file's chunks may span batches. `batch_per_file: true` forbids mixing files in a batch.
+- **`concat`** (default) — like `batch_chunks`, but files are first ordered by directory + filename-prefix so related small files land in the same batch, giving the LLM cross-document context. Runs through a dedicated function (`run_pass2_concat`) that mirrors the batched engine and differs only in this ordering.
+
+Earlier, `concat` built synthetic "virtual files" and keyed shards by virtual names (`concat_batch_NNNN.md`). That made `--append` silently drop newly-added files (regenerated virtual names collided with prior-run shard names) and could leak orphan shards. Concat is now de-virtualized: every chunk carries its real `source_file` and shards are real-keyed like the other modes. When a batch mixes files, its single result is attributed to every member file and the assembler's node/edge dedup collapses the duplication (no confidence inflation). A one-time auto-migration clears any legacy `concat_batch_*` shards on the first run after upgrade.
+
 **Stateful chunks.** When stateful chunk mode is enabled, each chunk receives the node IDs extracted from the previous chunk in the same file. This lets the LLM use stable, consistent IDs across chunk boundaries within a document.
 
 **Per-file shards.** When a file finishes, its results are written immediately to a per-file shard on disk. On restart, files with existing shards are skipped. Only unfinished files are re-extracted.
