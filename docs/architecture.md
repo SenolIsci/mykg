@@ -324,6 +324,14 @@ Pass 2 runs against the induced schema. For each document, it extracts the speci
 
 After each LLM call, the pipeline validates the response: edges whose type is not in the schema are rejected, as are edges that reference node IDs not present in the same extraction. Any node that exists solely to anchor a rejected edge is also dropped. Missing attributes are backfilled with a null value and zero confidence — they are never silently omitted.
 
+**Prep modes (`pass2.prep_mode`).** How files are packed into LLM calls is selectable; all three modes write per-file shards keyed by **real source filename**, so resumability and `--append` change-detection work identically across modes:
+
+- **`per_file`** — one LLM call per file. Most calls; simplest.
+- **`batch_chunks`** — every file is chunked, chunks are pooled and packed into token-bounded batches (one LLM call per batch). A large file's chunks may span batches. `batch_per_file: true` forbids mixing files in a batch.
+- **`concat`** (default) — bin-packs **whole files** (grouped by directory, prefix-sorted, never split at the packing stage) into virtual concatenations, joined with `--- SOURCE: path ---` delimiters so related files reach the LLM together. The concatenation is then re-chunked at `window_tokens` and sent one LLM call per window — the same call pattern concat has always had.
+
+Concat keyed its shards by **virtual** names (`concat_batch_NNNN.md`), which made `--append` silently drop newly-added files (regenerated virtual names collided with prior-run shard names) and could leak orphan shards. The fix changes **only shard keying**: the virtual-batch result is fanned out to one **real-file-keyed** shard per member file, so resumability and `--append` change-detection work identically across all three modes. The execution path (whole-file packing → window-sized calls) is unchanged. When a batch mixes files, the single result is attributed to every member file and the assembler's node/edge dedup collapses the duplication (no confidence inflation). A one-time auto-migration clears any legacy `concat_batch_*` shards on the first run after upgrade.
+
 **Stateful chunks.** When stateful chunk mode is enabled, each chunk receives the node IDs extracted from the previous chunk in the same file. This lets the LLM use stable, consistent IDs across chunk boundaries within a document.
 
 **Per-file shards.** When a file finishes, its results are written immediately to a per-file shard on disk. On restart, files with existing shards are skipped. Only unfinished files are re-extracted.

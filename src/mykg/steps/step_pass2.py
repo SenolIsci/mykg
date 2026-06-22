@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 
 from mykg import config as _cfg
 from mykg.logging import get
@@ -64,6 +65,24 @@ def _run(
     shard_dir = ctx.intermediate_dir / "raw_extractions_shards"
     chunk_shard_dir = ctx.intermediate_dir / "chunk_index_shards"
 
+    # Legacy migration: pre-existing concat sessions wrote shards keyed by virtual
+    # batch names (concat_batch_*.md.json). Concat is now real-file-keyed; loading
+    # those stale virtual shards would pollute existing_raw/raw_extractions.json with
+    # vname keys. Detect and clear them once so the session rebuilds real-keyed.
+    if _cfg.PASS2_PREP_MODE == "concat" and shard_dir.exists():
+        legacy = list(shard_dir.glob("concat_batch_*.json"))
+        if legacy:
+            log.warning(
+                "Step 6 — concat: detected %d legacy virtual-batch shard(s); "
+                "clearing for real-keyed rebuild",
+                len(legacy),
+            )
+            shutil.rmtree(shard_dir)
+            if chunk_shard_dir.exists():
+                shutil.rmtree(chunk_shard_dir)
+            for stale in ("raw_extractions.json", "chunk_node_index.json", "pass2_concat_map.json"):
+                (ctx.intermediate_dir / stale).unlink(missing_ok=True)
+
     existing_raw: dict = {}
     existing_chunk: dict = {}
 
@@ -79,13 +98,6 @@ def _run(
         existing_raw = json.loads(raw_path.read_text())
         existing_chunk = json.loads(chunk_path.read_text()) if chunk_path.exists() else {}
 
-    concat_map_path = ctx.intermediate_dir / "pass2_concat_map.json"
-    concat_map: dict[str, dict] = (
-        json.loads(concat_map_path.read_text())
-        if _cfg.PASS2_PREP_MODE == "concat" and concat_map_path.exists()
-        else {}
-    )
-
     if ctx.append and ctx.append_new_files is not None:
         todo = {f: _content_from_entry(manifest[f]) for f in ctx.append_new_files if f in manifest}
     else:
@@ -99,16 +111,6 @@ def _run(
         len(skip),
         len(todo),
     )
-
-    if _cfg.PASS2_PREP_MODE == "concat" and todo:
-        concat_map = build_concat_batches(todo, _cfg.PASS2_CONCAT_BATCH_TOKEN_TARGET)
-        todo = make_virtual_files(todo, concat_map)
-        concat_map_path.write_text(json.dumps(concat_map, indent=_cfg.JSON_INDENT))
-        log.info(
-            "Step 6 — concat: %d real file(s) → %d virtual batch(es)",
-            sum(len(e["files"]) for e in concat_map.values()),
-            len(todo),
-        )
 
     # Surgical re-extraction: when schema_hints are present and shards already exist,
     # only re-run the specific chunks named in shared_chunks rather than all files.
@@ -126,10 +128,6 @@ def _run(
                     if fname in existing_raw:
                         reextract_chunks.setdefault(fname, set()).add(int(idx_str))
         if reextract_chunks:
-            if concat_map:
-                real_contents = {f: _content_from_entry(manifest[f]) for f in manifest}
-                virtual_contents = make_virtual_files(real_contents, concat_map)
-                manifest = {**manifest, **virtual_contents}
             affected = {
                 f: _content_from_entry(manifest[f]) for f in reextract_chunks if f in manifest
             }
@@ -176,7 +174,7 @@ def _run(
     # todo path below against the already-grown schema. When the delta is empty this
     # is a no-op and the run collapses to a plain append (changed files only).
     if ctx.grow_schema and existing_raw:
-        _grow_schema_backfill(ctx, manifest, schema, flat, existing_raw, existing_chunk, concat_map)
+        _grow_schema_backfill(ctx, manifest, schema, flat, existing_raw, existing_chunk)
 
     if not todo:
         _log_and_write(ctx, existing_raw, existing_chunk)
@@ -185,9 +183,7 @@ def _run(
     shard_dir.mkdir(exist_ok=True)
     chunk_shard_dir.mkdir(exist_ok=True)
 
-    def _on_file_done(fname: str, result: dict, file_idx: dict) -> None:
-        existing_raw[fname] = result
-        existing_chunk[fname] = file_idx
+    def _write_shard(fname: str, result: dict, file_idx: dict) -> None:
         slug = _fname_slug(fname)
         (shard_dir / f"{slug}.json").write_text(
             json.dumps({"_fname": fname, "data": result}, indent=_cfg.JSON_INDENT)
@@ -196,7 +192,50 @@ def _run(
             json.dumps({"_fname": fname, "data": file_idx}, indent=_cfg.JSON_INDENT)
         )
 
-    if _cfg.PASS2_PREP_MODE == "batch_chunks":
+    def _on_file_done(fname: str, result: dict, file_idx: dict) -> None:
+        existing_raw[fname] = result
+        existing_chunk[fname] = file_idx
+        _write_shard(fname, result, file_idx)
+
+    if _cfg.PASS2_PREP_MODE == "concat":
+        # Original concat behaviour: bin-pack WHOLE files into virtual batches
+        # (dir+prefix grouping, never splitting a file at the packing stage), then
+        # run_pass2 re-chunks each virtual file at window_tokens and makes one LLM
+        # call per window. The ONLY change vs the original is shard keying: the
+        # virtual-batch result is fanned out to one REAL-file-keyed shard per member
+        # file (so --append change-detection, orphan-shard freedom, and the surgical
+        # schema-gap path all work). concat_map is rebuilt in-memory each run; it is
+        # not persisted (resumability now keys on real filenames).
+        concat_map = build_concat_batches(todo, _cfg.PASS2_CONCAT_BATCH_TOKEN_TARGET)
+        virtual_todo = make_virtual_files(todo, concat_map)
+        log.info(
+            "Step 6 — concat: %d real file(s) → %d virtual batch(es)",
+            sum(len(e["files"]) for e in concat_map.values()),
+            len(virtual_todo),
+        )
+
+        def _on_file_done_concat(vname: str, result: dict, file_idx: dict) -> None:
+            # Fan the virtual-batch result out to each member real file. The
+            # assembler's node/edge dedup collapses the duplication (same as
+            # batch_chunks over-attribution).
+            for real_fname in concat_map.get(vname, {}).get("files", [vname]):
+                existing_raw[real_fname] = result
+                existing_chunk[real_fname] = file_idx
+                _write_shard(real_fname, result, file_idx)
+
+        new_raw, new_chunk, _failed = run_pass2(
+            virtual_todo,
+            schema,
+            flat,
+            ctx.adapter,
+            max_workers=ctx.pass2_workers,
+            schema_hints=ctx.schema_hints or None,
+            on_file_done=_on_file_done_concat,
+            # skip_files omitted: virtual names regenerate each run; the real-file
+            # todo filter above already removed already-done real files.
+            error_gate=ctx.error_gate,
+        )
+    elif _cfg.PASS2_PREP_MODE == "batch_chunks":
         new_raw, new_chunk, _failed, batch_map = run_pass2_batched(
             todo,
             schema,
@@ -218,7 +257,7 @@ def _run(
             "Step 6 — batch map: %d batch(es) written to pass2_batch_map.json",
             len(batch_map),
         )
-    else:
+    else:  # per_file
         new_raw, new_chunk, _failed = run_pass2(
             todo,
             schema,
@@ -231,8 +270,11 @@ def _run(
             error_gate=ctx.error_gate,
         )
 
-    existing_raw.update(new_raw)
-    existing_chunk.update(new_chunk)
+    if _cfg.PASS2_PREP_MODE != "concat":
+        # concat's new_raw/new_chunk are keyed by virtual batch names; the fan-out
+        # in _on_file_done_concat already populated existing_raw with real keys.
+        existing_raw.update(new_raw)
+        existing_chunk.update(new_chunk)
     _log_and_write(ctx, existing_raw, existing_chunk)
 
 
@@ -282,15 +324,14 @@ def _grow_schema_backfill(
     flat: dict,
     existing_raw: dict,
     existing_chunk: dict,
-    concat_map: dict,
 ) -> None:
     """Surgically re-extract OLD files for newly-added schema types (D52, Invariant 16).
 
     Mutates existing_raw / existing_chunk in place and rewrites the affected shards.
     No-op when the schema did not grow, when back-fill is disabled (top_k == 0), or
-    when no old chunk carries a relevant signal type. Handles concat prep mode by
-    resolving virtual batch contents from the concat map (existing_raw is keyed by
-    virtual batch name in that mode).
+    when no old chunk carries a relevant signal type. In every prep mode existing_raw
+    and existing_chunk are keyed by real source filenames, so back-fill targets map
+    directly to manifest entries.
     """
     added_concepts, added_properties = _grow_schema_delta(ctx.base_schema, schema)
     if not added_concepts and not added_properties:
@@ -309,22 +350,7 @@ def _grow_schema_backfill(
     backfill = compute_backfill_chunks(
         added_concepts, added_properties, schema, existing_chunk, top_k
     )
-    # In concat mode, existing_raw is keyed by virtual batch names; resolve their
-    # contents from the concat map so back-fill targets can be re-extracted.
-    if concat_map:
-        real_contents = {f: _content_from_entry(manifest[f]) for f in manifest}
-        virtual_contents = make_virtual_files(real_contents, concat_map)
-        manifest = {**manifest, **virtual_contents}
-        changed_real = ctx.append_new_files or set()
-        # A virtual batch is "changed" iff it bundles a changed real file (it will be
-        # re-extracted in full by the todo path), so exclude it from back-fill.
-        changed = {
-            vname
-            for vname, entry in concat_map.items()
-            if any(rf in changed_real for rf in entry.get("files", []))
-        }
-    else:
-        changed = ctx.append_new_files or set()
+    changed = ctx.append_new_files or set()
 
     # Never re-extract the changed files here — they are (re-)extracted in full by the
     # normal todo path against the already-grown schema.

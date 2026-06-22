@@ -1655,10 +1655,13 @@ def _delete_from_step(
             if shard_path.exists():
                 shutil.rmtree(shard_path)
                 click.echo(f"Deleted {shard_path}")
-        concat_map_path = intermediate_dir / "pass2_concat_map.json"
-        if concat_map_path.exists():
-            concat_map_path.unlink()
-            click.echo(f"Deleted {concat_map_path}")
+        # pass2_concat_map.json is legacy (pre real-keyed concat); pass2_batch_map.json
+        # is written by the current concat/batch_chunks engines. Clear both on re-entry.
+        for map_name in ("pass2_concat_map.json", "pass2_batch_map.json"):
+            map_path = intermediate_dir / map_name
+            if map_path.exists():
+                map_path.unlink()
+                click.echo(f"Deleted {map_path}")
 
     # obsidian_vault/ and neo4j_csv/ are written by validate_graph but not tracked in
     # Step.outputs (they are optional; omitting them prevents _is_done from breaking
