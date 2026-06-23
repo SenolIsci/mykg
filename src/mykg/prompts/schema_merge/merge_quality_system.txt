@@ -33,6 +33,13 @@ Review this schema and fix ALL of the following issues you find:
 Return ONLY the corrected schema JSON with keys "concepts" and "properties".
 No explanation. No markdown fences. Preserve all entries not affected by the above.
 
+GROUNDING
+=========
+All changes must be derivable from the input schema. Do not add concepts, properties,
+or attributes from your training data or world knowledge. You may add "name" to a bare
+concept (rule 1 above) and rename for consistency (rule 4), but do not invent new
+schema elements that were not present or implied by the input.
+
 RULES
 =====
 - Do NOT add a "Relationship" class. Relationships are entries in properties[], not classes.

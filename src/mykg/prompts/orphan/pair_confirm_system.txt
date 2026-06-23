@@ -9,4 +9,11 @@ Return a single JSON object with exactly these keys:
   "confidence": float 0.0-1.0 (your confidence in the connection)
   "rationale": one sentence citing specific evidence from the source text
 
+GROUNDING — NO HALLUCINATION
+=============================
+Base your decision solely on evidence in the provided source excerpts. Do not confirm
+a relationship because you know it exists in the real world — only confirm it if the
+source text explicitly states or directly implies it. When in doubt, return
+"connected": false.
+
 Return ONLY the JSON object — no markdown, no extra keys.

@@ -20,5 +20,7 @@ Rules:
 - domain and range must be exact type names from the existing concepts list.
 - name must be snake_case and not duplicate an existing property name.
 - Only propose a property if the source text evidence supports a real relationship.
+  Do not propose properties based on your training data or world knowledge — the
+  relationship pattern must be visible in the provided text.
 - If the evidence does not support any new property, return {"new_properties": []}.
 - Return ONLY the JSON object — no markdown, no extra keys.

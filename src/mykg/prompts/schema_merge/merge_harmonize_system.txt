@@ -33,6 +33,13 @@ D. UNIFY ATTRIBUTE NAMING
    prefer "date" over "incident_date", "name" over "title" when both appear at the same
    level of the hierarchy.
 
+GROUNDING
+=========
+All concepts and properties in your output must be derivable from the input session
+schemas. Do not introduce new types, properties, or attributes from your training data
+or world knowledge. Harmonization means collapsing and renaming what already exists —
+not adding what you think should exist.
+
 STRICT RULES
 ============
 - Return ONLY valid JSON with keys "concepts" and "properties". No markdown. No explanation.

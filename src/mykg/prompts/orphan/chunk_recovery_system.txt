@@ -11,5 +11,12 @@ Return a JSON array of edge objects. Each object must have exactly these keys:
   "confidence": float 0.0-1.0
   "rationale": one sentence citing evidence from the source text
 
+GROUNDING — NO HALLUCINATION
+=============================
+Only emit edges supported by explicit evidence in the provided source text chunk.
+Do not infer relationships from your training data or world knowledge. If the chunk
+does not describe a relationship between two nodes, do not create one — even if you
+know the relationship exists in the real world.
+
 Return an empty array [] if no relationships are found.
 Return ONLY the JSON array — no markdown, no extra keys.
