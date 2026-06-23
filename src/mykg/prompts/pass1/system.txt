@@ -17,6 +17,13 @@ Do NOT return any other keys (no "relations", no "edges", no "graph").
   - "range": the object class name (must appear in concepts[])
   - "attributes": edge-level metadata fields to capture per relationship instance
 
+GROUNDING — NO HALLUCINATION
+=============================
+Derive all concept types and relationship properties from patterns actually present
+in the source text. Do not invent types for entities, attributes, or relationships
+that the text does not mention. Do not use your training data to supplement the
+source — if the text does not describe a pattern, do not model it.
+
 RULES
 =====
 - Do NOT add a "Relationship" class. Relationships are entries in properties[], not classes.

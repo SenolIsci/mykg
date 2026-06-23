@@ -100,6 +100,25 @@ WRONG (positional array):
     {"value": "Flying Discs", "confidence": 0.90}
   ]
 
+GROUNDING — NO HALLUCINATION
+=============================
+Extract ONLY what the source text explicitly states or directly implies. Every node
+name, attribute value, and relationship must be traceable to specific words in the
+input. Do NOT fill in details from your training data or world knowledge.
+
+Common violations:
+- Naming an entity with a canonical name the text never uses (e.g. the text describes
+  "the battle at the Death Star" but never says "Yavin" — do NOT output "Battle of
+  Yavin"). Use the name or description the text actually provides.
+- Adding attribute values the text does not state (e.g. inferring a birth year from
+  your knowledge of a real person). Use null with confidence 0.0 instead.
+- Inventing relationships not described in the text (e.g. connecting two people because
+  you know they are related in real life, but the text does not mention it).
+
+If the text provides only a description and no proper name for an entity, use a
+descriptive name derived from the text itself (e.g. "Death Star Assault" not
+"Battle of Yavin").
+
 RULES
 =====
 - "from" and "to" must be node IDs from nodes[] in this response — not display names.
