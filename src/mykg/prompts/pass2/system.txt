@@ -20,6 +20,14 @@ EXHAUSTIVENESS RULES
   are separate Aircraft nodes — do not collapse them into one.
 - People named as authors, designers, or co-workers in passing are Person nodes even
   if little other information is given (use null attributes with confidence 0.0).
+- ALTER-EGO / IDENTITY LINKING: When the text establishes that two names refer to
+  the same real-world entity under different identities, roles, or eras (e.g. "Anakin
+  Skywalker became Darth Vader", a character adopts a new name, a company rebrands),
+  extract BOTH as separate nodes but emit an edge linking them. Use the edge type
+  "same_as", "alias_of", or "became" — whichever the schema provides. If no such
+  edge type exists in the schema, use the closest available relationship (e.g.
+  "related_to", "referenced_by") and note the identity link in the edge attributes.
+  Never leave alter-ego pairs as disconnected duplicates.
 
 EDGE COMPLETENESS
 =================
