@@ -30,5 +30,9 @@ RULES
 =====
 - Only return mappings for names you are confident refer to the same entity.
 - Do not collapse names that might be different people (e.g. two people named "Alice").
+- Do NOT merge names that represent different identities, roles, or eras of the same
+  entity (e.g. "Anakin Skywalker" vs "Darth Vader", a person's birth name vs adopted
+  name, a company's pre- and post-rebrand names). These are intentionally separate
+  nodes — merging them destroys identity-linking edges in the graph.
 - Omit identity mappings (do not map "Alice Smith" -> "Alice Smith").
 - Return only JSON. No explanation. No markdown fences.
