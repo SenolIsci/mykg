@@ -140,7 +140,7 @@ Install [uv](https://docs.astral.sh/uv/getting-started/installation/), clone the
 
 ```bash
 git clone https://github.com/SenolIsci/mykg && cd mykg
-uv sync && mykg init
+uv sync && uv run mykg init --force
 ```
 
 Then extract a knowledge graph from your notes:
