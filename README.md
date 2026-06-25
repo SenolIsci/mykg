@@ -115,7 +115,7 @@ It uses a **two-pass LLM pipeline**: Pass 1 induces a global RDFS/OWL schema fro
 
 ## Quick Start
 
-Requires Python 3.11+, macOS (developed and tested on macOS; other platforms are not actively tested), and one of: an Anthropic/OpenAI/OpenRouter API key, Ollama running locally, or the `claude` CLI.
+Requires Python 3.11+ (developed on macOS; automated CI runs the test suite on Linux/Ubuntu — Windows is not actively tested), and one of: an Anthropic/OpenAI/OpenRouter API key, Ollama running locally, or the `claude` CLI.
 
 ### Install from PyPI
 
