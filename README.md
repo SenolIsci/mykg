@@ -124,6 +124,11 @@ Install mykg, then run the interactive setup wizard — it asks for your provide
 ```bash
 pip install mykg
 mykg init
+```
+
+Then extract a knowledge graph from your notes:
+
+```bash
 mykg extract-graph my_notes/
 ```
 
@@ -136,6 +141,11 @@ Install [uv](https://docs.astral.sh/uv/getting-started/installation/), clone the
 ```bash
 git clone https://github.com/SenolIsci/mykg && cd mykg
 uv sync && mykg init
+```
+
+Then extract a knowledge graph from your notes:
+
+```bash
 uv run mykg extract-graph my_notes/
 ```
 
