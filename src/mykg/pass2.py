@@ -693,7 +693,7 @@ def run_pass2_batched(
             progress["failed"] += 1
         tmp = progress_path.with_suffix(".tmp")
         tmp.write_text(json.dumps(progress, indent=2))
-        tmp.rename(progress_path)
+        tmp.replace(progress_path)
 
     batch_start = time.monotonic()
     done_batches = 0
