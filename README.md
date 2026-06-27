@@ -830,7 +830,7 @@ To serve a specific session:
 }
 ```
 
-The MCP server exposes 12 query tools: `mykg_search_nodes`, `mykg_get_node`, `mykg_get_neighbors`, `mykg_find_path`, `mykg_get_schema`, `mykg_list_node_types`, `mykg_query_subgraph`, `mykg_get_stats`, `mykg_query_graph` (BFS/DFS traversal), `mykg_hub_nodes`, `mykg_read_note` (Obsidian vault notes), and `mykg_list_sessions`.
+The MCP server exposes 13 query tools: `mykg_search_nodes`, `mykg_get_node`, `mykg_get_neighbors`, `mykg_find_path`, `mykg_get_schema`, `mykg_list_node_types`, `mykg_query_subgraph`, `mykg_get_stats`, `mykg_query_graph` (BFS/DFS traversal), `mykg_hub_nodes`, `mykg_orphan_nodes`, `mykg_read_note` (Obsidian vault LLM wiki notes), and `mykg_list_sessions`.
 
 **Configuration** — default transport, host, and port are set per profile in `mykg_config.yaml`:
 

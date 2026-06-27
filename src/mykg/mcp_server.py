@@ -437,20 +437,29 @@ async def mykg_get_stats(ctx: Context) -> str:
 
     original_input_dir = None
     raw_input_path = intermediate / "raw_input_folder.json"
-    if raw_input_path.exists():
-        original_input_dir = json.loads(raw_input_path.read_text(encoding="utf-8")).get("original_input_dir")
-    else:
+    try:
+        if raw_input_path.exists():
+            original_input_dir = json.loads(raw_input_path.read_text(encoding="utf-8")).get("original_input_dir")
+    except (json.JSONDecodeError, OSError):
+        pass
+    if original_input_dir is None:
         log_path = session_root / "run.log"
-        if log_path.exists():
-            for line in log_path.read_text(encoding="utf-8").splitlines()[:5]:
-                if "extract-graph " in line:
-                    original_input_dir = line.split("extract-graph ", 1)[1].split(" --")[0].strip()
-                    break
+        try:
+            if log_path.exists():
+                for line in log_path.read_text(encoding="utf-8").splitlines()[:5]:
+                    if "extract-graph " in line:
+                        original_input_dir = line.split("extract-graph ", 1)[1].split(" --")[0].strip()
+                        break
+        except OSError:
+            pass
 
     working_directory = None
     working_dir_path = intermediate / "working_directory.json"
-    if working_dir_path.exists():
-        working_directory = json.loads(working_dir_path.read_text(encoding="utf-8")).get("working_directory")
+    try:
+        if working_dir_path.exists():
+            working_directory = json.loads(working_dir_path.read_text(encoding="utf-8")).get("working_directory")
+    except (json.JSONDecodeError, OSError):
+        pass
 
     return json.dumps({
         "session_name": kg.session_name,
@@ -742,9 +751,11 @@ async def mykg_list_sessions(ctx: Context) -> str:
         node_count = 0
         edge_count = 0
         if nodes_path.exists():
-            node_count = sum(1 for line in nodes_path.read_text().splitlines() if line.strip())
+            with open(nodes_path, encoding="utf-8") as f:
+                node_count = sum(1 for line in f if line.strip())
         if edges_path.exists():
-            edge_count = sum(1 for line in edges_path.read_text().splitlines() if line.strip())
+            with open(edges_path, encoding="utf-8") as f:
+                edge_count = sum(1 for line in f if line.strip())
 
         sessions.append({
             "name": d.name,

@@ -33,7 +33,7 @@ It then builds a NetworkX `DiGraph` in memory (via `exporter.py:_build_nx_graph(
 
 | File | Action | What changes |
 |------|--------|--------------|
-| `src/mykg/mcp_server.py` | **create** | MCP server with KnowledgeGraph class, 11 tools, 2 resources |
+| `src/mykg/mcp_server.py` | **create** | MCP server with KnowledgeGraph class, 13 tools, 2 resources |
 | `src/mykg/cli.py` | modify | Add `mcp-serve` Click command before `main()` |
 | `src/mykg/config.py` | modify | Add `MCP_HOST`, `MCP_PORT`, `MCP_TRANSPORT` constants |
 | `mykg_config.yaml` | modify | Add `mcp:` top-level block |
@@ -42,7 +42,7 @@ It then builds a NetworkX `DiGraph` in memory (via `exporter.py:_build_nx_graph(
 | `tests/test_mcp_server.py` | **create** | Unit + integration tests (33 tests) |
 | `README.md` | modify | Add "Querying with MCP" section |
 
-## MCP Tools (11)
+## MCP Tools (13)
 
 All read-only, all with Pydantic input validation and `mykg_` prefix.
 Compared against [graphify](https://github.com/safishamsi/graphify) MCP server — we match or exceed its tool set for knowledge graph queries (graphify's PR-specific tools like `list_prs`/`triage_prs` are GitHub-specific and not applicable here).
