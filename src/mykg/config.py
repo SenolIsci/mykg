@@ -318,6 +318,7 @@ AGENT_POLL_INTERVAL_SECONDS: float = float(_agent.get("poll_interval_seconds", 2
 # MCP server — `mykg mcp-serve` settings (top-level, not profile-scoped)
 # ---------------------------------------------------------------------------
 _mcp = RAW.get("mcp") or {}
+MCP_ENABLED: bool = bool(_mcp.get("enabled", False))
 MCP_HOST: str = _mcp.get("host", "localhost")
 MCP_PORT: int = int(_mcp.get("port", 3100))
 MCP_TRANSPORT: str = _mcp.get("transport", "stdio")

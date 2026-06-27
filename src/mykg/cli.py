@@ -242,11 +242,13 @@ def init_config(
     # --- API key setup -------------------------------------------------------
     if meta["key_var"] is None:
         click.echo(f"No API key required for '{profile}'.")
+        mcp_enabled = _setup_mcp(dest, profile)
         _print_next_steps(
             profile,
             reinstall_skill=reinstall_skill,
             reinstall_claude_md=reinstall_claude_md,
             force=force,
+            mcp_enabled=mcp_enabled,
         )
         return
 
@@ -280,12 +282,72 @@ def init_config(
         else:
             click.echo(f"Skipped — set {var} in .env.mykg before running.")
 
+    # --- MCP server setup ----------------------------------------------------
+    mcp_enabled = _setup_mcp(dest, profile)
+
     _print_next_steps(
         profile,
         reinstall_skill=reinstall_skill,
         reinstall_claude_md=reinstall_claude_md,
         force=force,
+        mcp_enabled=mcp_enabled,
     )
+
+
+def _setup_mcp(config_path: Path, profile: str) -> bool:
+    """Prompt the user to enable and configure the MCP server. Returns True if enabled."""
+    import re
+
+    if click.confirm("\nEnable MCP server (mykg mcp-serve)?", default=False):
+        transport = click.prompt(
+            "Transport",
+            type=click.Choice(["stdio", "streamable_http"]),
+            default="stdio",
+            show_default=True,
+        )
+        host = "localhost"
+        port = 3100
+        if transport == "streamable_http":
+            host = click.prompt("Host", default="localhost", show_default=True).strip()
+            port = click.prompt("Port", default=3100, show_default=True, type=int)
+
+        content = config_path.read_text()
+        content = _patch_profile_mcp(content, profile, True, transport, host, port)
+        config_path.write_text(content)
+        click.echo(f"MCP server enabled (transport: {transport})")
+        return True
+
+    click.echo("MCP server disabled (enable later in mykg_config.yaml → mcp.enabled).")
+    return False
+
+
+def _patch_profile_mcp(
+    content: str, profile: str,
+    enabled: bool, transport: str, host: str, port: int,
+) -> str:
+    """Patch the mcp: block inside the active profile."""
+    import re
+
+    block_re = re.compile(
+        rf"(  {re.escape(profile)}:.*?    mcp:\n)"
+        r"(\s+enabled:\s*)\S+([^\n]*\n)"
+        r"(\s+host:\s*)\S+([^\n]*\n)"
+        r"(\s+port:\s*)\S+([^\n]*\n)"
+        r"(\s+transport:\s*)\S+([^\n]*)",
+        re.DOTALL,
+    )
+
+    def _replace(m: re.Match) -> str:
+        return (
+            f"{m.group(1)}"
+            f"{m.group(2)}{'true' if enabled else 'false'}{m.group(3)}"
+            f"{m.group(4)}{host}{m.group(5)}"
+            f"{m.group(6)}{port}{m.group(7)}"
+            f"{m.group(8)}{transport}{m.group(9)}"
+        )
+
+    result = block_re.sub(_replace, content, count=1)
+    return result
 
 
 def _patch_profile_model(content: str, profile: str, model: str) -> str:
@@ -514,6 +576,7 @@ def _print_next_steps(
     reinstall_skill: bool = False,
     reinstall_claude_md: bool = False,
     force: bool = False,
+    mcp_enabled: bool = False,
 ) -> None:
     if reinstall_skill and profile != "agent-claude-code":
         click.echo(
@@ -539,6 +602,11 @@ def _print_next_steps(
         click.echo("\nThen, in Claude Code:")
         click.echo("  1. Restart the app so the skill loader picks up the new entry.")
         click.echo("  2. Type:  /mykg <your_notes_directory>")
+
+    if mcp_enabled:
+        click.echo("\nMCP server:")
+        click.echo("  mykg mcp-serve                              # serve latest session")
+        click.echo("  mykg mcp-serve --session <name>             # serve a specific session")
         click.echo("\nUpgrade later with:  mykg init --reinstall-skill --reinstall-claude-md")
         click.echo("See docs/agent-mode.md for the full inbox/outbox contract.")
 
