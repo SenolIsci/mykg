@@ -696,22 +696,6 @@ def extract_graph(
         elif not Path(log_file).is_absolute():
             log_file = session_root / Path(log_file).name
 
-    # Persist the original input directory and working directory for downstream
-    # consumers (e.g. MCP server).
-    import json as _json
-    raw_input_path = intermediate_dir / "raw_input_folder.json"
-    if not raw_input_path.exists():
-        raw_input_path.write_text(
-            _json.dumps({"original_input_dir": original_input_dir}, indent=2),
-            encoding="utf-8",
-        )
-    working_dir_path = intermediate_dir / "working_directory.json"
-    if not working_dir_path.exists():
-        working_dir_path.write_text(
-            _json.dumps({"working_directory": str(Path.cwd().resolve())}, indent=2),
-            encoding="utf-8",
-        )
-
     setup(log_file=log_file, verbose=verbose)
     logging.getLogger(__name__).info("Command: %s", " ".join(sys.argv))
 
@@ -791,6 +775,20 @@ def extract_graph(
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     intermediate_dir.mkdir(parents=True, exist_ok=True)
+
+    import json as _json
+    raw_input_path = intermediate_dir / "raw_input_folder.json"
+    if not raw_input_path.exists():
+        raw_input_path.write_text(
+            _json.dumps({"original_input_dir": original_input_dir}, indent=2),
+            encoding="utf-8",
+        )
+    working_dir_path = intermediate_dir / "working_directory.json"
+    if not working_dir_path.exists():
+        working_dir_path.write_text(
+            _json.dumps({"working_directory": str(Path.cwd().resolve())}, indent=2),
+            encoding="utf-8",
+        )
 
     run(STEPS, ctx)
 
