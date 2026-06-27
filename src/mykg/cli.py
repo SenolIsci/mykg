@@ -1777,7 +1777,10 @@ def mcp_serve(session, transport, host, port, stop):
             return
         try:
             pid = int(pid_path.read_text().strip())
-            os.kill(pid, signal.SIGTERM)
+            if sys.platform == "win32":
+                os.kill(pid, signal.CTRL_BREAK_EVENT)
+            else:
+                os.kill(pid, signal.SIGTERM)
             click.echo(f"MCP server stopped (PID {pid}).")
         except ProcessLookupError:
             click.echo(f"MCP server process (PID {pid_path.read_text().strip()}) not found — stale PID file removed.")
