@@ -1759,6 +1759,13 @@ def _delete_merge_from_step(
 def mcp_serve(session, transport, host, port):
     """Start an MCP server to query a knowledge graph session."""
     cfg = _cfg()
+
+    if not getattr(cfg, "MCP_ENABLED", False):
+        raise click.ClickException(
+            "MCP server is disabled. Set mcp.enabled: true in mykg_config.yaml "
+            "under your active profile, then re-run."
+        )
+
     sessions_root = _sessions_root()
 
     if session:
