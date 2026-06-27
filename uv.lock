@@ -457,7 +457,7 @@ wheels = [
 
 [[package]]
 name = "mykg"
-version = "0.2.35"
+version = "0.2.42"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
