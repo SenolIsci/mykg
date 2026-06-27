@@ -646,6 +646,7 @@ def extract_graph(
     if grow_schema:
         append = True
 
+    original_input_dir = str(input_dir.resolve())
     sessions_root = _sessions_root()
 
     if session and (output_dir is not None or intermediate_dir is not None):
@@ -694,6 +695,22 @@ def extract_graph(
             log_file = session_root / "run.log"
         elif not Path(log_file).is_absolute():
             log_file = session_root / Path(log_file).name
+
+    # Persist the original input directory and working directory for downstream
+    # consumers (e.g. MCP server).
+    import json as _json
+    raw_input_path = intermediate_dir / "raw_input_folder.json"
+    if not raw_input_path.exists():
+        raw_input_path.write_text(
+            _json.dumps({"original_input_dir": original_input_dir}, indent=2),
+            encoding="utf-8",
+        )
+    working_dir_path = intermediate_dir / "working_directory.json"
+    if not working_dir_path.exists():
+        working_dir_path.write_text(
+            _json.dumps({"working_directory": str(Path.cwd().resolve())}, indent=2),
+            encoding="utf-8",
+        )
 
     setup(log_file=log_file, verbose=verbose)
     logging.getLogger(__name__).info("Command: %s", " ".join(sys.argv))
@@ -1728,6 +1745,64 @@ def _delete_merge_from_step(
         if flag_path.exists():
             flag_path.unlink()
             click.echo(f"Deleted {flag_path}")
+
+
+@cli.command("mcp-serve")
+@click.option("--session", default=None, help="Session name under mykg_sessions/; defaults to latest.")
+@click.option(
+    "--transport",
+    type=click.Choice(["stdio", "streamable_http"]),
+    default=None,
+    help="MCP transport (default from config or stdio).",
+)
+@click.option("--host", default=None, help="Host for streamable HTTP (default from config).")
+@click.option("--port", default=None, type=int, help="Port for streamable HTTP (default from config).")
+def mcp_serve(session, transport, host, port):
+    """Start an MCP server to query a knowledge graph session."""
+    cfg = _cfg()
+    sessions_root = _sessions_root()
+
+    if session:
+        session_root = sessions_root / session
+    else:
+        if not sessions_root.exists():
+            raise click.ClickException(
+                f"No sessions directory at {sessions_root}. "
+                "Run 'mykg extract-graph <dir>' first."
+            )
+        entries = sorted(
+            [
+                d for d in sessions_root.iterdir()
+                if d.is_dir() and (d / "output" / "nodes.jsonl").exists()
+            ],
+            key=lambda d: d.name,
+        )
+        if not entries:
+            raise click.ClickException(
+                f"No completed sessions found under {sessions_root}. "
+                "Run 'mykg extract-graph <dir>' first."
+            )
+        session_root = entries[-1]
+
+    nodes_path = session_root / "output" / "nodes.jsonl"
+    if not nodes_path.exists():
+        raise click.ClickException(
+            f"Session '{session_root.name}' has no output/nodes.jsonl. "
+            "Is the extraction complete?"
+        )
+
+    transport = transport or getattr(cfg, "MCP_TRANSPORT", "stdio")
+    host = host or getattr(cfg, "MCP_HOST", "localhost")
+    port = port or getattr(cfg, "MCP_PORT", 3100)
+
+    click.echo(
+        f"Serving session '{session_root.name}' via {transport}"
+        + (f" on {host}:{port}" if transport == "streamable_http" else ""),
+        err=True,
+    )
+
+    from mykg.mcp_server import run_server
+    run_server(session_root, transport=transport, host=host, port=port)
 
 
 def main():

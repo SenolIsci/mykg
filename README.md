@@ -50,6 +50,7 @@
   - [Walkthrough Report](#walkthrough-report)
   - [Obsidian Vault Export](#obsidian-vault-export)
   - [Neo4j LOAD CSV Export](#neo4j-load-csv-export)
+- [Querying with MCP](#querying-with-mcp-model-context-protocol)
 - [Using mykg with Claude Code](#using-mykg-with-claude-code)
   - [Agent mode (Claude Code skill)](#agent-mode-claude-code-skill)
   - [claude-cli profile](#claude-cli-profile)
@@ -771,6 +772,76 @@ mykg walkthrough --session 2026-05-17T18-31-07
 ```
 
 Disable with `pipeline.report.enabled: false`.
+
+## Querying with MCP (Model Context Protocol)
+
+Serve any completed session as an MCP server for LLM-powered Q&A:
+
+```bash
+# Serve the latest session (stdio transport — for Claude Desktop)
+mykg mcp-serve
+
+# Serve a specific session
+mykg mcp-serve --session 2026-06-25T19-16-18
+
+# Serve via streamable HTTP for web clients (Cherry Studio, etc.)
+mykg mcp-serve --transport streamable_http --port 3100
+
+# Serve a specific session via streamable HTTP
+mykg mcp-serve --session 2026-06-25T19-16-18 --transport streamable_http --port 3100
+```
+
+**Claude Desktop (stdio)** — the client launches mykg as a subprocess, no manual server start needed. Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "mykg": {
+      "command": "mykg",
+      "args": ["mcp-serve"]
+    }
+  }
+}
+```
+
+To serve a specific session:
+
+```json
+{
+  "mcpServers": {
+    "mykg": {
+      "command": "mykg",
+      "args": ["mcp-serve", "--session", "2026-06-25T19-16-18"]
+    }
+  }
+}
+```
+
+**Streamable HTTP** (Claude Desktop, Cherry Studio, MCP Inspector, or any HTTP-based client) — start the server first with `mykg mcp-serve --transport streamable_http --port 3100`, then connect your client:
+
+```json
+{
+  "mcpServers": {
+    "mykg": {
+      "type": "streamableHttp",
+      "url": "http://localhost:3100/mcp"
+    }
+  }
+}
+```
+
+The MCP server exposes 12 query tools: `mykg_search_nodes`, `mykg_get_node`, `mykg_get_neighbors`, `mykg_find_path`, `mykg_get_schema`, `mykg_list_node_types`, `mykg_query_subgraph`, `mykg_get_stats`, `mykg_query_graph` (BFS/DFS traversal), `mykg_hub_nodes`, `mykg_read_note` (Obsidian vault notes), and `mykg_list_sessions`.
+
+**Configuration** — default transport, host, and port are set per profile in `mykg_config.yaml`:
+
+```yaml
+    mcp:
+      host: localhost              # bind address for streamable HTTP (ignored for stdio)
+      port: 3100                   # port for streamable HTTP (ignored for stdio)
+      transport: stdio             # default transport: stdio | streamable_http
+```
+
+To default to streamable HTTP, change `transport: streamable_http` in your active profile. CLI flags (`--transport`, `--host`, `--port`) override the config.
 
 ---
 

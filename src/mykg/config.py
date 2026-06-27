@@ -68,6 +68,8 @@ def _apply_profile(raw: dict) -> dict:
         result["llm_retry"] = profile["llm_retry"]
     if "agent" in profile:
         result["agent"] = profile["agent"]
+    if "mcp" in profile:
+        result["mcp"] = profile["mcp"]
     return result
 
 
@@ -311,3 +313,11 @@ _agent = RAW.get("agent") or {}
 AGENT_INBOX_DIR: str = _agent.get("inbox_dir", "agent_inbox")
 AGENT_OUTBOX_DIR: str = _agent.get("outbox_dir", "agent_outbox")
 AGENT_POLL_INTERVAL_SECONDS: float = float(_agent.get("poll_interval_seconds", 2))
+
+# ---------------------------------------------------------------------------
+# MCP server — `mykg mcp-serve` settings (top-level, not profile-scoped)
+# ---------------------------------------------------------------------------
+_mcp = RAW.get("mcp") or {}
+MCP_HOST: str = _mcp.get("host", "localhost")
+MCP_PORT: int = int(_mcp.get("port", 3100))
+MCP_TRANSPORT: str = _mcp.get("transport", "stdio")
