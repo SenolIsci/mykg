@@ -183,7 +183,7 @@ profiles:
         grow_schema_backfill_top_k_chunks_per_type: 10  # --append --grow-schema: 0 = disable back-fill; >0 = top-K old chunks re-extracted per newly added concept/property (ranked by domain/range/hierarchy node co-occurrence) (D52)
     # --- MCP server — mykg mcp-serve settings --------------------------------
     mcp:
-      enabled: false               # set true to enable the MCP server (mykg mcp-serve)
+      enabled: true                # master toggle for the MCP server (mykg mcp-serve) (mykg mcp-serve)
       host: localhost              # bind address for streamable HTTP (ignored for stdio)
       port: 3100                   # port for streamable HTTP (ignored for stdio)
       transport: stdio             # default transport: stdio | streamable_http
@@ -355,7 +355,7 @@ profiles:
         grow_schema_backfill_top_k_chunks_per_type: 10  # --append --grow-schema: 0 = disable back-fill; >0 = top-K old chunks re-extracted per newly added concept/property (ranked by domain/range/hierarchy node co-occurrence) (D52)
     # --- MCP server — mykg mcp-serve settings --------------------------------
     mcp:
-      enabled: false               # set true to enable the MCP server (mykg mcp-serve)
+      enabled: true                # master toggle for the MCP server (mykg mcp-serve) (mykg mcp-serve)
       host: localhost              # bind address for streamable HTTP (ignored for stdio)
       port: 3100                   # port for streamable HTTP (ignored for stdio)
       transport: stdio             # default transport: stdio | streamable_http
@@ -524,7 +524,7 @@ profiles:
         grow_schema_backfill_top_k_chunks_per_type: 10  # --append --grow-schema: 0 = disable back-fill; >0 = top-K old chunks re-extracted per newly added concept/property (ranked by domain/range/hierarchy node co-occurrence) (D52)
     # --- MCP server — mykg mcp-serve settings --------------------------------
     mcp:
-      enabled: false               # set true to enable the MCP server (mykg mcp-serve)
+      enabled: true                # master toggle for the MCP server (mykg mcp-serve) (mykg mcp-serve)
       host: localhost              # bind address for streamable HTTP (ignored for stdio)
       port: 3100                   # port for streamable HTTP (ignored for stdio)
       transport: stdio             # default transport: stdio | streamable_http
@@ -702,7 +702,7 @@ profiles:
         grow_schema_backfill_top_k_chunks_per_type: 10  # --append --grow-schema: 0 = disable back-fill; >0 = top-K old chunks re-extracted per newly added concept/property (ranked by domain/range/hierarchy node co-occurrence) (D52)
     # --- MCP server — mykg mcp-serve settings --------------------------------
     mcp:
-      enabled: false               # set true to enable the MCP server (mykg mcp-serve)
+      enabled: true                # master toggle for the MCP server (mykg mcp-serve) (mykg mcp-serve)
       host: localhost              # bind address for streamable HTTP (ignored for stdio)
       port: 3100                   # port for streamable HTTP (ignored for stdio)
       transport: stdio             # default transport: stdio | streamable_http
@@ -874,7 +874,7 @@ profiles:
         grow_schema_backfill_top_k_chunks_per_type: 10  # --append --grow-schema: 0 = disable back-fill; >0 = top-K old chunks re-extracted per newly added concept/property (ranked by domain/range/hierarchy node co-occurrence) (D52)
     # --- MCP server — mykg mcp-serve settings --------------------------------
     mcp:
-      enabled: false               # set true to enable the MCP server (mykg mcp-serve)
+      enabled: true                # master toggle for the MCP server (mykg mcp-serve) (mykg mcp-serve)
       host: localhost              # bind address for streamable HTTP (ignored for stdio)
       port: 3100                   # port for streamable HTTP (ignored for stdio)
       transport: stdio             # default transport: stdio | streamable_http
@@ -1036,7 +1036,7 @@ profiles:
         grow_schema_backfill_top_k_chunks_per_type: 10  # --append --grow-schema: 0 = disable back-fill; >0 = top-K old chunks re-extracted per newly added concept/property (D52)
     # --- MCP server — mykg mcp-serve settings --------------------------------
     mcp:
-      enabled: false               # set true to enable the MCP server (mykg mcp-serve)
+      enabled: true                # master toggle for the MCP server (mykg mcp-serve) (mykg mcp-serve)
       host: localhost              # bind address for streamable HTTP (ignored for stdio)
       port: 3100                   # port for streamable HTTP (ignored for stdio)
       transport: stdio             # default transport: stdio | streamable_http
