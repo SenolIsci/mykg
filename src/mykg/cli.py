@@ -1746,6 +1746,13 @@ def _delete_merge_from_step(
             click.echo(f"Deleted {flag_path}")
 
 
+def _mcp_pid_path() -> Path:
+    """Return the path to the MCP server PID file."""
+    d = Path.home() / ".mykg"
+    d.mkdir(exist_ok=True)
+    return d / "mcp-serve.pid"
+
+
 @cli.command("mcp-serve")
 @click.option("--session", default=None, help="Session name under mykg_sessions/; defaults to latest.")
 @click.option(
@@ -1756,8 +1763,29 @@ def _delete_merge_from_step(
 )
 @click.option("--host", default=None, help="Host for streamable HTTP (default from config).")
 @click.option("--port", default=None, type=int, help="Port for streamable HTTP (default from config).")
-def mcp_serve(session, transport, host, port):
-    """Start an MCP server to query a knowledge graph session."""
+@click.option("--stop", is_flag=True, default=False, help="Stop a running MCP server.")
+def mcp_serve(session, transport, host, port, stop):
+    """Start (or stop) an MCP server to query a knowledge graph session."""
+    import os
+    import signal
+
+    pid_path = _mcp_pid_path()
+
+    if stop:
+        if not pid_path.exists():
+            click.echo("No MCP server is running (no PID file found).")
+            return
+        try:
+            pid = int(pid_path.read_text().strip())
+            os.kill(pid, signal.SIGTERM)
+            click.echo(f"MCP server stopped (PID {pid}).")
+        except ProcessLookupError:
+            click.echo(f"MCP server process (PID {pid_path.read_text().strip()}) not found — stale PID file removed.")
+        except ValueError:
+            click.echo("Corrupt PID file — removing.")
+        pid_path.unlink(missing_ok=True)
+        return
+
     cfg = _cfg()
 
     if not getattr(cfg, "MCP_ENABLED", False):
@@ -1801,14 +1829,20 @@ def mcp_serve(session, transport, host, port):
     host = host or getattr(cfg, "MCP_HOST", "localhost")
     port = port or getattr(cfg, "MCP_PORT", 3100)
 
+    if transport == "streamable_http":
+        pid_path.write_text(str(os.getpid()))
+
     click.echo(
         f"Serving session '{session_root.name}' via {transport}"
         + (f" on {host}:{port}" if transport == "streamable_http" else ""),
         err=True,
     )
 
-    from mykg.mcp_server import run_server
-    run_server(session_root, transport=transport, host=host, port=port)
+    try:
+        from mykg.mcp_server import run_server
+        run_server(session_root, transport=transport, host=host, port=port)
+    finally:
+        pid_path.unlink(missing_ok=True)
 
 
 def main():
