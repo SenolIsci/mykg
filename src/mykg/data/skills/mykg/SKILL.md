@@ -526,6 +526,31 @@ Do not dispatch anything.
 
 No CLI call, no subprocess, no LLM call from inside the skill. The skill answers the user's question using the target session's graph data (latest unless the user named one).
 
+#### Source-attribution discipline — NO training-data contamination
+
+**Every claim in a query answer must be traceable to a specific session artifact** (a node ID, an edge record, a vault note filename, an MCP tool response). If the session data does not contain the information, **say so** — do not fill gaps with your training knowledge.
+
+Concrete rules:
+
+1. **Never state a fact about the domain unless the session data supports it.** If the graph has Owen Lars with two edges (`located_at Tatooine`, `member_of Jedi Knight`), report exactly those two edges. Do not add "Owen is Luke's uncle" or "he was a moisture farmer" — those facts are not in the graph.
+2. **Never judge correctness of graph data using training knowledge.** Do not say an edge is "correct" or "incorrect" based on what you know from pre-training. You may say an edge has confidence 0.0 (that is a graph fact), but not that the edge is "wrong because Owen was never a Jedi" (that is training-data reasoning).
+3. **Never list "missing relationships" sourced from training data.** If the user asks "what's missing?", answer only from what the graph *does* contain and what structural signals suggest (orphan status, low confidence, absent attributes). Do not invent expected relationships from general knowledge.
+4. **If you must use training data, label it explicitly.** Occasionally the user asks a question that genuinely requires outside knowledge (e.g., "is this graph accurate?"). In that case, separate the answer into two clearly labelled sections:
+
+   ```
+   **From the graph (session <name>):**
+   <facts with node IDs, edge types, confidence scores, source files>
+
+   **From training data (not in the graph — may be inaccurate):**
+   <any claims sourced from pre-training, with a caveat>
+   ```
+
+   The graph section always comes first. The training-data section must carry the caveat that it may be inaccurate or outdated. If the user did not ask for an accuracy judgment, **omit the training-data section entirely**.
+
+5. **Cite sources for every fact.** Every claim must end with a parenthetical citation: a node ID (`person-owen-lars`), an edge record (`located_at, confidence 1.0, method: orphan_inferred`), a vault note filename (`Owen Lars.md`), or an MCP tool call name. No uncited claims.
+
+**This rule is non-negotiable.** It is better to give a short, accurate, graph-only answer than a rich answer contaminated with ungrounded training-data assertions.
+
 **Routing priority: MCP first, file-read fallback.**
 
 If `mcp__mykg__*` tools are available in the current session (configured via `.mcp.json`), use them to answer the query. The MCP tools are indexed, return structured JSON, and support graph algorithms (shortest path, hub analysis, traversal, subgraph filtering) that manual file reading cannot do. Pick whichever MCP tool fits the question — the tool names and descriptions are self-documenting.
