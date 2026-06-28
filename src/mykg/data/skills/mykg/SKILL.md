@@ -72,6 +72,11 @@ Trigger this skill whenever the user types `/mykg <anything>`. Map the intent to
 | `/mykg from-step orphan_connect on the last session` | `mykg extract-graph --session <most-recent> --from-step orphan_connect` (explicit reuse via `the last session` + `--from-step`) |
 | `/mykg rerun orphan-connect from scratch on the last session` | `mykg extract-graph --session <most-recent> --from-step orphan_connect_fullsweep` (explicit reuse via `the last session`) |
 | `/mykg redo orphans but keep what we already confirmed` | `mykg extract-graph --session <most-recent> --from-step orphan_connect_incremental` (explicit reuse via `redo` — `--from-step` always operates on an existing session) |
+| `/mykg start mcp server` | `mykg mcp-serve --transport streamable_http --port 3100` (starts MCP server on HTTP; no session concept) |
+| `/mykg start mcp` | `mykg mcp-serve` (starts MCP server with defaults from config; no session concept) |
+| `/mykg start mcp for session <name>` | `mykg mcp-serve --session <name>` (MCP server for a specific session) |
+| `/mykg stop mcp` | `mykg mcp-serve --stop` (stops a running HTTP MCP server) |
+| `/mykg mcp status` | check if MCP server is running: `ps aux \| grep "mcp-serve" \| grep -v grep` |
 | `/mykg init` | refuse: "Run `mykg init` from a shell — it is interactive." |
 | `/mykg merge sessions A and B` | refuse: "Skill support for `mykg merge-graphs` is planned in a follow-up. Run from a shell." |
 
@@ -443,6 +448,38 @@ chained "fetch and extract" form (see Stage 1 intent table), proceed to Stage
 after the Stage 2 confirmation) using the captured path(s) as `INPUT_DIR`.
 
 Capture stdout/stderr; surface any non-zero exit to the user verbatim.
+
+### Stage 4b2 — MCP server path (`mcp-serve`)
+
+MCP server commands are synchronous — run in the foreground and report.
+
+**Start:**
+
+```bash
+uv run mykg mcp-serve $ARGS
+```
+
+This blocks — the server runs until stopped. For streamable HTTP, the
+server writes a PID file to `~/.mykg/mcp-serve.pid`. Report the transport
+and port to the user.
+
+**Stop:**
+
+```bash
+uv run mykg mcp-serve --stop
+```
+
+Reports whether the server was stopped or was not running.
+
+**Status:**
+
+```bash
+ps aux | grep "mcp-serve" | grep -v grep
+```
+
+Report whether a server is running and on which transport/port.
+
+No confirmation needed — MCP server commands are safe (no LLM cost, no data writes).
 
 ### Stage 4c — refused (`init`, `merge-graphs`)
 
