@@ -1,11 +1,11 @@
 ---
 name: mykg
-description: Run mykg knowledge-graph commands inside Claude Code from one slash command `/mykg`. The user describes intent in natural language (extract, append, resume, approve, walkthrough, parse-docs, fetch-web, query); the skill parses intent, builds the right `mykg` CLI command from the live `--help` output, confirms, runs it, and drives the inbox/outbox watch loop for LLM-bearing commands (extract-graph). Also handles read-only queries against existing sessions (`query`) by reading `obsidian_vault/` or `nodes.jsonl`/`edges.jsonl` directly — no CLI call. Excludes `mykg init` (interactive shell command) and `mykg merge-graphs` (follow-up planning).
+description: Run mykg knowledge-graph commands inside Claude Code from one slash command `/mykg`. The user describes intent in natural language (extract, append, resume, approve, walkthrough, parse-docs, fetch-web, query); the skill parses intent, builds the right `mykg` CLI command from the live `--help` output, confirms, runs it, and drives the inbox/outbox watch loop for LLM-bearing commands (extract-graph). For read-only queries, prefers MCP tools when the mykg MCP server is online, falling back to reading session files directly. Ensures `.mcp.json` is configured (with user approval). Excludes `mykg init` (interactive shell command) and `mykg merge-graphs` (follow-up planning).
 ---
 
 # mykg — single slash command, intent-driven CLI dispatcher
 
-This skill is the agent-mode driver for **mykg**. The user types `/mykg <free text>` describing what they want; the skill parses the intent, assembles the matching `mykg` CLI command (with live `--help` as ground truth for flags), confirms expensive actions, and executes. For LLM-bearing subcommands (`extract-graph`), it then drives the inbox/outbox watch loop. For synchronous subcommands (`walkthrough`, `approve-schema`, `parse-docs`), it shells out and reports. For the read-only `query` verb, it reads files from the latest session directly — no subprocess, no LLM call from the skill.
+This skill is the agent-mode driver for **mykg**. The user types `/mykg <free text>` describing what they want; the skill parses the intent, assembles the matching `mykg` CLI command (with live `--help` as ground truth for flags), confirms expensive actions, and executes. For LLM-bearing subcommands (`extract-graph`), it then drives the inbox/outbox watch loop. For synchronous subcommands (`walkthrough`, `approve-schema`, `parse-docs`), it shells out and reports. For the read-only `query` verb, it prefers MCP tools when the mykg MCP server is online, falling back to reading session files directly when MCP is unavailable.
 
 The pipeline code, the orchestrator, all prompts, all 12 pipeline steps, and the inbox/outbox contract are **unchanged**. This skill only changes how `mykg` is invoked from inside Claude Code.
 
@@ -98,6 +98,40 @@ Use these cached values to:
 - validate that any flag the user mentioned actually exists,
 - complain if the user typed a non-existent flag,
 - automatically pick up new flags (e.g. tomorrow a `--use-cache` flag is added) with zero skill changes.
+
+---
+
+## MCP configuration — ensure `.mcp.json` exists
+
+At the start of every skill turn, check whether the project has a `.mcp.json` file that configures the mykg MCP server for Claude Code. If it does not exist, **ask the user for approval** before creating it:
+
+```
+I noticed this project doesn't have a .mcp.json file to configure the mykg
+MCP server for Claude Code. The MCP server provides 14 structured read-only
+tools (search, neighbors, shortest path, hub nodes, subgraph queries, etc.)
+that are faster and more precise than manual grep/Read for graph queries.
+
+Shall I create .mcp.json with this content?
+
+  {
+    "mcpServers": {
+      "mykg": {
+        "command": "mykg",
+        "args": ["mcp-serve"]
+      }
+    }
+  }
+
+This tells Claude Code to start `mykg mcp-serve` as an MCP subprocess,
+making the `mcp__mykg__*` tools available in this session. The server
+auto-discovers the latest session on startup.
+```
+
+If the user approves, write the file. If the user declines, proceed without it — the skill falls back to manual grep/Read in Stage 4d as before.
+
+If `.mcp.json` already exists but does **not** contain a `mykg` server entry, ask the user whether to add one (preserve the existing entries). If it already has a `mykg` entry, do nothing.
+
+**Do not create `.mcp.json` without user approval.** This file affects the Claude Code session and the user must consent.
 
 ---
 
@@ -488,11 +522,17 @@ No confirmation needed — MCP server commands are safe (no LLM cost, no data wr
 
 Do not dispatch anything.
 
-### Stage 4d — read-only file-read path (`query`)
+### Stage 4d — read-only query path (`query`)
 
-No CLI call, no subprocess, no LLM call from inside the skill. The skill reads files from the target session (latest unless the user named one) directly, places the relevant content into context, and lets the host LLM answer the user's question from that material.
+No CLI call, no subprocess, no LLM call from inside the skill. The skill answers the user's question using the target session's graph data (latest unless the user named one).
 
-**Routing — vault vs. jsonl**
+**Routing priority: MCP first, file-read fallback.**
+
+If `mcp__mykg__*` tools are available in the current session (configured via `.mcp.json`), use them to answer the query. The MCP tools are indexed, return structured JSON, and support graph algorithms (shortest path, hub analysis, traversal, subgraph filtering) that manual file reading cannot do. Pick whichever MCP tool fits the question — the tool names and descriptions are self-documenting.
+
+If MCP tools are not available or the call fails, fall back to reading session files directly as described below.
+
+**File-read fallback — vault vs. jsonl**
 
 Pick the read source from the wording of the user's question:
 
@@ -585,9 +625,10 @@ Use the jsonl path to identify the target node(s), then resolve `<node>.md` in t
 
 **Confirmation behaviour**
 
-`query` is read-only and free, so **do not** ask the user to confirm. Just run it. Do echo a one-line summary of what was read before answering:
+`query` is read-only and free, so **do not** ask the user to confirm. Just run it. Do echo a one-line summary of the path used before answering:
 
 ```
+[query] MCP: answered via 2 MCP tool calls.
 [query] vault: read 3 notes from $VAULT (Alice.md, AcmeCorp.md, Project_Phoenix.md).
 [query] jsonl: read 47 nodes + 89 edges from $SESSION_ROOT/output/.
 ```
