@@ -493,6 +493,8 @@ profiles:
         comment_width: 42          # column width for section divider comments in knowledge_graph.ttl
         skos_namespace: "http://www.w3.org/2004/02/skos/core#"  # SKOS namespace for skos:altLabel alias triples
         networkx_enabled: true     # write NetworkX multi-format exports to output/networkx_output/ (GML, GraphML, GEXF, etc.)
+        obsidian_enabled: true     # write Obsidian vault to output/obsidian_vault/ (markdown notes + graph links)
+        obsidian_vault_dir: obsidian_vault  # subdirectory under output/ for the Obsidian vault
         neo4j_csv_enabled: false    # write Neo4j LOAD CSV bundle to output/neo4j_csv/ (CSVs + browser/cypher-shell scripts + README)
         neo4j_csv_dir: neo4j_csv    # subdirectory under output/ for the Neo4j LOAD CSV bundle
       # --- Pipeline infrastructure --------------------------------------------
@@ -715,19 +717,19 @@ profiles:
   #
   # Token budget chain — adjust for your model's actual context window:
   #   ① context_window    = 64000  (adjust per model; check `ollama show <model>`)
-  #   ② max_output_tokens = 8000
-  #   ③ input_headroom    = ① − ② = 56000
-  #      batch_token_target = 8000  (conservative — local models need short output for reliable JSON)
-  #      window_tokens      = batch_token_target / 4 = 2000
-  #      overlap_tokens     = window_tokens × 0.10 = 200
+  #   ② max_output_tokens = 16000
+  #   ③ input_headroom    = ① − ② = 48000
+  #      batch_token_target = 16000  (doubled from 8K baseline)
+  #      window_tokens      = batch_token_target / 4 = 4000
+  #      overlap_tokens     = window_tokens × 0.10 = 400
   # ---------------------------------------------------------------------------
     provider: ollama
     llm_retry:
       max_retries: 2        # retries on empty/blank response; set to 0 to disable
     llm:
       context_window: 64000      # ① model's total context limit — adjust per model
-      max_output_tokens: 8000     # ② output cap
-      model: gemma4:e4b             # any model you have pulled via `ollama pull`
+      max_output_tokens: 16000    # ② output cap (doubled)
+      model: gemma4:31b-cloud       # any model you have pulled via `ollama pull`
       base_url: http://localhost:11434
       timeout: 1800                # seconds per LLM call; local inference can be slow
       stream: false               # Ollama streaming — keep false for pipeline use
@@ -788,12 +790,12 @@ profiles:
         github_clone_timeout_seconds: 1800  # git clone timeout (30 min)
         max_workers: 1                 # max concurrent seed crawls inside one shared venv for --url-list
       chunking:
-        window_tokens: 2000      # ≈ batch_token_target / 4
-        overlap_tokens: 200      # = window_tokens × 0.10
+        window_tokens: 4000      # = batch_token_target / 4
+        overlap_tokens: 400      # = window_tokens × 0.10
         tiktoken_encoding: cl100k_base
       # --- Pass 1: schema induction -------------------------------------------
       pass1:
-        batch_token_target: 8000   # conservative for local models; MUST stay ≤ context_window − max_output_tokens
+        batch_token_target: 16000  # doubled; MUST stay ≤ context_window − max_output_tokens
         max_workers: 1              # local GPU can usually handle a small degree of parallelism
         per_file_batching: false
       # --- Pass 2: instance extraction ----------------------------------------
@@ -801,8 +803,8 @@ profiles:
         max_workers: 1
         stateful_chunks: true
         prep_mode: batch_chunks                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
-        concat_batch_token_target: 8000   # target token budget per virtual batch; used when prep_mode=concat
-        batch_token_target: 8000          # token budget per chunk batch; used when prep_mode=batch_chunks
+        concat_batch_token_target: 16000  # target token budget per virtual batch; used when prep_mode=concat
+        batch_token_target: 16000         # token budget per chunk batch; used when prep_mode=batch_chunks
         batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
         batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
@@ -897,6 +899,8 @@ profiles:
     llm_retry:
       max_retries: 0
     llm:
+      context_window: 200000    # agent delegates to Claude Code skill; this is the skill's effective context
+      model: claude-sonnet-4-6  # informational — the skill uses whatever model the host assistant runs
       max_output_tokens: 32000  # passed through to the task envelope; the skill enforces it
       timeout: 1800             # seconds the pipeline will wait for a .done sentinel
       retry_429_max: 0          # agent provider does not hit API rate limits
