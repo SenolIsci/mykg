@@ -50,7 +50,7 @@
   - [Walkthrough Report](#walkthrough-report)
   - [Obsidian Vault Export](#obsidian-vault-export)
   - [Neo4j LOAD CSV Export](#neo4j-load-csv-export)
-- [Querying with MCP](#querying-with-mcp-model-context-protocol)
+- [MCP (Model Context Protocol) Server](#mcp-model-context-protocol-server)
 - [Using mykg with Claude Code](#using-mykg-with-claude-code)
   - [Agent mode (Claude Code skill)](#agent-mode-claude-code-skill)
   - [claude-cli profile](#claude-cli-profile)
@@ -72,7 +72,7 @@ MyKG builds trustworthy knowledge graphs through a self-evolving ontology that c
 - **Incremental updates** — append new files to an existing session, extracting only what changed. Optionally grow the schema from new documents while preserving existing concepts and properties
 - **AI coding assistant friendly** — designed for smooth use alongside AI coding assistants such as [Claude Code](https://claude.ai/code); run extractions, inspect outputs, and iterate on your knowledge graph without leaving your coding environment; see [Using mykg with Claude Code](#using-mykg-with-claude-code)
 - **Second brain for AI coding assistants** — the Obsidian vault output turns your extracted knowledge graph into a directory of wikilinked Markdown notes that any AI coding assistant can read as project context; point Claude Code, Cursor, or Copilot at `output/obsidian_vault/` and ask questions, trace relationships, and get answers grounded in your own documents
-- **MCP server for desktop AI apps** — run `mykg mcp-serve` to expose your knowledge graph via the [Model Context Protocol](https://modelcontextprotocol.io/); integrates with [Claude Desktop](https://claude.ai/download), [Cherry Studio](https://cherry-ai.com), and any MCP-compatible client — 13 query tools let LLMs search entities, explore relationships, find paths, traverse the graph, and read wiki notes directly from your extracted knowledge; see [Querying with MCP](#querying-with-mcp-model-context-protocol)
+- **MCP server for desktop AI apps** — run `mykg mcp-serve` to expose your knowledge graph via the [Model Context Protocol](https://modelcontextprotocol.io/); integrates with [Claude Desktop](https://claude.ai/download), [Cherry Studio](https://cherry-ai.com), and any MCP-compatible client — 13 query tools let LLMs search entities, explore relationships, find paths, traverse the graph, and read wiki notes directly from your extracted knowledge; see [MCP Server](#mcp-model-context-protocol-server)
 <p align="center">
   <img src="https://gcore.jsdelivr.net/gh/SenolIsci/mykg@main/docs/diagrams/architecture-sketch.png" width="95%" style="vertical-align:middle;">
 </p>
@@ -774,7 +774,7 @@ mykg walkthrough --session 2026-05-17T18-31-07
 
 Disable with `pipeline.report.enabled: false`.
 
-## Querying with MCP (Model Context Protocol)
+## MCP (Model Context Protocol) Server
 
 Serve any completed session as an MCP server for LLM-powered Q&A:
 
