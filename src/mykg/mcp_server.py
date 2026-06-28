@@ -810,9 +810,14 @@ async def mykg_reload(ctx: Context, session: str | None = None) -> str:
 
     new_root = None
     if session:
-        candidate = app_ctx.sessions_root / session
-        nodes_path = candidate / "output" / "nodes.jsonl"
-        if not nodes_path.exists():
+        if '/' in session or '\\' in session or session in ('.', '..') or Path(session).is_absolute():
+            return f"Error: invalid session name '{session}'."
+        candidate = (app_ctx.sessions_root / session).resolve()
+        try:
+            candidate.relative_to(app_ctx.sessions_root.resolve())
+        except ValueError:
+            return f"Error: session '{session}' is outside sessions_root."
+        if not (candidate / "output" / "nodes.jsonl").exists():
             return f"Error: Session '{session}' not found or has no output/nodes.jsonl."
         new_root = candidate
 
