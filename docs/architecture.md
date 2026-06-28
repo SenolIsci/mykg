@@ -20,6 +20,7 @@ This document explains how **myKG** works at a conceptual level: the pipelines, 
 - [Merge Pipeline](#merge-pipeline)
 - [Output Formats](#output-formats)
 - [MCP Server (`mykg mcp-serve`)](#mcp-server-mykg-mcp-serve)
+- [Skill vs MCP — Capability Comparison](#skill-vs-mcp--capability-comparison)
 - [Resumability and Re-entry](#resumability-and-re-entry)
 - [Re-entry Points](#re-entry-points)
 - [Correction Model](#correction-model)
@@ -560,6 +561,47 @@ Default transport, host, and port are set per profile in `mykg_config.yaml` unde
 ### Module
 
 The server is implemented as a single module (`src/mykg/mcp_server.py`) using FastMCP from the official MCP Python SDK. All tools use direct function parameters (no Pydantic wrapper models) for correct MCP argument passing. The CLI command is registered in `src/mykg/cli.py`.
+
+---
+
+## Skill vs MCP — Capability Comparison
+
+The mykg skill (`/mykg`) and the mykg MCP server (`mykg mcp-serve`) are complementary interfaces: the skill handles write/pipeline operations, the MCP server handles structured read/query operations. Both can be active in the same Claude Code session. When the MCP server is online, the skill's query path (Stage 4d) can delegate to MCP tools instead of manual grep/Read for more precise, indexed results.
+
+| Capability | mykg Skill (`/mykg`) | mykg MCP | Notes |
+|---|---|---|---|
+| **— Write / Pipeline Operations —** | | | |
+| Extract graph (fresh session) | **yes** — `extract-graph <dir>` | no | Skill drives the full LLM pipeline via inbox/outbox |
+| Append to session | **yes** — `--append` | no | |
+| Append + grow schema | **yes** — `--append-with-grow-schema` | no | D52 locked Pass 1 |
+| Resume / continue session | **yes** — `--session <name>` | no | |
+| Re-run from step | **yes** — `--from-step <step>` | no | Includes orphan fullsweep/incremental aliases |
+| Approve schema | **yes** — `approve-schema` | no | |
+| Generate walkthrough | **yes** — `walkthrough` | no | |
+| Parse docs (MinerU) | **yes** — `parse-docs` | no | |
+| Fetch web / clone repo | **yes** — `fetch-web` | no | Including chained fetch+extract |
+| Start/stop MCP server | **yes** — `mcp-serve` | no | |
+| **— Read / Query Operations —** | | | |
+| Search nodes by name/alias/attr | manual grep/Read | **`mykg_search_nodes`** | MCP has ranked matching (exact > prefix > substring > alias > attr) |
+| Get full node details by ID | manual Read + grep | **`mykg_get_node`** | MCP returns structured JSON with all attributes |
+| Get node neighbors + edges | manual grep on edges.jsonl | **`mykg_get_neighbors`** | MCP supports direction filter (in/out/both), edge type filter |
+| Find shortest path | **no** | **`mykg_find_path`** | MCP uses NetworkX; directed then undirected fallback |
+| Get schema | manual Read of schema.json | **`mykg_get_schema`** | MCP returns structured JSON |
+| List node types + counts | manual Read + tally | **`mykg_list_node_types`** | MCP returns sorted with sample IDs |
+| Filter subgraph | **no** | **`mykg_query_subgraph`** | Filter by node IDs, types, min confidence |
+| Graph stats (density, components, degree) | **no** | **`mykg_get_stats`** | MCP computes via NetworkX |
+| BFS/DFS traversal query | **no** | **`mykg_query_graph`** | MCP builds context window from seed nodes |
+| Hub nodes (most connected) | **no** | **`mykg_hub_nodes`** | MCP returns top-N by degree with in/out breakdown |
+| Orphan nodes (zero edges) | **no** | **`mykg_orphan_nodes`** | MCP returns all isolated nodes |
+| Read Obsidian vault note | manual Read of .md file | **`mykg_read_note`** | MCP resolves node_id to vault path; fallback if no vault |
+| List sessions + status | `ls -td mykg_sessions/*/` | **`mykg_list_sessions`** | MCP shows current/complete/incomplete, counts, vault status |
+| Free-text query (vault or jsonl) | **yes** — Stage 4d routing | partial (`mykg_query_graph`) | Skill routes vault-vs-jsonl by question phrasing; MCP does BFS/DFS traversal only |
+
+**Summary:**
+- The skill has **10 write/pipeline operations** the MCP server cannot perform (extract, append, resume, approve, walkthrough, parse-docs, fetch-web, etc.)
+- The MCP server has **6 graph-analysis tools** the skill lacks entirely: `find_path`, `query_subgraph`, `get_stats`, `query_graph` (BFS/DFS), `hub_nodes`, `orphan_nodes`
+- The MCP server has **7 structured query tools** that replace the skill's manual grep/Read: `search_nodes`, `get_node`, `get_neighbors`, `get_schema`, `list_node_types`, `read_note`, `list_sessions`
+- The skill's `query` verb (Stage 4d) provides free-text intent routing (vault vs jsonl) that the MCP server does not replicate — but the MCP server's individual tools are more precise and structured for programmatic use
 
 ---
 
