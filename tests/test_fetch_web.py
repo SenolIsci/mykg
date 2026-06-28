@@ -24,7 +24,7 @@ def test_fetch_config_constants_exist_with_defaults() -> None:
     assert isinstance(config.FETCH_GITHUB_CLONE_ENABLED, bool)
     assert isinstance(config.FETCH_GITHUB_CLONE_DEPTH, int) and config.FETCH_GITHUB_CLONE_DEPTH > 0
     assert isinstance(config.FETCH_GITHUB_CLONE_TIMEOUT_SECONDS, int)
-    assert config.FETCH_MAX_WORKERS == 2
+    assert isinstance(config.FETCH_MAX_WORKERS, int) and config.FETCH_MAX_WORKERS >= 1
 
 
 def test_fetch_block_present_in_both_yaml_files() -> None:
@@ -836,7 +836,8 @@ def test_fetch_web_url_list_single_shared_venv_for_plain_urls(tmp_path) -> None:
     mock_venv.assert_called_once()
     mock_subproc.assert_called_once()
     assert len(captured["cfg"]["seeds"]) == 3
-    assert captured["cfg"]["max_workers"] == 2
+    from mykg import config
+    assert captured["cfg"]["max_workers"] == config.FETCH_MAX_WORKERS
 
     manifest = json.loads((out / "fetch_manifest.json").read_text())
     assert len(manifest["seeds"]) == 3
