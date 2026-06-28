@@ -50,6 +50,7 @@
   - [Walkthrough Report](#walkthrough-report)
   - [Obsidian Vault Export](#obsidian-vault-export)
   - [Neo4j LOAD CSV Export](#neo4j-load-csv-export)
+- [Querying with MCP](#querying-with-mcp-model-context-protocol)
 - [Using mykg with Claude Code](#using-mykg-with-claude-code)
   - [Agent mode (Claude Code skill)](#agent-mode-claude-code-skill)
   - [claude-cli profile](#claude-cli-profile)
@@ -71,6 +72,7 @@ MyKG builds trustworthy knowledge graphs through a self-evolving ontology that c
 - **Incremental updates** — append new files to an existing session, extracting only what changed. Optionally grow the schema from new documents while preserving existing concepts and properties
 - **AI coding assistant friendly** — designed for smooth use alongside AI coding assistants such as [Claude Code](https://claude.ai/code); run extractions, inspect outputs, and iterate on your knowledge graph without leaving your coding environment; see [Using mykg with Claude Code](#using-mykg-with-claude-code)
 - **Second brain for AI coding assistants** — the Obsidian vault output turns your extracted knowledge graph into a directory of wikilinked Markdown notes that any AI coding assistant can read as project context; point Claude Code, Cursor, or Copilot at `output/obsidian_vault/` and ask questions, trace relationships, and get answers grounded in your own documents
+- **MCP server for desktop AI apps** — run `mykg mcp-serve` to expose your knowledge graph via the [Model Context Protocol](https://modelcontextprotocol.io/); integrates with [Claude Desktop](https://claude.ai/download), [Cherry Studio](https://cherry-ai.com), and any MCP-compatible client — 13 query tools let LLMs search entities, explore relationships, find paths, traverse the graph, and read wiki notes directly from your extracted knowledge; see [Querying with MCP](#querying-with-mcp-model-context-protocol)
 <p align="center">
   <img src="https://gcore.jsdelivr.net/gh/SenolIsci/mykg@main/docs/diagrams/architecture-sketch.png" width="95%" style="vertical-align:middle;">
 </p>
@@ -771,6 +773,76 @@ mykg walkthrough --session 2026-05-17T18-31-07
 ```
 
 Disable with `pipeline.report.enabled: false`.
+
+## Querying with MCP (Model Context Protocol)
+
+Serve any completed session as an MCP server for LLM-powered Q&A:
+
+```bash
+# Serve the latest session (stdio transport — for Claude Desktop)
+mykg mcp-serve
+
+# Serve a specific session
+mykg mcp-serve --session 2026-06-25T19-16-18
+
+# Serve via streamable HTTP for web clients (Cherry Studio, etc.)
+mykg mcp-serve --transport streamable_http --port 3100
+
+# Serve a specific session via streamable HTTP
+mykg mcp-serve --session 2026-06-25T19-16-18 --transport streamable_http --port 3100
+```
+
+**Claude Desktop (stdio)** — the client launches mykg as a subprocess, no manual server start needed. Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "mykg": {
+      "command": "mykg",
+      "args": ["mcp-serve"]
+    }
+  }
+}
+```
+
+To serve a specific session:
+
+```json
+{
+  "mcpServers": {
+    "mykg": {
+      "command": "mykg",
+      "args": ["mcp-serve", "--session", "2026-06-25T19-16-18"]
+    }
+  }
+}
+```
+
+**Streamable HTTP** (Claude Desktop, Cherry Studio, MCP Inspector, or any HTTP-based client) — start the server first with `mykg mcp-serve --transport streamable_http --port 3100`, then connect your client:
+
+```json
+{
+  "mcpServers": {
+    "mykg": {
+      "type": "streamableHttp",
+      "url": "http://localhost:3100/mcp"
+    }
+  }
+}
+```
+
+The MCP server exposes 13 query tools: `mykg_search_nodes`, `mykg_get_node`, `mykg_get_neighbors`, `mykg_find_path`, `mykg_get_schema`, `mykg_list_node_types`, `mykg_query_subgraph`, `mykg_get_stats`, `mykg_query_graph` (BFS/DFS traversal), `mykg_hub_nodes`, `mykg_orphan_nodes`, `mykg_read_note` (Obsidian vault LLM wiki notes), and `mykg_list_sessions`.
+
+**Configuration** — default transport, host, and port are set per profile in `mykg_config.yaml`:
+
+```yaml
+    mcp:
+      host: localhost              # bind address for streamable HTTP (ignored for stdio)
+      port: 3100                   # port for streamable HTTP (ignored for stdio)
+      transport: stdio             # default transport: stdio | streamable_http
+```
+
+To default to streamable HTTP, change `transport: streamable_http` in your active profile. CLI flags (`--transport`, `--host`, `--port`) override the config.
 
 ---
 

@@ -7,7 +7,7 @@ license = { text = "MIT" }
 authors = [
     { name = "Senol Isci", email = "senolisci081978@gmail.com" }
 ]
-keywords = ["knowledge-graph", "llm", "rdf", "rdfs", "ontology", "nlp", "markdown", "pdf", "obsidian", "second-brain"]
+keywords = ["knowledge-graph", "llm", "rdf", "rdfs", "ontology", "nlp", "markdown", "pdf", "obsidian", "second-brain", "mcp"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -31,6 +31,7 @@ dependencies = [
     "networkx>=3.6.1",
     "uv>=0.4",
     "markdownify>=0.13",
+    "mcp>=1.0",
 ]
 
 [project.scripts]

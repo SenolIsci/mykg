@@ -539,6 +539,7 @@ def _print_next_steps(
         click.echo("\nThen, in Claude Code:")
         click.echo("  1. Restart the app so the skill loader picks up the new entry.")
         click.echo("  2. Type:  /mykg <your_notes_directory>")
+
         click.echo("\nUpgrade later with:  mykg init --reinstall-skill --reinstall-claude-md")
         click.echo("See docs/agent-mode.md for the full inbox/outbox contract.")
 
@@ -646,6 +647,7 @@ def extract_graph(
     if grow_schema:
         append = True
 
+    original_input_dir = str(input_dir.resolve())
     sessions_root = _sessions_root()
 
     if session and (output_dir is not None or intermediate_dir is not None):
@@ -774,6 +776,20 @@ def extract_graph(
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     intermediate_dir.mkdir(parents=True, exist_ok=True)
+
+    import json as _json
+    raw_input_path = intermediate_dir / "raw_input_folder.json"
+    if not raw_input_path.exists():
+        raw_input_path.write_text(
+            _json.dumps({"original_input_dir": original_input_dir}, indent=2),
+            encoding="utf-8",
+        )
+    working_dir_path = intermediate_dir / "working_directory.json"
+    if not working_dir_path.exists():
+        working_dir_path.write_text(
+            _json.dumps({"working_directory": str(Path.cwd().resolve())}, indent=2),
+            encoding="utf-8",
+        )
 
     run(STEPS, ctx)
 
@@ -1728,6 +1744,108 @@ def _delete_merge_from_step(
         if flag_path.exists():
             flag_path.unlink()
             click.echo(f"Deleted {flag_path}")
+
+
+def _mcp_pid_path() -> Path:
+    """Return the path to the MCP server PID file."""
+    d = Path.home() / ".mykg"
+    d.mkdir(exist_ok=True)
+    return d / "mcp-serve.pid"
+
+
+@cli.command("mcp-serve")
+@click.option("--session", default=None, help="Session name under mykg_sessions/; defaults to latest.")
+@click.option(
+    "--transport",
+    type=click.Choice(["stdio", "streamable_http"]),
+    default=None,
+    help="MCP transport (default from config or stdio).",
+)
+@click.option("--host", default=None, help="Host for streamable HTTP (default from config).")
+@click.option("--port", default=None, type=int, help="Port for streamable HTTP (default from config).")
+@click.option("--stop", is_flag=True, default=False, help="Stop a running MCP server.")
+def mcp_serve(session, transport, host, port, stop):
+    """Start (or stop) an MCP server to query a knowledge graph session."""
+    import os
+    import signal
+
+    pid_path = _mcp_pid_path()
+
+    if stop:
+        if not pid_path.exists():
+            click.echo("No MCP server is running (no PID file found).")
+            return
+        try:
+            pid = int(pid_path.read_text().strip())
+            if sys.platform == "win32":
+                os.kill(pid, signal.CTRL_BREAK_EVENT)
+            else:
+                os.kill(pid, signal.SIGTERM)
+            click.echo(f"MCP server stopped (PID {pid}).")
+        except ProcessLookupError:
+            click.echo(f"MCP server process (PID {pid_path.read_text().strip()}) not found — stale PID file removed.")
+        except ValueError:
+            click.echo("Corrupt PID file — removing.")
+        pid_path.unlink(missing_ok=True)
+        return
+
+    cfg = _cfg()
+
+    if not getattr(cfg, "MCP_ENABLED", False):
+        raise click.ClickException(
+            "MCP server is disabled. Set mcp.enabled: true in mykg_config.yaml "
+            "under your active profile, then re-run."
+        )
+
+    sessions_root = _sessions_root()
+
+    if session:
+        session_root = sessions_root / session
+    else:
+        if not sessions_root.exists():
+            raise click.ClickException(
+                f"No sessions directory at {sessions_root}. "
+                "Run 'mykg extract-graph <dir>' first."
+            )
+        entries = sorted(
+            [
+                d for d in sessions_root.iterdir()
+                if d.is_dir() and (d / "output" / "nodes.jsonl").exists()
+            ],
+            key=lambda d: d.name,
+        )
+        if not entries:
+            raise click.ClickException(
+                f"No completed sessions found under {sessions_root}. "
+                "Run 'mykg extract-graph <dir>' first."
+            )
+        session_root = entries[-1]
+
+    nodes_path = session_root / "output" / "nodes.jsonl"
+    if not nodes_path.exists():
+        raise click.ClickException(
+            f"Session '{session_root.name}' has no output/nodes.jsonl. "
+            "Is the extraction complete?"
+        )
+
+    transport = transport or getattr(cfg, "MCP_TRANSPORT", "stdio")
+    host = host or getattr(cfg, "MCP_HOST", "localhost")
+    port = port or getattr(cfg, "MCP_PORT", 3100)
+
+    if transport == "streamable_http":
+        pid_path.write_text(str(os.getpid()))
+
+    click.echo(
+        f"Serving session '{session_root.name}' via {transport}"
+        + (f" on {host}:{port}" if transport == "streamable_http" else ""),
+        err=True,
+    )
+
+    try:
+        from mykg.mcp_server import run_server
+        run_server(session_root, transport=transport, host=host, port=port)
+    finally:
+        pid_path.unlink(missing_ok=True)
 
 
 def main():
