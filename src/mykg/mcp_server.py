@@ -65,6 +65,20 @@ class KnowledgeGraph:
             self.edges_by_node.setdefault(edge["from"], []).append(edge)
             self.edges_by_node.setdefault(edge["to"], []).append(edge)
 
+    def reload(self, session_root: Path | None = None) -> None:
+        """Re-read session files and rebuild the in-memory graph + indexes."""
+        if session_root is not None:
+            self.session_root = session_root
+        self.nodes, self.edges, self.schema = load_session(self.session_root)
+        edge_metadata = {e["id"]: e for e in self.edges}
+        self.graph = _build_nx_graph(self.nodes, edge_metadata)
+        self.nodes_by_id = {}
+        self.nodes_by_type = {}
+        self.edges_by_node = {}
+        self.name_index = []
+        self.alias_index = {}
+        self._build_indexes()
+
     @property
     def session_name(self) -> str:
         return self.session_root.name
@@ -769,6 +783,48 @@ async def mykg_list_sessions(ctx: Context) -> str:
     if not sessions:
         return "No sessions found."
     return json.dumps(sessions, indent=2)
+
+
+@mcp.tool(
+    name="mykg_reload",
+    annotations={
+        "title": "Reload Knowledge Graph",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+)
+async def mykg_reload(ctx: Context, session: str | None = None) -> str:
+    """Reload the in-memory knowledge graph from disk.
+
+    Call this after running extract-graph, append, or any pipeline operation
+    that changes the session's output files. Optionally switch to a different
+    session by passing its name.
+    """
+    app_ctx = ctx.request_context.lifespan_context
+    kg = app_ctx.kg
+    prev_name = kg.session_name
+    prev_nodes = len(kg.nodes)
+    prev_edges = len(kg.edges)
+
+    new_root = None
+    if session:
+        candidate = app_ctx.sessions_root / session
+        nodes_path = candidate / "output" / "nodes.jsonl"
+        if not nodes_path.exists():
+            return f"Error: Session '{session}' not found or has no output/nodes.jsonl."
+        new_root = candidate
+
+    kg.reload(session_root=new_root)
+
+    return json.dumps({
+        "status": "reloaded",
+        "previous_session": prev_name,
+        "current_session": kg.session_name,
+        "previous": {"nodes": prev_nodes, "edges": prev_edges},
+        "current": {"nodes": len(kg.nodes), "edges": len(kg.edges)},
+    }, indent=2)
 
 
 # ---------------------------------------------------------------------------

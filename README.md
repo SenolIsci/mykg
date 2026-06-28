@@ -818,7 +818,39 @@ To serve a specific session:
 }
 ```
 
-**Streamable HTTP** (Claude Desktop, Cherry Studio, MCP Inspector, or any HTTP-based client) — start the server first with `mykg mcp-serve --transport streamable_http --port 3100`, then connect your client:
+**Claude Code (stdio)** — add a `.mcp.json` file to your project root so Claude Code launches the MCP server automatically at session start:
+
+```json
+{
+  "mcpServers": {
+    "mykg": {
+      "command": "mykg",
+      "args": ["mcp-serve"]
+    }
+  }
+}
+```
+
+To serve a specific session:
+
+```json
+{
+  "mcpServers": {
+    "mykg": {
+      "command": "mykg",
+      "args": ["mcp-serve", "--session", "2026-06-25T19-16-18"]
+    }
+  }
+}
+```
+
+> **Restart required.** Claude Code reads `.mcp.json` at session start. After creating or editing this file, restart your Claude Code session for the server to connect. You will be prompted to approve the `mykg` MCP server on first use.
+
+After a pipeline run (`extract-graph`, `--append`, etc.), the in-memory graph becomes stale. Call the `mykg_reload` tool to refresh it without restarting — or restart the Claude Code session to reload from scratch.
+
+If you also have the [`/mykg` skill](#agent-mode-claude-code-skill) installed, the skill will prefer MCP tools for read-only queries when the server is connected, and fall back to direct file reads when it is not.
+
+**Streamable HTTP** (Cherry Studio, MCP Inspector, or any HTTP-based MCP client) — start the server first with `mykg mcp-serve --transport streamable_http --port 3100`, then connect your client:
 
 ```json
 {
@@ -831,7 +863,7 @@ To serve a specific session:
 }
 ```
 
-The MCP server exposes 13 query tools: `mykg_search_nodes`, `mykg_get_node`, `mykg_get_neighbors`, `mykg_find_path`, `mykg_get_schema`, `mykg_list_node_types`, `mykg_query_subgraph`, `mykg_get_stats`, `mykg_query_graph` (BFS/DFS traversal), `mykg_hub_nodes`, `mykg_orphan_nodes`, `mykg_read_note` (Obsidian vault LLM wiki notes), and `mykg_list_sessions`.
+The MCP server exposes 14 tools: `mykg_search_nodes`, `mykg_get_node`, `mykg_get_neighbors`, `mykg_find_path`, `mykg_get_schema`, `mykg_list_node_types`, `mykg_query_subgraph`, `mykg_get_stats`, `mykg_query_graph` (BFS/DFS traversal), `mykg_hub_nodes`, `mykg_orphan_nodes`, `mykg_read_note` (Obsidian vault LLM wiki notes), `mykg_list_sessions`, and `mykg_reload` (refresh the in-memory graph after pipeline runs).
 
 **Configuration** — default transport, host, and port are set per profile in `mykg_config.yaml`:
 

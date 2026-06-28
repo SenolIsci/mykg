@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mykg": {
+      "command": "mykg",
+      "args": ["mcp-serve"]
+    }
+  }
+}
