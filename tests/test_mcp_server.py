@@ -342,7 +342,8 @@ class TestMCPServerRegistration:
             "mykg_orphan_nodes",
             "mykg_read_note",
             "mykg_list_sessions",
+            "mykg_reload",
         ]
         for name in expected:
             assert name in tool_names, f"Tool '{name}' not registered"
-        assert len(tool_names) == 13
+        assert len(tool_names) == 14
