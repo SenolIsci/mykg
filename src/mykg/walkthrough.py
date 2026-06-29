@@ -705,13 +705,11 @@ def _section_node_edge_trace(session_root: Path) -> str | None:
     nodes_jsonl = output_dir / "nodes.jsonl"
     edges_jsonl = output_dir / "edges.jsonl"
     if nodes_jsonl.exists():
-        nodes_jsonl_count = sum(
-            1 for ln in nodes_jsonl.read_text(encoding="utf-8").splitlines() if ln.strip()
-        )
+        with open(nodes_jsonl, encoding="utf-8") as f:
+            nodes_jsonl_count = sum(1 for ln in f if ln.strip())
     if edges_jsonl.exists():
-        edges_jsonl_count = sum(
-            1 for ln in edges_jsonl.read_text(encoding="utf-8").splitlines() if ln.strip()
-        )
+        with open(edges_jsonl, encoding="utf-8") as f:
+            edges_jsonl_count = sum(1 for ln in f if ln.strip())
 
     delta_b = manifest.get("schema_delta_session_b") or []
     reextract_note = (
