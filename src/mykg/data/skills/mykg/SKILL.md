@@ -150,7 +150,7 @@ From the user's `/mykg <free text>` message extract:
    6. **Reuse required but missing.** If rules 2/3/4 fire but no session exists under `$SESSIONS_DIR`, fail clearly: `"No existing sessions under <SESSIONS_DIR>. Run /mykg extract <dir> first to create one."`
 
 **Never auto-detect-most-recent purely because a previous skill turn produced a session.** The previous-turn memory only matters when the *current* user message also contains one of the explicit signals in rules 1-4. A bare `/mykg ./more_docs` after a prior session must still create a fresh session.
-4. **Flags** — anything the user named that maps to a flag the cached `--help` confirms (`--review`, `--append`, `--from-step <step>`, `--workers <N>`, `--obsidian-vault`, `--base-schema`, `--thesaurus`, `--verbose`, `--confidence-agg`, `--append-with-grow-schema`, etc.). Forward verbatim.
+4. **Flags** — anything the user named that maps to a flag the cached `--help` confirms (`--review`, `--append`, `--from-step <step>`, `--workers <N>`, `--obsidian-vault`, `--base-schema`, `--freeze-schema`, `--thesaurus`, `--verbose`, `--confidence-agg`, `--append-with-grow-schema`, etc.). Forward verbatim.
 
 `extract-graph` without `--append` or `--from-step` does not need a pre-existing session — it auto-creates one.
 
@@ -179,6 +179,21 @@ then extract. Plain --append would skip Pass 1 and keep the schema frozen.
 
 Reply "yes" to run, or "just append" to skip schema growth.
 ```
+
+### `--freeze-schema` — bring-your-own-schema extraction
+
+**Use case:** you have a complete ontology (RDFS or OWL TTL) and want the LLM to extract instances against exactly those types — no LLM-invented concepts, no surprise properties. Pass 1 is skipped entirely, saving 3 LLM calls.
+
+```bash
+mykg extract-graph ./docs --base-schema ontology.ttl --freeze-schema
+```
+
+**Rules:**
+- `--freeze-schema` requires `--base-schema <path>`. If the user says "freeze schema" without providing a TTL file, ask for it.
+- Mutually exclusive with `--append` and `--append-with-grow-schema`.
+- The output graph will only contain the concept types and relationship properties declared in the TTL — nothing else.
+
+**Intent triggers** — use `--freeze-schema` when the user says any of: "freeze schema", "frozen schema", "use this schema exactly", "no LLM schema", "skip schema induction", "extract with my ontology only", "strict schema", "use only my types". Always pair with `--base-schema`.
 
 ### `fetch-web` flags and special cases
 

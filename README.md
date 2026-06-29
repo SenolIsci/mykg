@@ -290,6 +290,7 @@ Everything else (`.py`, `.json`, `.yaml`, lock files, etc.) is ignored. Hidden d
 | `--workers N` | Parallel workers for Pass 2 |
 | `--confidence-agg mean\|max` | Confidence aggregation when deduplicating |
 | `--base-schema PATH` | Locked TBox TTL file (locked classes/properties cannot be changed by the LLM) |
+| `--freeze-schema` | Use `--base-schema` verbatim: skip Pass 1 LLM induction entirely |
 | `--thesaurus PATH` | SKOS TTL thesaurus for synonym resolution in schema merge |
 | `--obsidian-vault` | Force Obsidian vault export for this run (overrides config) |
 | `--neo4j-csv` | Force Neo4j LOAD CSV bundle export for this run (overrides config) |
@@ -542,6 +543,25 @@ mykg extract-graph my_notes/ --base-schema ontology/base.ttl
 ```
 
 Both RDFS and OWL ontologies are accepted — `owl:Class`, `owl:ObjectProperty`, and `owl:DatatypeProperty` are recognized alongside their RDFS equivalents, so you can use an OWL ontology exported from Protégé directly without conversion. Locked entries can still receive additional attributes proposed by the LLM. Near-duplicate LLM proposals are collapsed into the locked entry with a warning.
+
+### Frozen Schema (`--freeze-schema`)
+
+Use the base schema verbatim — skip Pass 1 LLM induction entirely. The LLM extracts instances against exactly the classes and properties you provide, with no additions:
+
+```bash
+mykg extract-graph my_notes/ --base-schema ontology/base.ttl --freeze-schema
+```
+
+This is useful when you have a complete ontology and want strict extraction — no LLM-invented types, no surprise properties. Only the concepts and relationships in your TTL will appear in the output. Requires `--base-schema`. Mutually exclusive with `--append` and `--append-with-grow-schema`.
+
+**Comparison with `--base-schema` alone:**
+
+| Behavior | `--base-schema` | `--base-schema --freeze-schema` |
+|---|---|---|
+| Pass 1 LLM calls | 3 (batch + harmonize + quality review) | **0 (skipped)** |
+| Schema | Locked entries + LLM-induced additions | **Exactly the TTL file** |
+| New concept types | LLM can add them | **None** |
+| New properties | LLM can add them | **None** |
 
 ### SKOS Thesaurus (`--thesaurus`)
 
@@ -943,6 +963,7 @@ Examples:
 | `/mykg extract ./docs` | `mykg extract-graph ./docs` |
 | `/mykg ./docs` | `mykg extract-graph ./docs` (legacy positional alias) |
 | `/mykg extract ./docs with human review` | `mykg extract-graph ./docs --review` |
+| `/mykg extract ./docs with frozen schema from ontology.ttl` | `mykg extract-graph ./docs --base-schema ontology.ttl --freeze-schema` |
 | `/mykg append the new notes in ./docs` | `mykg extract-graph ./docs --append --session <latest>` |
 | `/mykg expand the schema with ./docs` | `mykg extract-graph ./docs --append-with-grow-schema --session <latest>` |
 | `/mykg resume the last session` | `mykg extract-graph --session <latest>` |
