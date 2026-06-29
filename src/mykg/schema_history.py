@@ -43,6 +43,7 @@ TRIGGER_SCHEMA_GAP = "schema_gap"
 TRIGGER_SCHEMA_GAP_CORRECT = "schema_gap_correct"
 TRIGGER_SCHEMA_QUALITY = "schema_quality"
 TRIGGER_SESSION_MERGE = "session_merge"
+TRIGGER_FREEZE_SCHEMA = "freeze_schema"
 
 
 def write_schema(

@@ -15,6 +15,31 @@ log = get("mykg.steps.pass1")
 
 
 def run_pass1_step(ctx: PipelineContext) -> None:
+    if ctx.freeze_schema:
+        if not ctx.base_schema:
+            raise RuntimeError(
+                "freeze_schema is set but no base_schema was provided. "
+                "Pass --base-schema <path-to-ttl> on the CLI, or set base_schema on PipelineContext."
+            )
+        locked_classes = ctx.base_schema.get("locked_classes", {})
+        locked_properties = ctx.base_schema.get("locked_properties", {})
+        schema, _ = merge_proposals([], locked_classes, locked_properties, ctx.thesaurus)
+        n_concepts = len(schema.get("concepts", []))
+        n_props = len(schema.get("properties", []))
+        log.info(
+            "Step 2 — freeze-schema: using base schema verbatim (%d concept(s), %d property(ies))",
+            n_concepts,
+            n_props,
+        )
+        from mykg.schema_history import TRIGGER_FREEZE_SCHEMA, write_schema
+
+        write_schema(schema, ctx.intermediate_dir, TRIGGER_FREEZE_SCHEMA)
+        ttl = export_ttl(schema, [], {})
+        (ctx.intermediate_dir / "schema.ttl").write_text(ttl)
+        merge_log_path = ctx.intermediate_dir / "merge_log.json"
+        merge_log_path.write_text(json.dumps([], indent=_cfg.JSON_INDENT))
+        return
+
     # --append-with-grow-schema (D52): run the locked re-induction over ONLY the changed
     # files so the LLM sees just the new material when proposing additions. The append
     # ingest step does not chunk (it only hashes), so all_chunks must be (re)built here

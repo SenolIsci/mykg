@@ -59,6 +59,8 @@ class PipelineContext(BaseModel):
     # the LLM may ADD new concepts/properties to the existing (locked) schema, then
     # surgically back-fill old files when the schema actually grows.
     grow_schema: bool = False
+    # --freeze-schema: use base_schema verbatim — skip LLM schema induction entirely.
+    freeze_schema: bool = False
     # Runtime fields populated by steps
     all_chunks: list | None = None
     file_contents: dict[str, str] | None = None
