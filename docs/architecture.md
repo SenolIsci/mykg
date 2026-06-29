@@ -695,7 +695,37 @@ The Claude Code skill in `src/mykg/data/skills/mykg/SKILL.md` exposes a single s
 | **Concept hierarchy — store own, flatten for LLM** | Schema stores only own attributes per concept; pipeline flattens the inheritance chain before each extraction call | Compact, DRY schema representation; LLM always receives the complete attribute list without needing to understand inheritance |
 | **Synonym resolution — lexical only** | `synonym_match` uses exact string match, normalized string match, and optional SKOS thesaurus — no embedding similarity | Fast, deterministic, reproducible; no dependency on an embedding model or vector index |
 | **Base schema locking** | Optional `--base-schema` TTL locks classes and properties the LLM cannot rename, remove, or restructure | Lets you anchor an existing formal ontology while still allowing the LLM to extend it with domain-specific concepts |
+| **OWL input support** | `parse_base_schema` accepts `owl:Class`, `owl:ObjectProperty`, `owl:DatatypeProperty` alongside RDFS equivalents; output always normalized to RDFS | Users can supply formal OWL ontologies (e.g. from Protégé) without manual conversion; advanced OWL constructs are out of scope (don't map to the flat schema model) |
 | **Schema history** | Every schema write recorded as a numbered delta file in `intermediate/schema_history/` | Allows reconstruction of schema evolution across a run; useful for debugging harmonization and quality-review decisions |
+
+#### OWL Support Scope
+
+myKG is an *extractor*, not a *reasoner*. The base schema parser accepts OWL vocabulary declarations (what things exist and how they relate) but not OWL reasoning constructs (logical rules the graph must obey). Users needing reasoning should load `knowledge_graph.ttl` into a SPARQL endpoint with a reasoner (HermiT, Pellet).
+
+**Supported (basic OWL — vocabulary declarations):**
+
+| OWL Construct | What it does | myKG mapping |
+|---|---|---|
+| `owl:Class` | Declares a concept type | → `locked_classes` (same as `rdfs:Class`) |
+| `owl:ObjectProperty` | Declares a relationship between two classes | → `locked_properties` (same as `rdf:Property` with class range) |
+| `owl:DatatypeProperty` | Declares an attribute on a class | → class `attributes` list (same as `rdf:Property` with `rdfs:Literal` range) |
+| `rdfs:subClassOf` | Parent-child hierarchy | Already supported (shared between RDFS and OWL) |
+| `rdfs:domain` / `rdfs:range` | Which classes a property connects | Already supported (shared between RDFS and OWL) |
+
+**Not supported (advanced OWL — reasoning constructs):**
+
+| OWL Construct | What it does | Why it doesn't map to myKG |
+|---|---|---|
+| `owl:Restriction` | "Every Person must have exactly 1 birthDate" | myKG has no cardinality enforcement — extracts what the LLM finds |
+| `owl:equivalentClass` | "Employee = Person who has a works_at edge" | myKG doesn't do class expressions — types are flat labels |
+| `owl:disjointWith` | "A Person cannot also be an Organization" | myKG doesn't validate type exclusivity |
+| `owl:inverseOf` | "manages is the inverse of managed_by" | myKG stores edges one-way; no auto-generation of reverse edges |
+| `owl:TransitiveProperty` | "If A in B and B in C, then A in C" | myKG doesn't do inference / reasoning |
+| `owl:SymmetricProperty` | "If A knows B, then B knows A" | No auto-generation of reverse edges |
+| `owl:FunctionalProperty` | "A Person has at most one birthDate" | No cardinality enforcement |
+| `owl:unionOf` / `owl:intersectionOf` | "Vehicle = Car OR Truck OR Bike" | No class algebra |
+| `owl:sameAs` / `owl:differentFrom` | "ex:NYC = dbpedia:New_York" | No identity resolution across ontologies |
+| `owl:allValuesFrom` / `owl:someValuesFrom` | "All employees of Acme must be Engineers" | No value restrictions |
 
 ### Extraction and Assembly
 
