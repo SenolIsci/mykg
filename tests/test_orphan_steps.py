@@ -1,9 +1,18 @@
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from mykg.orchestrator import PipelineContext
 from mykg.steps.step_orphan_connect import run_orphan_connect
 from mykg.steps.step_orphan_score import run_orphan_score
+
+
+@pytest.fixture(autouse=True)
+def _enable_orphan_pass(monkeypatch):
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "ORPHAN_PASS_ENABLED", True)
 
 NODES = [
     {
