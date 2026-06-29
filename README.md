@@ -1060,6 +1060,8 @@ uv run snakeviz profile.out
 
 ## Design
 
+**Storage & runtime model** — myKG uses JSONL files (`nodes.jsonl`, `edges.jsonl`) as its persistent graph storage and builds an in-memory NetworkX `DiGraph` for all graph operations (traversal, search, path-finding, hub/orphan detection, MCP server queries). There is no external database dependency — the graph loads from flat files at startup and all computation happens in-process. This keeps the tool self-contained and portable: a session folder is everything you need.
+
 For a thorough description of the architecture, algorithm, data models, and design decisions, see [docs/architecture.md](docs/architecture.md).
 
 ---
