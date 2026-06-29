@@ -734,6 +734,24 @@ def test_node_edge_trace_returns_string_when_valid(tmp_path):
     assert len(result) > 100
 
 
+def test_node_edge_trace_counts_output_jsonl(tmp_path):
+    """Streaming read of nodes.jsonl/edges.jsonl in output/ is exercised."""
+    _, merged, _, _ = _make_merge_sessions(tmp_path)
+    output = merged / "output"
+    output.mkdir(exist_ok=True)
+    output.joinpath("nodes.jsonl").write_text(
+        '{"id":"person-alice","type":"Person"}\n'
+        '{"id":"org-acme","type":"Organization"}\n'
+    )
+    output.joinpath("edges.jsonl").write_text(
+        '{"type":"works_at","from":"person-alice","to":"org-acme"}\n'
+    )
+    result = _section_node_edge_trace(merged)
+    assert result is not None
+    assert "2" in result  # 2 nodes in output
+    assert "1" in result  # 1 edge in output
+
+
 # ---------------------------------------------------------------------------
 # _section_merge_provenance tests
 # ---------------------------------------------------------------------------
