@@ -720,7 +720,7 @@ myKG is an *extractor*, not a *reasoner*. The base schema parser accepts OWL voc
 | `owl:equivalentClass` | "Employee = Person who has a works_at edge" | myKG doesn't do class expressions — types are flat labels |
 | `owl:disjointWith` | "A Person cannot also be an Organization" | myKG doesn't validate type exclusivity |
 | `owl:inverseOf` | "manages is the inverse of managed_by" | myKG stores edges one-way; no auto-generation of reverse edges |
-| `owl:TransitiveProperty` | "If A in B and B in C, then A in C" | myKG doesn't do inference / reasoning |
+| `owl:TransitiveProperty` | "If A is in B and B is in C, then A is in C" | myKG doesn't do inference / reasoning |
 | `owl:SymmetricProperty` | "If A knows B, then B knows A" | No auto-generation of reverse edges |
 | `owl:FunctionalProperty` | "A Person has at most one birthDate" | No cardinality enforcement |
 | `owl:unionOf` / `owl:intersectionOf` | "Vehicle = Car OR Truck OR Bike" | No class algebra |

@@ -20,10 +20,11 @@ def _extract_class(s, g, locked_classes: dict[str, dict]) -> None:
     locked_classes[name] = {"type": name, "parent": parent, "attributes": []}
 
 
-def _extract_datatype_property(s, g, locked_classes: dict[str, dict], locked_properties: dict[str, dict]) -> None:
+def _extract_datatype_property(s, g, locked_classes: dict[str, dict], seen: set[str]) -> None:
     name = _local(s)
-    if name in locked_properties:
+    if name in seen:
         return
+    seen.add(name)
     domain_nodes = list(g.objects(s, RDFS.domain))
     for domain_node in domain_nodes:
         domain = _local(domain_node)
@@ -57,6 +58,7 @@ def parse_base_schema(ttl_content: str) -> dict:
 
     locked_classes: dict[str, dict] = {}
     locked_properties: dict[str, dict] = {}
+    seen_datatype: set[str] = set()
 
     # RDFS classes, then OWL classes (skip duplicates)
     for s, _, _ in g.triples((None, RDF.type, RDFS.Class)):
@@ -67,11 +69,11 @@ def parse_base_schema(ttl_content: str) -> dict:
     # RDFS properties (heuristic: range == rdfs:Literal → datatype, else object)
     for s, _, _ in g.triples((None, RDF.type, RDF.Property)):
         name = _local(s)
-        if name in locked_properties:
+        if name in locked_properties or name in seen_datatype:
             continue
         range_node = g.value(s, RDFS.range)
         if range_node == RDFS.Literal:
-            _extract_datatype_property(s, g, locked_classes, locked_properties)
+            _extract_datatype_property(s, g, locked_classes, seen_datatype)
         else:
             _extract_object_property(s, g, locked_properties)
 
@@ -79,6 +81,6 @@ def parse_base_schema(ttl_content: str) -> dict:
     for s, _, _ in g.triples((None, RDF.type, OWL.ObjectProperty)):
         _extract_object_property(s, g, locked_properties)
     for s, _, _ in g.triples((None, RDF.type, OWL.DatatypeProperty)):
-        _extract_datatype_property(s, g, locked_classes, locked_properties)
+        _extract_datatype_property(s, g, locked_classes, seen_datatype)
 
     return {"locked_classes": locked_classes, "locked_properties": locked_properties}

@@ -128,3 +128,63 @@ ex:works_at a owl:ObjectProperty ;
     assert len([k for k in result["locked_classes"] if k == "Person"]) == 1
     assert "name" in result["locked_classes"]["Person"]["attributes"]
     assert "works_at" in result["locked_properties"]
+
+
+def test_parse_unsupported_owl_constructs_ignored():
+    ttl = """\
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix ex:   <http://mykg.local/schema/> .
+
+ex:Person a owl:Class .
+ex:Organization a owl:Class .
+
+ex:knows a owl:ObjectProperty, owl:SymmetricProperty ;
+    rdfs:domain ex:Person ;
+    rdfs:range  ex:Person .
+
+ex:manages a owl:ObjectProperty ;
+    rdfs:domain ex:Person ;
+    rdfs:range  ex:Person ;
+    owl:inverseOf ex:managed_by .
+
+ex:PersonWithJob a owl:Class ;
+    owl:equivalentClass [
+        a owl:Restriction ;
+        owl:onProperty ex:knows ;
+        owl:minCardinality 1
+    ] .
+"""
+    result = parse_base_schema(ttl)
+    assert "Person" in result["locked_classes"]
+    assert "Organization" in result["locked_classes"]
+    assert "knows" in result["locked_properties"]
+    assert "manages" in result["locked_properties"]
+    # PersonWithJob is declared as owl:Class so it IS picked up;
+    # the owl:equivalentClass restriction is silently ignored
+    assert "PersonWithJob" in result["locked_classes"]
+    # owl:inverseOf does not auto-generate a reverse property
+    assert "managed_by" not in result["locked_properties"]
+    # owl:SymmetricProperty is not treated as a class
+    assert "SymmetricProperty" not in result["locked_classes"]
+    # The blank node from owl:Restriction should not leak in
+    assert all(not k.startswith("N") for k in result["locked_classes"])
+
+
+def test_parse_dual_declared_datatype_property_no_duplicate_attributes():
+    ttl = """\
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix ex:   <http://mykg.local/schema/> .
+
+ex:Person a owl:Class .
+
+ex:name a rdf:Property, owl:DatatypeProperty ;
+    rdfs:domain ex:Person ;
+    rdfs:range  rdfs:Literal .
+"""
+    result = parse_base_schema(ttl)
+    attrs = result["locked_classes"]["Person"]["attributes"]
+    assert attrs.count("name") == 1
