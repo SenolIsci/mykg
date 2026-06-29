@@ -32,17 +32,18 @@ def _parse_log_lines(log_path: Path) -> list[dict]:
     if not log_path.exists():
         return []
     results: list[dict] = []
-    for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
-        m = _TS_RE.match(line.strip())
-        if m:
-            results.append(
-                {
-                    "ts": m.group(1),
-                    "level": m.group(2),
-                    "logger": m.group(3),
-                    "message": m.group(4),
-                }
-            )
+    with log_path.open(encoding="utf-8", errors="replace") as f:
+        for line in f:
+            m = _TS_RE.match(line.strip())
+            if m:
+                results.append(
+                    {
+                        "ts": m.group(1),
+                        "level": m.group(2),
+                        "logger": m.group(3),
+                        "message": m.group(4),
+                    }
+                )
     return results
 
 
@@ -304,13 +305,14 @@ def _section_llm_stats(session_root: Path) -> str:
         return "\n".join(out)
 
     records: list[dict] = []
-    for line in llm_log.read_text(encoding="utf-8", errors="replace").splitlines():
-        line = line.strip()
-        if line:
-            try:
-                records.append(json.loads(line))
-            except Exception:
-                continue
+    with llm_log.open(encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    records.append(json.loads(line))
+                except Exception:
+                    continue
 
     if not records:
         out.append("\n*No LLM calls recorded.*")
@@ -633,13 +635,14 @@ def _section_node_edge_trace(session_root: Path) -> str | None:
     llm_log = session_root / "llm.log"
     reextract_calls = 0
     if llm_log.exists():
-        for line in llm_log.read_text(encoding="utf-8", errors="replace").splitlines():
-            try:
-                rec = json.loads(line)
-                if re.search(r"pass2|reextract", rec.get("context", ""), re.I):
-                    reextract_calls += 1
-            except Exception:
-                continue
+        with llm_log.open(encoding="utf-8", errors="replace") as f:
+            for line in f:
+                try:
+                    rec = json.loads(line)
+                    if re.search(r"pass2|reextract", rec.get("context", ""), re.I):
+                        reextract_calls += 1
+                except Exception:
+                    continue
 
     # Merged schema
     merged_schema = _load_json(session_root / "intermediate" / "schema.json") or {}
@@ -705,13 +708,11 @@ def _section_node_edge_trace(session_root: Path) -> str | None:
     nodes_jsonl = output_dir / "nodes.jsonl"
     edges_jsonl = output_dir / "edges.jsonl"
     if nodes_jsonl.exists():
-        nodes_jsonl_count = sum(
-            1 for ln in nodes_jsonl.read_text(encoding="utf-8").splitlines() if ln.strip()
-        )
+        with nodes_jsonl.open(encoding="utf-8") as f:
+            nodes_jsonl_count = sum(1 for ln in f if ln.strip())
     if edges_jsonl.exists():
-        edges_jsonl_count = sum(
-            1 for ln in edges_jsonl.read_text(encoding="utf-8").splitlines() if ln.strip()
-        )
+        with edges_jsonl.open(encoding="utf-8") as f:
+            edges_jsonl_count = sum(1 for ln in f if ln.strip())
 
     delta_b = manifest.get("schema_delta_session_b") or []
     reextract_note = (

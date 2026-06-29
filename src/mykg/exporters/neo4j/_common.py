@@ -23,8 +23,10 @@ def load_session(session_root: Path) -> tuple[list[dict], list[dict], dict]:
     if not schema_path.exists():
         raise FileNotFoundError(f"schema.json not found at {schema_path}")
 
-    nodes = [json.loads(line) for line in nodes_path.read_text().splitlines() if line.strip()]
-    edges = [json.loads(line) for line in edges_path.read_text().splitlines() if line.strip()]
+    with nodes_path.open(encoding="utf-8") as f:
+        nodes = [json.loads(line) for line in f if line.strip()]
+    with edges_path.open(encoding="utf-8") as f:
+        edges = [json.loads(line) for line in f if line.strip()]
     schema = json.loads(schema_path.read_text())
     return nodes, edges, schema
 

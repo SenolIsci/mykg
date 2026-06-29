@@ -460,10 +460,13 @@ async def mykg_get_stats(ctx: Context) -> str:
         log_path = session_root / "run.log"
         try:
             if log_path.exists():
-                for line in log_path.read_text(encoding="utf-8").splitlines()[:5]:
-                    if "extract-graph " in line:
-                        original_input_dir = line.split("extract-graph ", 1)[1].split(" --")[0].strip()
-                        break
+                with log_path.open(encoding="utf-8") as f:
+                    for i, line in enumerate(f):
+                        if i >= 5:
+                            break
+                        if "extract-graph " in line:
+                            original_input_dir = line.split("extract-graph ", 1)[1].split(" --")[0].strip()
+                            break
         except OSError:
             pass
 
@@ -765,10 +768,10 @@ async def mykg_list_sessions(ctx: Context) -> str:
         node_count = 0
         edge_count = 0
         if nodes_path.exists():
-            with open(nodes_path, encoding="utf-8") as f:
+            with nodes_path.open(encoding="utf-8") as f:
                 node_count = sum(1 for line in f if line.strip())
         if edges_path.exists():
-            with open(edges_path, encoding="utf-8") as f:
+            with edges_path.open(encoding="utf-8") as f:
                 edge_count = sum(1 for line in f if line.strip())
 
         sessions.append({
