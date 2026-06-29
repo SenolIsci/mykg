@@ -119,7 +119,7 @@ profiles:
         max_names_per_type: 2000 # max entity names sent to the LLM per concept type in a single normalization call
       # --- Orphan recovery -----------------------------------------------------
       orphan_pass:
-        enabled: true
+        enabled: false
         min_cooccurrence: 1     # minimum times an orphan and a connected node must appear in the same chunk to be a candidate
         top_k_per_orphan: 5     # max candidate connected nodes considered per orphan in Stage 1 scoring
         confidence_base: 0.5    # starting confidence for an inferred orphan edge before weighting
@@ -291,7 +291,7 @@ profiles:
         max_names_per_type: 2000
       # --- Orphan recovery -----------------------------------------------------
       orphan_pass:
-        enabled: true
+        enabled: false
         min_cooccurrence: 1
         top_k_per_orphan: 5
         confidence_base: 0.5
@@ -462,7 +462,7 @@ profiles:
         max_names_per_type: 2000 # max entity names sent to the LLM per concept type in a single normalization call
       # --- Orphan recovery -----------------------------------------------------
       orphan_pass:
-        enabled: true
+        enabled: false
         min_cooccurrence: 1     # minimum times an orphan and a connected node must appear in the same chunk to be a candidate
         top_k_per_orphan: 5     # max candidate connected nodes considered per orphan in Stage 1 scoring
         confidence_base: 0.5    # starting confidence for an inferred orphan edge before weighting
@@ -640,7 +640,7 @@ profiles:
         max_names_per_type: 2000
       # --- Orphan recovery -----------------------------------------------------
       orphan_pass:
-        enabled: true
+        enabled: false
         min_cooccurrence: 1
         top_k_per_orphan: 5
         confidence_base: 0.5
@@ -812,7 +812,7 @@ profiles:
         max_names_per_type: 500   # keep smaller — local models are slower
       # --- Orphan recovery -----------------------------------------------------
       orphan_pass:
-        enabled: true
+        enabled: false
         min_cooccurrence: 1
         top_k_per_orphan: 5
         confidence_base: 0.5
@@ -979,7 +979,7 @@ profiles:
         enabled: true
         max_names_per_type: 2000
       orphan_pass:
-        enabled: true
+        enabled: false
         min_cooccurrence: 1
         top_k_per_orphan: 5
         confidence_base: 0.5
