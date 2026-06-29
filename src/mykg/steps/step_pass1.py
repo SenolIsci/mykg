@@ -16,8 +16,13 @@ log = get("mykg.steps.pass1")
 
 def run_pass1_step(ctx: PipelineContext) -> None:
     if ctx.freeze_schema:
-        locked_classes = ctx.base_schema.get("locked_classes", {}) if ctx.base_schema else {}
-        locked_properties = ctx.base_schema.get("locked_properties", {}) if ctx.base_schema else {}
+        if not ctx.base_schema:
+            raise RuntimeError(
+                "freeze_schema is set but no base_schema was provided. "
+                "Pass --base-schema <path-to-ttl> on the CLI, or set base_schema on PipelineContext."
+            )
+        locked_classes = ctx.base_schema.get("locked_classes", {})
+        locked_properties = ctx.base_schema.get("locked_properties", {})
         schema, _ = merge_proposals([], locked_classes, locked_properties, ctx.thesaurus)
         n_concepts = len(schema.get("concepts", []))
         n_props = len(schema.get("properties", []))

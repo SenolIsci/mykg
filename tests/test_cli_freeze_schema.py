@@ -139,5 +139,54 @@ def test_freeze_schema_pass1_skips_llm(tmp_path):
     adapter.assert_not_called()
 
 
+def test_freeze_schema_pass1_empty_base_schema(tmp_path):
+    """freeze_schema with a base_schema that has no locked_classes/locked_properties
+    produces a valid but empty schema."""
+    from mykg.orchestrator import PipelineContext
+
+    intermediate = tmp_path / "intermediate"
+    intermediate.mkdir()
+    (intermediate / "schema_history").mkdir()
+
+    adapter = MagicMock()
+    ctx = PipelineContext(
+        input_dir=tmp_path / "input",
+        output_dir=tmp_path / "output",
+        intermediate_dir=intermediate,
+        adapter=adapter,
+        base_schema={"locked_classes": {}, "locked_properties": {}},
+        freeze_schema=True,
+    )
+
+    from mykg.steps.step_pass1 import run_pass1_step
+
+    run_pass1_step(ctx)
+
+    schema = json.loads((intermediate / "schema.json").read_text())
+    assert schema["concepts"] == []
+    assert schema["properties"] == []
+    assert (intermediate / "schema.ttl").exists()
+    assert json.loads((intermediate / "merge_log.json").read_text()) == []
+    adapter.assert_not_called()
+
+
+def test_freeze_schema_pass1_errors_without_base_schema(tmp_path):
+    """freeze_schema=True without base_schema raises RuntimeError."""
+    from mykg.orchestrator import PipelineContext
+
+    ctx = PipelineContext(
+        input_dir=tmp_path / "input",
+        output_dir=tmp_path / "output",
+        intermediate_dir=tmp_path / "intermediate",
+        adapter=MagicMock(),
+        freeze_schema=True,
+    )
+
+    from mykg.steps.step_pass1 import run_pass1_step
+
+    with pytest.raises(RuntimeError, match="freeze_schema.*no base_schema"):
+        run_pass1_step(ctx)
+
+
 if __name__ == "__main__":
     pytest.main([str(Path(__file__))])
