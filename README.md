@@ -541,7 +541,7 @@ Lock certain classes and properties so the LLM cannot rename, remove, or restruc
 mykg extract-graph my_notes/ --base-schema ontology/base.ttl
 ```
 
-Locked entries can still receive additional attributes proposed by the LLM. Near-duplicate LLM proposals are collapsed into the locked entry with a warning.
+Both RDFS and OWL ontologies are accepted — `owl:Class`, `owl:ObjectProperty`, and `owl:DatatypeProperty` are recognized alongside their RDFS equivalents, so you can use an OWL ontology exported from Protégé directly without conversion. Locked entries can still receive additional attributes proposed by the LLM. Near-duplicate LLM proposals are collapsed into the locked entry with a warning.
 
 ### SKOS Thesaurus (`--thesaurus`)
 
