@@ -566,6 +566,11 @@ def _print_next_steps(
 )
 @click.option("--verbose", "-v", is_flag=True, help="Enable DEBUG-level logging")
 @click.option("--base-schema", default=None, type=click.Path(exists=True), help="Locked TBox TTL")
+@click.option(
+    "--freeze-schema",
+    is_flag=True,
+    help="Use --base-schema verbatim: skip Pass 1 LLM induction entirely",
+)
 @click.option("--thesaurus", default=None, type=click.Path(exists=True), help="SKOS TTL thesaurus")
 @click.option("--review", is_flag=True, help="Pause for human schema review after Pass 1")
 @click.option(
@@ -627,6 +632,7 @@ def extract_graph(
     log_file,
     verbose,
     base_schema,
+    freeze_schema,
     thesaurus,
     review,
     from_step,
@@ -646,6 +652,20 @@ def extract_graph(
 
     if grow_schema:
         append = True
+
+    if freeze_schema:
+        if not base_schema:
+            raise click.ClickException(
+                "--freeze-schema requires --base-schema <path-to-ttl>"
+            )
+        if grow_schema:
+            raise click.ClickException(
+                "--freeze-schema and --append-with-grow-schema are mutually exclusive."
+            )
+        if append:
+            raise click.ClickException(
+                "--freeze-schema and --append are mutually exclusive."
+            )
 
     original_input_dir = str(input_dir.resolve())
     sessions_root = _sessions_root()
@@ -772,6 +792,7 @@ def extract_graph(
         confidence_agg=confidence_agg,
         append=append,
         grow_schema=grow_schema,
+        freeze_schema=freeze_schema,
         orphan_incremental=orphan_incremental,
     )
     output_dir.mkdir(parents=True, exist_ok=True)
