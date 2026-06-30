@@ -1,9 +1,11 @@
 """Tests for the mykg MCP server module."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,6 +15,7 @@ from mykg.mcp_server import (
     _node_summary,
     _resolve_edge_excerpt,
     _resolve_node_excerpt,
+    mykg_get_source,
 )
 
 
@@ -206,6 +209,26 @@ class TestKnowledgeGraphLoading:
         vault = kg.session_root / "output" / "obsidian_vault"
         vault.mkdir(parents=True)
         assert kg.vault_dir == vault
+
+    def test_reload_rebuilds_indexes(self, kg_with_chunks: KnowledgeGraph):
+        kg_with_chunks.reload()
+        assert "person-alice" in kg_with_chunks.nodes_by_id
+        assert "edge-001" in kg_with_chunks.edges_by_id
+        assert "person-alice" in kg_with_chunks.chunk_node_index_by_id
+
+    def test_reload_with_new_session_root(self, kg: KnowledgeGraph, tmp_path: Path):
+        other_root = tmp_path / "other_session"
+        output = other_root / "output"
+        output.mkdir(parents=True)
+        intermediate = other_root / "intermediate"
+        intermediate.mkdir()
+        (output / "nodes.jsonl").write_text("", encoding="utf-8")
+        (output / "edges.jsonl").write_text("", encoding="utf-8")
+        (intermediate / "schema.json").write_text("{}", encoding="utf-8")
+
+        kg.reload(session_root=other_root)
+        assert kg.session_root == other_root
+        assert kg.nodes == []
 
 
 # ---------------------------------------------------------------------------
@@ -415,6 +438,18 @@ class TestSourceChunks:
         assert "error" in result
         assert "nonexistent" in result["error"]
 
+    def test_node_excerpt_skips_chunk_key_missing_from_manifest(
+        self, kg_with_chunks: KnowledgeGraph
+    ):
+        # Points at a chunk index that build_chunk_texts() never produces
+        # (team.md only re-chunks to index "1") — exercises the
+        # full_text is None / continue branch in _excerpts_for_chunk_keys.
+        kg_with_chunks.chunk_node_index_by_id["person-alice"] = ["team.md::99"]
+        result = _resolve_node_excerpt(kg_with_chunks, "person-alice", max_chunks=3)
+        assert result["total_chunks"] == 1
+        assert result["returned_chunks"] == 0
+        assert result["excerpts"] == []
+
     def test_node_excerpt_truncated_by_max_chunks(self, kg_with_chunks: KnowledgeGraph):
         # person-alice only has 1 chunk in the fixture; force a smaller cap
         # to exercise total_chunks vs returned_chunks bookkeeping directly.
@@ -463,3 +498,56 @@ class TestSourceChunks:
             kg = KnowledgeGraph(session_root=session_dir)
         assert kg.raw_chunk_node_index is None
         assert any("chunk_node_index.json" in record.message for record in caplog.records)
+
+    def test_malformed_file_manifest_logged(self, session_dir: Path, caplog):
+        (session_dir / "intermediate" / "file_manifest.json").write_text(
+            "not valid json", encoding="utf-8"
+        )
+        with caplog.at_level(logging.WARNING, logger="mykg.mcp_server"):
+            kg = KnowledgeGraph(session_root=session_dir)
+        assert kg.file_manifest is None
+        assert any("file_manifest.json" in record.message for record in caplog.records)
+
+
+def _fake_ctx(kg: KnowledgeGraph):
+    """Minimal stand-in for FastMCP's Context — _get_kg only reads this path."""
+    return SimpleNamespace(
+        request_context=SimpleNamespace(lifespan_context=SimpleNamespace(kg=kg))
+    )
+
+
+class TestMykgGetSourceTool:
+    """Exercises the mykg_get_source MCP tool function directly (not just its helpers)."""
+
+    def test_node_id_only(self, kg_with_chunks: KnowledgeGraph):
+        result = json.loads(
+            asyncio.run(mykg_get_source(_fake_ctx(kg_with_chunks), node_id="person-alice"))
+        )
+        assert result["node_id"] == "person-alice"
+        assert "error" not in result
+
+    def test_edge_id_only(self, kg_with_chunks: KnowledgeGraph):
+        result = json.loads(
+            asyncio.run(mykg_get_source(_fake_ctx(kg_with_chunks), edge_id="edge-001"))
+        )
+        assert result["edge_id"] == "edge-001"
+        assert "error" not in result
+
+    def test_both_node_and_edge(self, kg_with_chunks: KnowledgeGraph):
+        result = json.loads(
+            asyncio.run(
+                mykg_get_source(
+                    _fake_ctx(kg_with_chunks), node_id="person-alice", edge_id="edge-001"
+                )
+            )
+        )
+        assert result["node"]["node_id"] == "person-alice"
+        assert result["edge"]["edge_id"] == "edge-001"
+
+    def test_neither_id_given(self, kg_with_chunks: KnowledgeGraph):
+        result = asyncio.run(mykg_get_source(_fake_ctx(kg_with_chunks)))
+        assert result.startswith("Error:")
+
+    def test_missing_chunk_artifacts_returns_error(self, kg: KnowledgeGraph):
+        result = asyncio.run(mykg_get_source(_fake_ctx(kg), node_id="person-alice"))
+        assert result.startswith("Error:")
