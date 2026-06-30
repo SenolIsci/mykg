@@ -1,7 +1,7 @@
 """MCP server exposing a mykg knowledge graph session for LLM-powered Q&A.
 
 Loads nodes.jsonl, edges.jsonl, and schema.json from a session, builds an
-in-memory NetworkX DiGraph, and exposes 11 query tools + 2 resources via the
+in-memory NetworkX DiGraph, and exposes 15 query tools + 2 resources via the
 Model Context Protocol.
 """
 from __future__ import annotations
@@ -15,8 +15,10 @@ from pathlib import Path
 
 import networkx as nx
 
+from mykg import config as _cfg
 from mykg.exporters.neo4j._common import load_session
 from mykg.exporter import _build_nx_graph
+from mykg.orphan_connector import build_chunk_texts
 
 # ---------------------------------------------------------------------------
 # KnowledgeGraph — in-memory session data + indexes
@@ -36,14 +38,39 @@ class KnowledgeGraph:
     nodes_by_id: dict[str, dict] = field(default_factory=dict)
     nodes_by_type: dict[str, list[dict]] = field(default_factory=dict)
     edges_by_node: dict[str, list[dict]] = field(default_factory=dict)
+    edges_by_id: dict[str, dict] = field(default_factory=dict)
     name_index: list[tuple[str, str, str]] = field(default_factory=list)
     alias_index: dict[str, str] = field(default_factory=dict)
+
+    file_manifest: dict | None = field(default=None)
+    raw_chunk_node_index: dict | None = field(default=None)
+    chunk_node_index_by_id: dict[str, list[str]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.nodes, self.edges, self.schema = load_session(self.session_root)
         edge_metadata = {e["id"]: e for e in self.edges}
         self.graph = _build_nx_graph(self.nodes, edge_metadata)
+        self._load_chunk_artifacts()
         self._build_indexes()
+
+    def _load_chunk_artifacts(self) -> None:
+        intermediate = self.session_root / "intermediate"
+
+        self.file_manifest = None
+        manifest_path = intermediate / "file_manifest.json"
+        try:
+            if manifest_path.exists():
+                self.file_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+        self.raw_chunk_node_index = None
+        index_path = intermediate / "chunk_node_index.json"
+        try:
+            if index_path.exists():
+                self.raw_chunk_node_index = json.loads(index_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
 
     def _build_indexes(self) -> None:
         for node in self.nodes:
@@ -62,8 +89,16 @@ class KnowledgeGraph:
                 self.name_index.append((alias.lower(), nid, alias))
 
         for edge in self.edges:
+            self.edges_by_id[edge["id"]] = edge
             self.edges_by_node.setdefault(edge["from"], []).append(edge)
             self.edges_by_node.setdefault(edge["to"], []).append(edge)
+
+        if self.raw_chunk_node_index:
+            for filename, chunks in self.raw_chunk_node_index.items():
+                for chunk_idx, ids in chunks.items():
+                    chunk_key = f"{filename}::{chunk_idx}"
+                    for sid in ids:
+                        self.chunk_node_index_by_id.setdefault(sid, []).append(chunk_key)
 
     def reload(self, session_root: Path | None = None) -> None:
         """Re-read session files and rebuild the in-memory graph + indexes."""
@@ -75,8 +110,11 @@ class KnowledgeGraph:
         self.nodes_by_id = {}
         self.nodes_by_type = {}
         self.edges_by_node = {}
+        self.edges_by_id = {}
         self.name_index = []
         self.alias_index = {}
+        self.chunk_node_index_by_id = {}
+        self._load_chunk_artifacts()
         self._build_indexes()
 
     @property
@@ -104,6 +142,69 @@ def _node_summary(node: dict) -> dict:
         "name": _node_name(node),
         "confidence": node.get("confidence", 0.0),
     }
+
+
+def _node_names_for_excerpt(node: dict) -> list[str]:
+    names = [_node_name(node)]
+    names.extend(node.get("aliases") or [])
+    return [n for n in names if n]
+
+
+def _extract_relevant_excerpt(
+    text: str,
+    names: list[str],
+    window: int = _cfg.ORPHAN_EXCERPT_WINDOW,
+    context: int = _cfg.ORPHAN_EXCERPT_CONTEXT,
+    max_total: int = _cfg.ORPHAN_EXCERPT_MAX_TOTAL,
+) -> str:
+    """Return excerpts around ALL mentions of any of the given names in text.
+
+    Local copy of orphan_connector._extract_relevant_excerpt's algorithm —
+    intentionally not imported, so this module has no dependency on the
+    orphan-pass module. Each mention contributes one window. Overlapping
+    windows are merged. Falls back to the first `window` characters if none
+    of the names are found. Total output is capped at max_total characters.
+    """
+    text_lower = text.lower()
+
+    positions: list[int] = []
+    for name in names:
+        name_lower = name.lower()
+        start = 0
+        while True:
+            pos = text_lower.find(name_lower, start)
+            if pos == -1:
+                break
+            positions.append(pos)
+            start = pos + 1
+
+    if not positions:
+        excerpt = text[:window]
+        return excerpt + ("…" if len(text) > window else "")
+
+    positions.sort()
+    spans: list[tuple[int, int]] = []
+    for pos in positions:
+        s = max(0, pos - context)
+        e = min(len(text), s + window)
+        if spans and s <= spans[-1][1]:
+            spans[-1] = (spans[-1][0], max(spans[-1][1], e))
+        else:
+            spans.append((s, e))
+
+    parts: list[str] = []
+    total = 0
+    for s, e in spans:
+        chunk = text[s:e]
+        if total + len(chunk) > max_total:
+            remaining = max_total - total
+            if remaining > 80:
+                parts.append(("…" if s > 0 else "") + chunk[:remaining] + "…")
+            break
+        parts.append(("…" if s > 0 else "") + chunk + ("…" if e < len(text) else ""))
+        total += len(chunk)
+
+    return "\n---\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -666,6 +767,136 @@ async def mykg_orphan_nodes(ctx: Context) -> str:
         "total_nodes": len(kg.nodes),
         "orphans": orphans,
     }, indent=2)
+
+
+def _excerpts_for_chunk_keys(
+    kg: KnowledgeGraph,
+    chunk_keys: list[str],
+    names: list[str],
+    max_chunks: int,
+) -> tuple[int, list[dict]]:
+    """Resolve a list of "filename::chunk_idx" keys to bounded excerpts.
+
+    Returns (total_chunks, excerpts) where excerpts is capped at max_chunks
+    and each entry's text is narrowed to the windows around `names`.
+    """
+    total_chunks = len(chunk_keys)
+    selected = chunk_keys[:max_chunks]
+    chunk_texts = build_chunk_texts(kg.file_manifest)
+
+    excerpts: list[dict] = []
+    for chunk_key in selected:
+        full_text = chunk_texts.get(chunk_key)
+        if full_text is None:
+            continue
+        filename, _, chunk_idx = chunk_key.rpartition("::")
+        excerpt_text = _extract_relevant_excerpt(full_text, names)
+        excerpts.append({
+            "source_file": filename,
+            "chunk_index": int(chunk_idx),
+            "text": excerpt_text,
+        })
+
+    return total_chunks, excerpts
+
+
+def _resolve_node_excerpt(kg: KnowledgeGraph, node_id: str, max_chunks: int) -> dict:
+    node = kg.nodes_by_id.get(node_id)
+    if node is None:
+        return {"error": f"Node '{node_id}' not found. Use mykg_search_nodes to find valid IDs."}
+
+    chunk_keys = kg.chunk_node_index_by_id.get(node_id, [])
+    names = _node_names_for_excerpt(node)
+    total_chunks, excerpts = _excerpts_for_chunk_keys(kg, chunk_keys, names, max_chunks)
+
+    return {
+        "node_id": node_id,
+        "total_chunks": total_chunks,
+        "returned_chunks": len(excerpts),
+        "excerpts": excerpts,
+    }
+
+
+def _resolve_edge_excerpt(kg: KnowledgeGraph, edge_id: str, max_chunks: int) -> dict:
+    edge = kg.edges_by_id.get(edge_id)
+    if edge is None:
+        return {"error": f"Edge '{edge_id}' not found."}
+
+    from_chunks = kg.chunk_node_index_by_id.get(edge["from"], [])
+    to_chunks = kg.chunk_node_index_by_id.get(edge["to"], [])
+    intersection = [ck for ck in from_chunks if ck in set(to_chunks)]
+
+    if intersection:
+        chunk_keys = intersection
+        exact_chunk_overlap = True
+    else:
+        chunk_keys = list(dict.fromkeys(from_chunks + to_chunks))
+        exact_chunk_overlap = False
+
+    names: list[str] = []
+    for nid in (edge["from"], edge["to"]):
+        node = kg.nodes_by_id.get(nid)
+        if node is not None:
+            names.extend(_node_names_for_excerpt(node))
+
+    total_chunks, excerpts = _excerpts_for_chunk_keys(kg, chunk_keys, names, max_chunks)
+
+    return {
+        "edge_id": edge_id,
+        "exact_chunk_overlap": exact_chunk_overlap,
+        "total_chunks": total_chunks,
+        "returned_chunks": len(excerpts),
+        "excerpts": excerpts,
+    }
+
+
+@mcp.tool(
+    name="mykg_get_source",
+    annotations={
+        "title": "Get Source Chunk Excerpts",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+)
+async def mykg_get_source(
+    ctx: Context,
+    node_id: str | None = None,
+    edge_id: str | None = None,
+    max_chunks: int = 3,
+) -> str:
+    """Get bounded source-text excerpts for a node, an edge, or both.
+
+    Resolves the node's (or edge's endpoints') source chunk(s) via
+    chunk_node_index.json, then narrows each chunk down to the passages
+    actually mentioning the relevant name(s) — not the full ~2000-token
+    chunk. For an edge, chunks where both endpoints co-occur are preferred
+    (exact_chunk_overlap: true); if endpoints never share a chunk, the union
+    of their chunks is used instead (exact_chunk_overlap: false).
+
+    Requires the session's intermediate/chunk_node_index.json and
+    intermediate/file_manifest.json — pass at least one of node_id or
+    edge_id; both may be given to resolve both in one call.
+    """
+    if node_id is None and edge_id is None:
+        return "Error: provide node_id, edge_id, or both."
+
+    kg = _get_kg(ctx)
+    if kg.raw_chunk_node_index is None or kg.file_manifest is None:
+        return (
+            "Error: this session is missing intermediate/chunk_node_index.json "
+            "or intermediate/file_manifest.json — source chunk lookup is unavailable."
+        )
+
+    node_result = _resolve_node_excerpt(kg, node_id, max_chunks) if node_id is not None else None
+    edge_result = _resolve_edge_excerpt(kg, edge_id, max_chunks) if edge_id is not None else None
+
+    if node_id is not None and edge_id is None:
+        return json.dumps(node_result, indent=2)
+    if edge_id is not None and node_id is None:
+        return json.dumps(edge_result, indent=2)
+    return json.dumps({"node": node_result, "edge": edge_result}, indent=2)
 
 
 @mcp.tool(

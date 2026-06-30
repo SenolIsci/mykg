@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from mykg.mcp_server import KnowledgeGraph, _node_name, _node_summary
+from mykg.mcp_server import (
+    KnowledgeGraph,
+    _node_name,
+    _node_summary,
+    _resolve_edge_excerpt,
+    _resolve_node_excerpt,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +117,42 @@ def session_dir(tmp_path: Path) -> Path:
 def kg(session_dir: Path) -> KnowledgeGraph:
     """Load a KnowledgeGraph from the temp session."""
     return KnowledgeGraph(session_root=session_dir)
+
+
+TEAM_MD_TEXT = (
+    "Alice Smith is a software engineer at Acme Corp. "
+    "Bob Jones manages the infrastructure team at Acme Corp."
+)
+PARTNERS_MD_TEXT = "Acme Corp partners with several technology vendors in the region."
+
+CHUNK_NODE_INDEX = {
+    "team.md": {"1": ["person-alice", "person-bob"]},
+    "partners.md": {"1": ["organization-acme"]},
+}
+
+FILE_MANIFEST = {
+    "team.md": {"content": TEAM_MD_TEXT, "sha256": "deadbeef", "token_count": 20},
+    "partners.md": {"content": PARTNERS_MD_TEXT, "sha256": "cafef00d", "token_count": 12},
+}
+
+
+@pytest.fixture
+def chunked_session_dir(session_dir: Path) -> Path:
+    """Extend session_dir with chunk_node_index.json + file_manifest.json."""
+    intermediate = session_dir / "intermediate"
+    (intermediate / "chunk_node_index.json").write_text(
+        json.dumps(CHUNK_NODE_INDEX), encoding="utf-8"
+    )
+    (intermediate / "file_manifest.json").write_text(
+        json.dumps(FILE_MANIFEST), encoding="utf-8"
+    )
+    return session_dir
+
+
+@pytest.fixture
+def kg_with_chunks(chunked_session_dir: Path) -> KnowledgeGraph:
+    """Load a KnowledgeGraph with chunk artifacts present."""
+    return KnowledgeGraph(session_root=chunked_session_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -340,10 +382,73 @@ class TestMCPServerRegistration:
             "mykg_query_graph",
             "mykg_hub_nodes",
             "mykg_orphan_nodes",
+            "mykg_get_source",
             "mykg_read_note",
             "mykg_list_sessions",
             "mykg_reload",
         ]
         for name in expected:
             assert name in tool_names, f"Tool '{name}' not registered"
-        assert len(tool_names) == 14
+        assert len(tool_names) == 15
+
+
+# ---------------------------------------------------------------------------
+# mykg_get_source: node/edge source-chunk excerpt resolution
+# ---------------------------------------------------------------------------
+
+
+class TestSourceChunks:
+    def test_node_excerpt_contains_name(self, kg_with_chunks: KnowledgeGraph):
+        result = _resolve_node_excerpt(kg_with_chunks, "person-alice", max_chunks=3)
+        assert "error" not in result
+        assert result["total_chunks"] == 1
+        assert result["returned_chunks"] == 1
+        excerpt = result["excerpts"][0]
+        assert excerpt["source_file"] == "team.md"
+        assert excerpt["chunk_index"] == 1
+        assert "Alice Smith" in excerpt["text"]
+        assert len(excerpt["text"]) <= len(TEAM_MD_TEXT)
+
+    def test_node_excerpt_unknown_node(self, kg_with_chunks: KnowledgeGraph):
+        result = _resolve_node_excerpt(kg_with_chunks, "nonexistent", max_chunks=3)
+        assert "error" in result
+        assert "nonexistent" in result["error"]
+
+    def test_node_excerpt_truncated_by_max_chunks(self, kg_with_chunks: KnowledgeGraph):
+        # person-alice only has 1 chunk in the fixture; force a smaller cap
+        # to exercise total_chunks vs returned_chunks bookkeeping directly.
+        kg_with_chunks.chunk_node_index_by_id["person-alice"] = [
+            "team.md::1", "partners.md::1",
+        ]
+        result = _resolve_node_excerpt(kg_with_chunks, "person-alice", max_chunks=1)
+        assert result["total_chunks"] == 2
+        assert result["returned_chunks"] == 1
+
+    def test_edge_excerpt_exact_overlap(self, kg_with_chunks: KnowledgeGraph):
+        # edge-001: person-alice -> organization-acme. Force both endpoints
+        # to share a chunk so the intersection path is exercised.
+        kg_with_chunks.chunk_node_index_by_id["organization-acme"] = ["team.md::1"]
+        result = _resolve_edge_excerpt(kg_with_chunks, "edge-001", max_chunks=3)
+        assert "error" not in result
+        assert result["exact_chunk_overlap"] is True
+        excerpt = result["excerpts"][0]
+        assert "Alice Smith" in excerpt["text"] or "Acme" in excerpt["text"]
+
+    def test_edge_excerpt_union_fallback(self, kg_with_chunks: KnowledgeGraph):
+        # Fixture as-shipped: person-alice is only in team.md::1,
+        # organization-acme is only in partners.md::1 — no overlap.
+        result = _resolve_edge_excerpt(kg_with_chunks, "edge-001", max_chunks=3)
+        assert "error" not in result
+        assert result["exact_chunk_overlap"] is False
+        assert result["total_chunks"] == 2
+        sources = {e["source_file"] for e in result["excerpts"]}
+        assert sources == {"team.md", "partners.md"}
+
+    def test_edge_excerpt_unknown_edge(self, kg_with_chunks: KnowledgeGraph):
+        result = _resolve_edge_excerpt(kg_with_chunks, "nonexistent", max_chunks=3)
+        assert "error" in result
+
+    def test_missing_chunk_artifacts(self, kg: KnowledgeGraph):
+        # plain `kg` fixture has no chunk_node_index.json / file_manifest.json
+        assert kg.raw_chunk_node_index is None
+        assert kg.file_manifest is None
