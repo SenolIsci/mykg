@@ -7,6 +7,7 @@ Model Context Protocol.
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -19,6 +20,8 @@ from mykg import config as _cfg
 from mykg.exporters.neo4j._common import load_session
 from mykg.exporter import _build_nx_graph
 from mykg.orphan_connector import build_chunk_texts
+
+_log = logging.getLogger("mykg.mcp_server")
 
 # ---------------------------------------------------------------------------
 # KnowledgeGraph — in-memory session data + indexes
@@ -62,7 +65,7 @@ class KnowledgeGraph:
             if manifest_path.exists():
                 self.file_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
-            pass
+            _log.warning("Failed to load %s — source chunk lookup will be unavailable", manifest_path, exc_info=True)
 
         self.raw_chunk_node_index = None
         index_path = intermediate / "chunk_node_index.json"
@@ -70,7 +73,7 @@ class KnowledgeGraph:
             if index_path.exists():
                 self.raw_chunk_node_index = json.loads(index_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
-            pass
+            _log.warning("Failed to load %s — source chunk lookup will be unavailable", index_path, exc_info=True)
 
     def _build_indexes(self) -> None:
         for node in self.nodes:
@@ -820,11 +823,12 @@ def _resolve_node_excerpt(kg: KnowledgeGraph, node_id: str, max_chunks: int) -> 
 def _resolve_edge_excerpt(kg: KnowledgeGraph, edge_id: str, max_chunks: int) -> dict:
     edge = kg.edges_by_id.get(edge_id)
     if edge is None:
-        return {"error": f"Edge '{edge_id}' not found."}
+        return {"error": f"Edge '{edge_id}' not found. Use mykg_query_graph or mykg_search_nodes to find valid IDs."}
 
     from_chunks = kg.chunk_node_index_by_id.get(edge["from"], [])
     to_chunks = kg.chunk_node_index_by_id.get(edge["to"], [])
-    intersection = [ck for ck in from_chunks if ck in set(to_chunks)]
+    to_set = set(to_chunks)
+    intersection = [ck for ck in from_chunks if ck in to_set]
 
     if intersection:
         chunk_keys = intersection

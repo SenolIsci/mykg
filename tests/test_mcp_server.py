@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -447,8 +448,18 @@ class TestSourceChunks:
     def test_edge_excerpt_unknown_edge(self, kg_with_chunks: KnowledgeGraph):
         result = _resolve_edge_excerpt(kg_with_chunks, "nonexistent", max_chunks=3)
         assert "error" in result
+        assert "nonexistent" in result["error"]
 
     def test_missing_chunk_artifacts(self, kg: KnowledgeGraph):
         # plain `kg` fixture has no chunk_node_index.json / file_manifest.json
         assert kg.raw_chunk_node_index is None
         assert kg.file_manifest is None
+
+    def test_malformed_chunk_artifacts_logged(self, session_dir: Path, caplog):
+        (session_dir / "intermediate" / "chunk_node_index.json").write_text(
+            "not valid json", encoding="utf-8"
+        )
+        with caplog.at_level(logging.WARNING, logger="mykg.mcp_server"):
+            kg = KnowledgeGraph(session_root=session_dir)
+        assert kg.raw_chunk_node_index is None
+        assert any("chunk_node_index.json" in record.message for record in caplog.records)
