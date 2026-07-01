@@ -247,6 +247,42 @@ def test_harmonize_no_locked_block_unchanged():
     assert system_prompt == _HARMONIZE_SYSTEM_PROMPT
 
 
+def test_harmonize_samples_proposals_when_over_limit(monkeypatch):
+    """When proposals exceed max_schema_proposals, only the capped count reaches the LLM."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS1_MAX_SCHEMA_PROPOSALS", 2)
+    proposals = [
+        {"concepts": [{"type": f"Type{i}", "parent": None, "attributes": ["name"]}], "properties": []}
+        for i in range(5)
+    ]
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps(_REDUCED_SCHEMA)
+    harmonize_schema(_SMALL_SCHEMA, proposals, adapter)
+
+    user_prompt = adapter.complete.call_args[0][1]
+    sent = json.loads(user_prompt.split("RAW PROPOSALS:\n")[1])
+    assert len(sent) == 2
+
+
+def test_harmonize_no_sample_when_under_limit(monkeypatch):
+    """When proposals are within the cap, all are sent to the LLM unchanged."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS1_MAX_SCHEMA_PROPOSALS", 100)
+    proposals = [
+        {"concepts": [{"type": f"Type{i}", "parent": None, "attributes": ["name"]}], "properties": []}
+        for i in range(3)
+    ]
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps(_REDUCED_SCHEMA)
+    harmonize_schema(_SMALL_SCHEMA, proposals, adapter)
+
+    user_prompt = adapter.complete.call_args[0][1]
+    sent = json.loads(user_prompt.split("RAW PROPOSALS:\n")[1])
+    assert len(sent) == 3
+
+
 def test_review_quality_injects_locked_block():
     adapter = MagicMock()
     adapter.complete.return_value = json.dumps(_SMALL_SCHEMA)
@@ -488,6 +524,24 @@ def test_harmonize_for_merge_falls_back_on_adapter_exception():
     adapter.complete.side_effect = RuntimeError("boom")
     result = harmonize_schema_for_merge(_MERGED_SCHEMA_FOR_MERGE, _SESSION_SCHEMAS, adapter)
     assert result is _MERGED_SCHEMA_FOR_MERGE
+
+
+def test_harmonize_for_merge_samples_proposals_when_over_limit(monkeypatch):
+    """When session schemas exceed max_schema_proposals, only the cap reaches the LLM."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS1_MAX_SCHEMA_PROPOSALS", 1)
+    proposals = [
+        {"concepts": [{"type": f"Type{i}", "parent": None, "attributes": ["name"]}], "properties": []}
+        for i in range(3)
+    ]
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps(_MERGED_SCHEMA_FOR_MERGE)
+    harmonize_schema_for_merge(_MERGED_SCHEMA_FOR_MERGE, proposals, adapter)
+
+    user_prompt = adapter.complete.call_args[0][1]
+    sent = json.loads(user_prompt.split("SESSION SCHEMAS:\n")[1])
+    assert len(sent) == 1
 
 
 # ---------------------------------------------------------------------------

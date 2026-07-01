@@ -787,3 +787,10 @@ def test_print_report_includes_normalize_names_in_yaml_snippet(capsys):
     out = capsys.readouterr().out
     assert "normalize_names:" in out
     assert "batch_token_target: 20000" in out
+
+
+def test_print_report_includes_max_schema_proposals_in_yaml_snippet(capsys):
+    """print_report YAML snippet includes the pass1.max_schema_proposals line."""
+    print_report(PRINT_RESULT, model="test-model", chunk_divisor=12)
+    out = capsys.readouterr().out
+    assert "max_schema_proposals: 50" in out
