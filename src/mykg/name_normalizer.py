@@ -156,29 +156,58 @@ def build_alias_index(
     return index
 
 
+def _estimate_tokens(obj: dict) -> int:
+    """Byte-to-token estimate consistent with pass2_concat.py / context_calculator.py."""
+    return len(json.dumps(obj, ensure_ascii=False).encode("utf-8")) // 4
+
+
 def run_name_normalization(
     inventory: dict[str, list[str]],
     adapter: LLMAdapter,
 ) -> tuple[dict[str, dict[str, str]], list[str]]:
-    """Call the LLM with the name inventory and return a validated normalization map."""
-    # Cap each type to max_names_per_type
+    """Call the LLM with the name inventory and return a validated normalization map.
+
+    Types are bin-packed greedily into token-bounded batches (batch_token_target).
+    max_names_per_type acts as a safety-net cap for pathological single types.
+    """
     capped: dict[str, list[str]] = {
         t: names[: _cfg.NORMALIZE_NAMES_MAX_PER_TYPE]
         for t, names in inventory.items()
-        if len(names) >= 2  # no point calling LLM for single-name types
+        if len(names) >= 2
     }
     if not capped:
         return {}, []
 
-    user_text = json.dumps(capped, ensure_ascii=False)
-    raw = adapter.complete(NORMALIZE_SYSTEM_PROMPT, user_text)
+    # Greedy bin-packing: accumulate types into a batch until the next type
+    # would push the token estimate over the budget, then start a new batch.
+    budget = _cfg.NORMALIZE_NAMES_BATCH_TOKEN_TARGET
+    batches: list[dict[str, list[str]]] = []
+    current: dict[str, list[str]] = {}
+    for t, names in capped.items():
+        entry = {t: names}
+        if current and _estimate_tokens({**current, **entry}) > budget:
+            batches.append(current)
+            current = entry
+        else:
+            current.update(entry)
+    if current:
+        batches.append(current)
 
-    try:
-        llm_output = json.loads(raw)
-    except (json.JSONDecodeError, ValueError) as exc:
-        return {}, [f"JSON parse error: {exc}"]
+    merged_map: dict[str, dict[str, str]] = {}
+    all_errors: list[str] = []
+    for batch in batches:
+        user_text = json.dumps(batch, ensure_ascii=False)
+        raw = adapter.complete(NORMALIZE_SYSTEM_PROMPT, user_text)
+        try:
+            llm_output = json.loads(raw)
+        except (json.JSONDecodeError, ValueError) as exc:
+            all_errors.append(f"JSON parse error: {exc}")
+            continue
+        batch_map, errors = validate_normalization_output(llm_output, inventory)
+        all_errors.extend(errors)
+        merged_map.update(batch_map)
 
-    return validate_normalization_output(llm_output, inventory)
+    return merged_map, all_errors
 
 
 def build_normalization_file(

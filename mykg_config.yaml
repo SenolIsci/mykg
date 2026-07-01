@@ -116,7 +116,8 @@ profiles:
         batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
         enabled: true           # run the name-normalization LLM step to resolve surface-form variants before deduplication
-        max_names_per_type: 2000 # max entity names sent to the LLM per concept type in a single normalization call
+        max_names_per_type: 50000 # safety-net cap per type; primary batch sizing is controlled by batch_token_target
+        batch_token_target: 16000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
       # --- Orphan recovery -----------------------------------------------------
       orphan_pass:
         enabled: false
@@ -288,7 +289,8 @@ profiles:
         batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
         enabled: true
-        max_names_per_type: 2000
+        max_names_per_type: 50000 # safety-net cap per type; primary batch sizing is controlled by batch_token_target
+        batch_token_target: 32000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
       # --- Orphan recovery -----------------------------------------------------
       orphan_pass:
         enabled: false
@@ -459,7 +461,8 @@ profiles:
         batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
         enabled: true           # run the name-normalization LLM step to resolve surface-form variants before deduplication
-        max_names_per_type: 2000 # max entity names sent to the LLM per concept type in a single normalization call
+        max_names_per_type: 50000 # safety-net cap per type; primary batch sizing is controlled by batch_token_target
+        batch_token_target: 32000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
       # --- Orphan recovery -----------------------------------------------------
       orphan_pass:
         enabled: false
@@ -637,7 +640,8 @@ profiles:
         batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
         enabled: true
-        max_names_per_type: 2000
+        max_names_per_type: 50000 # safety-net cap per type; primary batch sizing is controlled by batch_token_target
+        batch_token_target: 32000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
       # --- Orphan recovery -----------------------------------------------------
       orphan_pass:
         enabled: false
@@ -808,8 +812,8 @@ profiles:
         batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
         batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
-        enabled: true
-        max_names_per_type: 500   # keep smaller — local models are slower
+        max_names_per_type: 500   # keep smaller — local models are slower; safety-net cap, primary control is batch_token_target
+        batch_token_target: 16000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
       # --- Orphan recovery -----------------------------------------------------
       orphan_pass:
         enabled: false
@@ -977,7 +981,8 @@ profiles:
         batch_retry_max: 1
       normalize_names:
         enabled: true
-        max_names_per_type: 2000
+        max_names_per_type: 50000 # safety-net cap per type; primary batch sizing is controlled by batch_token_target
+        batch_token_target: 15000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
       orphan_pass:
         enabled: false
         min_cooccurrence: 1
