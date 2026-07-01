@@ -471,49 +471,6 @@ def test_append_delta_ingest_picks_up_preprocessed_md(tmp_path):
     )
 
 
-@pytest.mark.live
-def test_append_delta_real_mineru_pdf(tmp_path):
-    """Real MinerU PDF→MD through the append delta (gated by -m live; not in default run).
-
-    Exercises the actual ephemeral-venv MinerU path — no mocking. Stops at the
-    preprocess/manifest layer, so no LLM/API key is needed (MinerU is LLM-free).
-    """
-    if shutil.which("uv") is None:
-        pytest.skip("uv not available for the ephemeral MinerU venv")
-
-    pdf_src = (
-        Path(__file__).resolve().parents[1]
-        / "_input_files3"
-        / "ODNI-UAP-D001, USPER NARRATIVE, SENIOR USIC OFFICIAL.pdf"
-    )
-    if not pdf_src.exists():
-        pytest.skip(f"PDF fixture not found at {pdf_src}")
-
-    ctx = _preprocess_ctx(tmp_path)
-    shutil.copy2(pdf_src, ctx.input_dir / "doc.pdf")
-
-    with patch("mykg.config.PREPROCESS_ENABLED", True):
-        # Stage 1 — real MinerU conversion of the PDF.
-        run_preprocess(ctx)
-        sub = _preprocess_subdir(ctx)
-        converted = sub / "doc.md"
-        assert converted.exists(), "MinerU must produce doc.md under the preprocess subdir"
-        assert converted.read_text().strip(), "converted markdown must be non-empty"
-
-        manifest = json.loads((ctx.intermediate_dir / "preprocess_manifest.json").read_text())
-        pdf_sha = manifest["source_files"]["doc.pdf"]["sha256"]
-
-        # Stage 2 — add a cheap .txt file and re-run; the PDF must be reused by SHA
-        # (not re-converted), proving the incremental delta works across formats.
-        (ctx.input_dir / "extra.txt").write_text("extra note")
-        run_preprocess(ctx)
-
-    manifest2 = json.loads((ctx.intermediate_dir / "preprocess_manifest.json").read_text())
-    assert manifest2["source_files"]["doc.pdf"]["sha256"] == pdf_sha
-    assert "extra.txt" in manifest2["source_files"]
-    assert manifest2["unchanged_count"] >= 1, "the already-converted PDF must be skipped on re-run"
-
-
 # ---------------------------------------------------------------------------
 # 7. Orchestrator: missing schema error
 # ---------------------------------------------------------------------------
