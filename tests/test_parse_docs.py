@@ -31,9 +31,10 @@ def test_ephemeral_venv_runs_uv_venv_then_install_then_yields_bin(tmp_path: Path
         if "venv" in cmd and "pip" not in cmd:
             venv_dir = Path(cmd[-1])
             bin_dir = venv_dir / ("Scripts" if sys.platform == "win32" else "bin")
+            ext = ".exe" if sys.platform == "win32" else ""
             bin_dir.mkdir(parents=True, exist_ok=True)
-            (bin_dir / "python").write_text("")
-            (bin_dir / "mineru").write_text("")
+            (bin_dir / ("python" + ext)).write_text("")
+            (bin_dir / ("mineru" + ext)).write_text("")
         return _fake_proc(0)
 
     with (
@@ -64,9 +65,11 @@ def test_ephemeral_venv_cleans_up_on_exception() -> None:
     def fake_run(cmd, **kwargs):
         if "venv" in cmd and "pip" not in cmd:
             venv_dir = Path(cmd[-1])
-            (venv_dir / "bin").mkdir(parents=True, exist_ok=True)
-            (venv_dir / "bin" / "python").write_text("")
-            (venv_dir / "bin" / "mineru").write_text("")
+            bin_dir = venv_dir / ("Scripts" if sys.platform == "win32" else "bin")
+            ext = ".exe" if sys.platform == "win32" else ""
+            bin_dir.mkdir(parents=True, exist_ok=True)
+            (bin_dir / ("python" + ext)).write_text("")
+            (bin_dir / ("mineru" + ext)).write_text("")
         return _fake_proc(0)
 
     with (
@@ -89,8 +92,10 @@ def test_ephemeral_venv_install_failure_raises_with_stderr() -> None:
             return _fake_proc(1, stderr="resolver could not satisfy mineru[all]")
         if "venv" in cmd:
             venv_dir = Path(cmd[-1])
-            (venv_dir / "bin").mkdir(parents=True, exist_ok=True)
-            (venv_dir / "bin" / "python").write_text("")
+            bin_dir = venv_dir / ("Scripts" if sys.platform == "win32" else "bin")
+            ext = ".exe" if sys.platform == "win32" else ""
+            bin_dir.mkdir(parents=True, exist_ok=True)
+            (bin_dir / ("python" + ext)).write_text("")
         return _fake_proc(0)
 
     with (
@@ -129,9 +134,10 @@ def _route_uv_and_mineru(
             if "venv" in cmd and "pip" not in cmd:
                 venv_dir = Path(cmd[-1])
                 bin_dir = venv_dir / ("Scripts" if sys.platform == "win32" else "bin")
+                ext = ".exe" if sys.platform == "win32" else ""
                 bin_dir.mkdir(parents=True, exist_ok=True)
-                (bin_dir / "python").write_text("")
-                (bin_dir / "mineru").write_text("")
+                (bin_dir / ("python" + ext)).write_text("")
+                (bin_dir / ("mineru" + ext)).write_text("")
                 if venv_counter is not None:
                     venv_counter["n"] = venv_counter.get("n", 0) + 1
             return _fake_proc(0)
@@ -411,9 +417,10 @@ def test_parse_docs_directory_input_continues_on_per_file_failure(tmp_path: Path
             if "venv" in cmd and "pip" not in cmd:
                 venv_dir = Path(cmd[-1])
                 bin_dir = venv_dir / ("Scripts" if sys.platform == "win32" else "bin")
+                ext = ".exe" if sys.platform == "win32" else ""
                 bin_dir.mkdir(parents=True, exist_ok=True)
-                (bin_dir / "python").write_text("")
-                (bin_dir / "mineru").write_text("")
+                (bin_dir / ("python" + ext)).write_text("")
+                (bin_dir / ("mineru" + ext)).write_text("")
             return _fake_proc(0)
         mineru_calls.append(list(cmd))
         # bad.pdf fails in MinerU; everything else succeeds.

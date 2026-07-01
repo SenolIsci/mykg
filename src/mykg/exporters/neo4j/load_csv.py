@@ -230,12 +230,14 @@ def build_shell_cypher(csvs: dict[Path, str], out_dir_abs: Path) -> str:
     """Cypher script using absolute file:/// URIs.
 
     out_dir_abs must be an absolute path. Pass an unrelated placeholder (e.g.
-    Path('/FIXTURE_OUT_DIR')) when generating snapshots so the fixture is
-    machine-independent.
+    PurePosixPath('/FIXTURE_OUT_DIR')) when generating snapshots so the fixture
+    is machine-independent on both Windows and Unix.
 
     Requires `dbms.security.allow_csv_import_from_file_urls=true` in neo4j.conf.
     """
-    out_dir_abs = Path(out_dir_abs)
+    # Accept PurePosixPath from snapshot tests; only coerce plain strings.
+    if not hasattr(out_dir_abs, "is_absolute"):
+        out_dir_abs = Path(out_dir_abs)
     if not out_dir_abs.is_absolute():
         raise ValueError(f"out_dir_abs must be absolute, got: {out_dir_abs}")
 
@@ -246,7 +248,9 @@ def build_shell_cypher(csvs: dict[Path, str], out_dir_abs: Path) -> str:
 
 def build_readme(out_dir_abs: Path, csv_paths: list[Path]) -> str:
     """Per-run README explaining both import flows."""
-    out_dir_abs = Path(out_dir_abs)
+    # Accept PurePosixPath from snapshot tests; only coerce plain strings.
+    if not hasattr(out_dir_abs, "is_absolute"):
+        out_dir_abs = Path(out_dir_abs)
     node_csvs = sorted(p for p in csv_paths if p.name.startswith("nodes_"))
     rel_csvs = sorted(p for p in csv_paths if p.name.startswith("relationships_"))
     shell_script_path = out_dir_abs / "import_shell.cypher"

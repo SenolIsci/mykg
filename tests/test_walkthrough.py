@@ -44,7 +44,8 @@ def test_parse_log_basic(tmp_path):
     log_path.write_text(
         "21:33:09 [INFO] mykg.cli — Command: mykg extract-graph input/\n"
         "21:33:10 [WARNING] mykg.pass2 — chunk 3 — validation errors: []\n"
-        "not a valid log line\n"
+        "not a valid log line\n",
+        encoding="utf-8",
     )
     parsed = _parse_log_lines(log_path)
     assert len(parsed) == 2
@@ -72,7 +73,8 @@ def test_parse_log_step_events(tmp_path):
         "10:00:05 [INFO] mykg.orchestrator — DONE ingest\n"
         "10:00:05 [INFO] mykg.orchestrator — RUN  pass1\n"
         "10:01:00 [INFO] mykg.orchestrator — DONE pass1\n"
-        "10:01:00 [INFO] mykg.orchestrator — SKIP schema_validate — outputs exist\n"
+        "10:01:00 [INFO] mykg.orchestrator — SKIP schema_validate — outputs exist\n",
+        encoding="utf-8",
     )
     parsed = _parse_log_lines(log_path)
     orch = [ln for ln in parsed if "orchestrator" in ln["logger"]]
@@ -100,7 +102,8 @@ def test_step_timeline_duration(tmp_path):
         "10:00:00 [INFO] mykg.orchestrator — RUN  ingest\n"
         "10:00:10 [INFO] mykg.orchestrator — DONE ingest\n"
         "10:00:10 [INFO] mykg.orchestrator — RUN  pass1\n"
-        "10:05:10 [INFO] mykg.orchestrator — DONE pass1\n"
+        "10:05:10 [INFO] mykg.orchestrator — DONE pass1\n",
+        encoding="utf-8",
     )
     lines = _parse_log_lines(log_path)
     result = _section_step_timeline(session, lines, state)
@@ -273,7 +276,8 @@ def test_generate_walkthrough_partial(tmp_path):
     (session / "run.log").write_text(
         "10:00:00 [INFO] mykg.cli — LLM endpoint: openrouter / test-model\n"
         "10:00:01 [INFO] mykg.orchestrator — RUN  ingest\n"
-        "10:00:02 [INFO] mykg.orchestrator — DONE ingest\n"
+        "10:00:02 [INFO] mykg.orchestrator — DONE ingest\n",
+        encoding="utf-8",
     )
 
     result = generate_walkthrough(session)
@@ -300,7 +304,8 @@ def test_warnings_section(tmp_path):
         "10:00:05 [WARNING] mykg.pass2 — chunk 3 — validation errors: ['bad type'] — retrying\n"
         "10:00:10 [ERROR] mykg.orchestrator — FAILED pass2 — timeout\n"
         "10:00:15 [INFO] mykg.pass2 — 65_HS1.md — total: 5 node(s), 3 edge(s)\n"
-        "10:00:20 [WARNING] mykg.pass2 — 65_HS1.md — dropping edge a→b (dangling after dedup)\n"
+        "10:00:20 [WARNING] mykg.pass2 — 65_HS1.md — dropping edge a→b (dangling after dedup)\n",
+        encoding="utf-8",
     )
     lines = _parse_log_lines(log_path)
     result = _section_warnings(lines)
@@ -949,7 +954,8 @@ def test_step_timeline_shows_dash_duration_for_skipped_steps(tmp_path):
     log_path.write_text(
         "10:00:00 [INFO] mykg.orchestrator — RUN  ingest\n"
         "10:00:05 [INFO] mykg.orchestrator — DONE ingest\n"
-        "10:00:05 [INFO] mykg.orchestrator — SKIP human_review — no --review flag\n"
+        "10:00:05 [INFO] mykg.orchestrator — SKIP human_review — no --review flag\n",
+        encoding="utf-8",
     )
     lines = _parse_log_lines(log_path)
     result = _section_step_timeline(session, lines, {})

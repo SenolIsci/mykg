@@ -109,10 +109,11 @@ def test_claude_skills_dir_windows_no_appdata_env(monkeypatch, tmp_path):
 
 
 def test_manual_copy_hint_unix(monkeypatch):
+    from pathlib import PurePosixPath
     from mykg import cli
 
     monkeypatch.setattr(sys, "platform", "linux")
-    hint = cli._manual_copy_hint(Path("/src"), Path("/dst"))
+    hint = cli._manual_copy_hint(PurePosixPath("/src"), PurePosixPath("/dst"))
     assert "cp -R" in hint
     assert "/src" in hint
     assert "/dst" in hint
