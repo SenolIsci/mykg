@@ -274,3 +274,90 @@ def test_build_normalization_file_structure():
     assert out["mappings"] == norm_map
     assert out["metadata"]["aliases_mapped"] == 1
     assert out["metadata"]["input_name_count_by_type"] == {"Person": 2}
+
+
+# ---------------------------------------------------------------------------
+# run_name_normalization — batching
+# ---------------------------------------------------------------------------
+
+
+def test_single_batch_when_inventory_fits():
+    """Small inventory fits in one batch → adapter called exactly once."""
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps({"Person": {"Alice": "Alice Smith"}})
+    inventory = {"Person": ["Alice Smith", "Alice", "Bob"]}
+    norm_map, errors = run_name_normalization(inventory, adapter)
+    adapter.complete.assert_called_once()
+    assert norm_map == {"Person": {"Alice": "Alice Smith"}}
+    assert errors == []
+
+
+def test_batching_splits_on_budget(monkeypatch):
+    """When batch_token_target is tiny, each type gets its own batch."""
+    import mykg.config as cfg
+    monkeypatch.setattr(cfg, "NORMALIZE_NAMES_BATCH_TOKEN_TARGET", 1)  # force one type per batch
+
+    calls = []
+    def fake_complete(system, user):
+        payload = json.loads(user)
+        calls.append(list(payload.keys()))
+        return json.dumps({})  # empty result is fine for split test
+
+    adapter = MagicMock()
+    adapter.complete.side_effect = fake_complete
+
+    inventory = {
+        "Person": ["Alice Smith", "Alice"],
+        "Organization": ["Acme Corp", "ACME"],
+        "Technology": ["Python", "python"],
+    }
+    run_name_normalization(inventory, adapter)
+    # Each type must be in its own call
+    assert adapter.complete.call_count == 3
+    type_sets = [set(c) for c in calls]
+    assert {"Person"} in type_sets
+    assert {"Organization"} in type_sets
+    assert {"Technology"} in type_sets
+
+
+def test_multi_batch_results_merge(monkeypatch):
+    """Results from multiple batches are merged into one map."""
+    import mykg.config as cfg
+    monkeypatch.setattr(cfg, "NORMALIZE_NAMES_BATCH_TOKEN_TARGET", 1)
+
+    responses = [
+        json.dumps({"Person": {"Alice": "Alice Smith"}}),
+        json.dumps({"Organization": {"ACME": "Acme Corp"}}),
+    ]
+    adapter = MagicMock()
+    adapter.complete.side_effect = responses
+
+    inventory = {
+        "Person": ["Alice Smith", "Alice"],
+        "Organization": ["Acme Corp", "ACME"],
+    }
+    norm_map, errors = run_name_normalization(inventory, adapter)
+    assert norm_map == {
+        "Person": {"Alice": "Alice Smith"},
+        "Organization": {"ACME": "Acme Corp"},
+    }
+    assert errors == []
+
+
+def test_json_parse_error_in_one_batch_continues(monkeypatch):
+    """A JSON parse error in one batch is recorded but other batches still run."""
+    import mykg.config as cfg
+    monkeypatch.setattr(cfg, "NORMALIZE_NAMES_BATCH_TOKEN_TARGET", 1)
+
+    adapter = MagicMock()
+    adapter.complete.side_effect = [
+        "not json",  # first batch fails
+        json.dumps({"Organization": {"ACME": "Acme Corp"}}),  # second batch succeeds
+    ]
+    inventory = {
+        "Person": ["Alice Smith", "Alice"],
+        "Organization": ["Acme Corp", "ACME"],
+    }
+    norm_map, errors = run_name_normalization(inventory, adapter)
+    assert any("JSON parse error" in e for e in errors)
+    assert "Organization" in norm_map  # second batch still contributed

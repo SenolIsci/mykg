@@ -156,6 +156,7 @@ SESSIONS_DIR: str = _get("paths", "sessions_dir")
 # ---------------------------------------------------------------------------
 NORMALIZE_NAMES_ENABLED: bool = _get("normalize_names", "enabled")
 NORMALIZE_NAMES_MAX_PER_TYPE: int = _get("normalize_names", "max_names_per_type")
+NORMALIZE_NAMES_BATCH_TOKEN_TARGET: int = _get_opt("normalize_names", "batch_token_target", 60000)
 
 # ---------------------------------------------------------------------------
 # Orphan-connection pass (two-stage: co-occurrence heuristic + LLM confirmation)
