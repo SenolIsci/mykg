@@ -57,7 +57,7 @@ profiles:
         timeout_seconds: 1800         # mineru run-phase timeout (30 min)
         uv_path: uv                   # path or PATH name of the uv CLI (uv is a core mykg dependency)
         uv_python_version: "3.12"    # interpreter version uv pins the ephemeral venv to
-        mineru_spec: mineru[all]      # package spec installed via `uv pip install -U <spec>`
+        mineru_spec: "mineru[all] pdftext<0.7.0"      # package spec installed via `uv pip install -U <spec>`
         install_timeout_seconds: 1800 # install-phase timeout (30 min); first-run downloads PyTorch/Ray
         extensions:                   # suffixes the preprocess step may convert (.md is native and never listed). Backend per suffix is hardcoded: HTML → markdownify in-process, everything else → MinerU. Remove a line to skip that suffix.
           - .pdf
@@ -230,7 +230,7 @@ profiles:
         timeout_seconds: 1800         # mineru run-phase timeout (30 min)
         uv_path: uv                   # path or PATH name of the uv CLI (uv is a core mykg dependency)
         uv_python_version: "3.12"    # interpreter version uv pins the ephemeral venv to
-        mineru_spec: mineru[all]      # package spec installed via `uv pip install -U <spec>`
+        mineru_spec: "mineru[all] pdftext<0.7.0"      # package spec installed via `uv pip install -U <spec>`
         install_timeout_seconds: 1800 # install-phase timeout (30 min); first-run downloads PyTorch/Ray
         extensions:                   # suffixes the preprocess step may convert (.md is native and never listed). Backend per suffix is hardcoded: HTML → markdownify in-process, everything else → MinerU. Remove a line to skip that suffix.
           - .pdf
@@ -402,7 +402,7 @@ profiles:
         timeout_seconds: 1800         # mineru run-phase timeout (30 min)
         uv_path: uv                   # path or PATH name of the uv CLI (uv is a core mykg dependency)
         uv_python_version: "3.12"    # interpreter version uv pins the ephemeral venv to
-        mineru_spec: mineru[all]      # package spec installed via `uv pip install -U <spec>`
+        mineru_spec: "mineru[all] pdftext<0.7.0"      # package spec installed via `uv pip install -U <spec>`
         install_timeout_seconds: 1800 # install-phase timeout (30 min); first-run downloads PyTorch/Ray
         extensions:                   # suffixes the preprocess step may convert (.md is native and never listed). Backend per suffix is hardcoded: HTML → markdownify in-process, everything else → MinerU. Remove a line to skip that suffix.
           - .pdf
@@ -581,7 +581,7 @@ profiles:
         timeout_seconds: 1800         # mineru run-phase timeout (30 min)
         uv_path: uv                   # path or PATH name of the uv CLI (uv is a core mykg dependency)
         uv_python_version: "3.12"    # interpreter version uv pins the ephemeral venv to
-        mineru_spec: mineru[all]      # package spec installed via `uv pip install -U <spec>`
+        mineru_spec: "mineru[all] pdftext<0.7.0"      # package spec installed via `uv pip install -U <spec>`
         install_timeout_seconds: 1800 # install-phase timeout (30 min); first-run downloads PyTorch/Ray
         extensions:                   # suffixes the preprocess step may convert (.md is native and never listed). Backend per suffix is hardcoded: HTML → markdownify in-process, everything else → MinerU. Remove a line to skip that suffix.
           - .pdf
@@ -754,7 +754,7 @@ profiles:
         timeout_seconds: 1800         # mineru run-phase timeout (30 min)
         uv_path: uv                   # path or PATH name of the uv CLI (uv is a core mykg dependency)
         uv_python_version: "3.12"    # interpreter version uv pins the ephemeral venv to
-        mineru_spec: mineru[all]      # package spec installed via `uv pip install -U <spec>`
+        mineru_spec: "mineru[all] pdftext<0.7.0"      # package spec installed via `uv pip install -U <spec>`
         install_timeout_seconds: 1800 # install-phase timeout (30 min); first-run downloads PyTorch/Ray
         extensions:                   # suffixes the preprocess step may convert (.md is native and never listed). Backend per suffix is hardcoded: HTML → markdownify in-process, everything else → MinerU. Remove a line to skip that suffix.
           - .pdf
@@ -924,7 +924,7 @@ profiles:
         timeout_seconds: 1800
         uv_path: uv
         uv_python_version: "3.12"
-        mineru_spec: mineru[all]
+        mineru_spec: "mineru[all] pdftext<0.7.0"
         install_timeout_seconds: 1800
         extensions:
           - .pdf
