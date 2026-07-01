@@ -375,6 +375,50 @@ def test_nx_flatten_attributes_with_list_value():
     assert flat["attr_tags_confidence"] == 0.8
 
 
+def test_nx_flatten_attributes_sanitizes_dotted_name():
+    """_nx_flatten_attributes replaces dots/hyphens so GML write_gml accepts the keys."""
+    import re
+    from mykg.exporter import _nx_flatten_attributes
+
+    flat = _nx_flatten_attributes(
+        {
+            "name.1": {"value": "x", "confidence": 0.9},
+            "some-property": {"value": "y", "confidence": 0.5},
+        }
+    )
+    gml_key_re = re.compile(r"^[A-Za-z][0-9A-Za-z_]*$")
+    for key in flat:
+        assert gml_key_re.match(key), f"Invalid GML key: {key!r}"
+    assert "attr_name_1_value" in flat
+    assert "attr_some_property_value" in flat
+
+
+def test_export_networkx_continues_after_gml_failure(tmp_path):
+    """If GML write fails, export_networkx still writes the remaining formats."""
+    import unittest.mock as mock
+    import networkx as nx
+    from mykg.exporter import export_networkx
+
+    nodes = [
+        {
+            "id": "person-alice",
+            "type": "Person",
+            "confidence": 0.9,
+            "attributes": {"name": {"value": "Alice", "confidence": 1.0}},
+            "source_files": ["test.md"],
+        }
+    ]
+    edge_metadata = {}
+
+    with mock.patch("mykg.exporter.nx.write_gml", side_effect=Exception("gml boom")):
+        written = export_networkx(nodes, edge_metadata, tmp_path)
+
+    written_set = set(written)
+    assert "knowledge_graph.gml" not in written_set
+    assert "knowledge_graph.graphml" in written_set
+    assert "knowledge_graph.json" in written_set
+
+
 def test_node_display_name_falls_back_to_id_when_no_name_attr():
     """_node_display_name returns node['id'] when the 'name' attribute is absent."""
     from mykg.exporter import _node_display_name
