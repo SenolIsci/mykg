@@ -66,7 +66,7 @@ def _run_parallel(
 
 
 def _load_manifest(manifest_path) -> dict[str, dict]:
-    raw: dict = json.loads(manifest_path.read_text())
+    raw: dict = json.loads(manifest_path.read_text(encoding="utf-8"))
     migrated = False
     result: dict[str, dict] = {}
     for filename, value in raw.items():
@@ -84,7 +84,7 @@ def _load_manifest(manifest_path) -> dict[str, dict]:
                 migrated = True
             result[filename] = value
     if migrated:
-        manifest_path.write_text(json.dumps(result, indent=_cfg.JSON_INDENT))
+        manifest_path.write_text(json.dumps(result, indent=_cfg.JSON_INDENT), encoding="utf-8")
         log.info("step_ingest — migrated file_manifest.json to dict format")
     return result
 
@@ -120,7 +120,7 @@ def run_ingest(ctx: PipelineContext) -> None:
     log.info("Step 1 — %d total chunk(s) ready for Pass 1", len(ctx.all_chunks))
 
     (ctx.intermediate_dir / "file_manifest.json").write_text(
-        json.dumps(manifest, indent=_cfg.JSON_INDENT)
+        json.dumps(manifest, indent=_cfg.JSON_INDENT), encoding="utf-8"
     )
     log.debug("Step 1 — file_manifest.json written (%d file(s))", len(ctx.file_contents))
 
@@ -164,7 +164,7 @@ def _run_append_ingest(ctx: PipelineContext) -> None:
                 "token_count": _token_count(content),
             }
 
-    manifest_path.write_text(json.dumps(manifest, indent=_cfg.JSON_INDENT))
+    manifest_path.write_text(json.dumps(manifest, indent=_cfg.JSON_INDENT), encoding="utf-8")
 
     # Also pick up any manifest files missing from raw_extractions.json — this
     # happens when a previous append run was interrupted after ingest but before
@@ -173,7 +173,7 @@ def _run_append_ingest(ctx: PipelineContext) -> None:
     unextracted: list[str] = []
     if raw_path.exists():
         try:
-            existing_raw: dict = json.loads(raw_path.read_text())
+            existing_raw: dict = json.loads(raw_path.read_text(encoding="utf-8"))
             for filename in manifest:
                 if filename not in existing_raw and filename not in changed:
                     unextracted.append(filename)
@@ -207,7 +207,7 @@ def _write_base_schema_parsed(ctx: PipelineContext) -> None:
         "locked_properties": ctx.base_schema.get("locked_properties", {}),
     }
     (ctx.intermediate_dir / "base_schema_parsed.json").write_text(
-        json.dumps(data, indent=_cfg.JSON_INDENT)
+        json.dumps(data, indent=_cfg.JSON_INDENT), encoding="utf-8"
     )
     n_classes = len(data["locked_classes"])
     n_props = len(data["locked_properties"])
@@ -240,6 +240,6 @@ def _write_thesaurus_parsed(ctx: PipelineContext) -> None:
         "relations_used": relations_used,
     }
     (ctx.intermediate_dir / "thesaurus_parsed.json").write_text(
-        json.dumps(data, indent=_cfg.JSON_INDENT)
+        json.dumps(data, indent=_cfg.JSON_INDENT), encoding="utf-8"
     )
     log.info("Step 1 — thesaurus_parsed.json written")

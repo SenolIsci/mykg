@@ -19,10 +19,10 @@ def _fname_slug(fname: str) -> str:
 
 
 def run_schema_flatten(ctx: PipelineContext) -> None:
-    schema = json.loads((ctx.intermediate_dir / "schema.json").read_text())
+    schema = json.loads((ctx.intermediate_dir / "schema.json").read_text(encoding="utf-8"))
     flat = flatten_schema(schema)
     (ctx.intermediate_dir / "flattened_schema.json").write_text(
-        json.dumps(flat, indent=_cfg.JSON_INDENT)
+        json.dumps(flat, indent=_cfg.JSON_INDENT), encoding="utf-8"
     )
     log.info("Step 5 — flattened %d concept(s)", len(flat))
 
@@ -32,7 +32,7 @@ def _load_manifest(ctx: PipelineContext) -> dict[str, str]:
         return ctx.file_contents
     manifest_path = ctx.intermediate_dir / "file_manifest.json"
     if manifest_path.exists():
-        raw = json.loads(manifest_path.read_text())
+        raw = json.loads(manifest_path.read_text(encoding="utf-8"))
         ctx.file_contents = raw
         log.info("Step 6 — restored file_contents from file_manifest.json (%d file(s))", len(raw))
         return raw
@@ -48,8 +48,8 @@ def _content_from_entry(entry: str | dict) -> str:
 
 def run_pass2_step(ctx: PipelineContext) -> None:
     manifest = _load_manifest(ctx)
-    schema = json.loads((ctx.intermediate_dir / "schema.json").read_text())
-    flat = json.loads((ctx.intermediate_dir / "flattened_schema.json").read_text())
+    schema = json.loads((ctx.intermediate_dir / "schema.json").read_text(encoding="utf-8"))
+    flat = json.loads((ctx.intermediate_dir / "flattened_schema.json").read_text(encoding="utf-8"))
     _run(ctx, manifest, schema, flat)
 
 
@@ -88,15 +88,15 @@ def _run(
 
     if shard_dir.exists():
         for shard_file in shard_dir.glob("*.json"):
-            shard_content = json.loads(shard_file.read_text())
+            shard_content = json.loads(shard_file.read_text(encoding="utf-8"))
             existing_raw[shard_content["_fname"]] = shard_content["data"]
         for shard_file in chunk_shard_dir.glob("*.json") if chunk_shard_dir.exists() else []:
-            shard_content = json.loads(shard_file.read_text())
+            shard_content = json.loads(shard_file.read_text(encoding="utf-8"))
             existing_chunk[shard_content["_fname"]] = shard_content["data"]
         log.debug("Step 6 — loaded %d shard(s) from %s", len(existing_raw), shard_dir)
     elif raw_path.exists():
-        existing_raw = json.loads(raw_path.read_text())
-        existing_chunk = json.loads(chunk_path.read_text()) if chunk_path.exists() else {}
+        existing_raw = json.loads(raw_path.read_text(encoding="utf-8"))
+        existing_chunk = json.loads(chunk_path.read_text(encoding="utf-8")) if chunk_path.exists() else {}
 
     if ctx.append and ctx.append_new_files is not None:
         todo = {f: _content_from_entry(manifest[f]) for f in ctx.append_new_files if f in manifest}
@@ -144,10 +144,12 @@ def _run(
                 existing_chunk[fname] = file_idx
                 slug = _fname_slug(fname)
                 (shard_dir / f"{slug}.json").write_text(
-                    json.dumps({"_fname": fname, "data": result}, indent=_cfg.JSON_INDENT)
+                    json.dumps({"_fname": fname, "data": result}, indent=_cfg.JSON_INDENT),
+                    encoding="utf-8",
                 )
                 (chunk_shard_dir / f"{slug}.json").write_text(
-                    json.dumps({"_fname": fname, "data": file_idx}, indent=_cfg.JSON_INDENT)
+                    json.dumps({"_fname": fname, "data": file_idx}, indent=_cfg.JSON_INDENT),
+                    encoding="utf-8",
                 )
 
             new_raw, new_chunk, _failed = run_pass2(
@@ -186,10 +188,12 @@ def _run(
     def _write_shard(fname: str, result: dict, file_idx: dict) -> None:
         slug = _fname_slug(fname)
         (shard_dir / f"{slug}.json").write_text(
-            json.dumps({"_fname": fname, "data": result}, indent=_cfg.JSON_INDENT)
+            json.dumps({"_fname": fname, "data": result}, indent=_cfg.JSON_INDENT),
+            encoding="utf-8",
         )
         (chunk_shard_dir / f"{slug}.json").write_text(
-            json.dumps({"_fname": fname, "data": file_idx}, indent=_cfg.JSON_INDENT)
+            json.dumps({"_fname": fname, "data": file_idx}, indent=_cfg.JSON_INDENT),
+            encoding="utf-8",
         )
 
     def _on_file_done(fname: str, result: dict, file_idx: dict) -> None:
@@ -251,7 +255,7 @@ def _run(
             batch_retry_max=_cfg.PASS2_BATCH_RETRY_MAX,
         )
         (ctx.intermediate_dir / "pass2_batch_map.json").write_text(
-            json.dumps(batch_map, indent=_cfg.JSON_INDENT)
+            json.dumps(batch_map, indent=_cfg.JSON_INDENT), encoding="utf-8"
         )
         log.info(
             "Step 6 — batch map: %d batch(es) written to pass2_batch_map.json",
@@ -288,12 +292,12 @@ def _log_and_write(
     _log = log.warning if total_nodes == 0 and total_edges == 0 else log.info
     _log("Step 6 — extracted %d node(s), %d edge(s) (raw, total)", total_nodes, total_edges)
     (ctx.intermediate_dir / "raw_extractions.json").write_text(
-        json.dumps(raw, indent=_cfg.JSON_INDENT)
+        json.dumps(raw, indent=_cfg.JSON_INDENT), encoding="utf-8"
     )
     (ctx.intermediate_dir / "chunk_node_index.json").write_text(
-        json.dumps(chunk_node_index, indent=_cfg.JSON_INDENT)
+        json.dumps(chunk_node_index, indent=_cfg.JSON_INDENT), encoding="utf-8"
     )
-    (ctx.intermediate_dir / "raw_extractions.done").write_text("")
+    (ctx.intermediate_dir / "raw_extractions.done").write_text("", encoding="utf-8")
     ctx.raw_extractions = raw
     ctx.chunk_node_index = chunk_node_index
 
@@ -380,10 +384,12 @@ def _grow_schema_backfill(
         existing_chunk[fname] = file_idx
         slug = _fname_slug(fname)
         (shard_dir / f"{slug}.json").write_text(
-            json.dumps({"_fname": fname, "data": result}, indent=_cfg.JSON_INDENT)
+            json.dumps({"_fname": fname, "data": result}, indent=_cfg.JSON_INDENT),
+            encoding="utf-8",
         )
         (chunk_shard_dir / f"{slug}.json").write_text(
-            json.dumps({"_fname": fname, "data": file_idx}, indent=_cfg.JSON_INDENT)
+            json.dumps({"_fname": fname, "data": file_idx}, indent=_cfg.JSON_INDENT),
+            encoding="utf-8",
         )
 
     new_raw, new_chunk, _failed = run_pass2(

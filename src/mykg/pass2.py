@@ -557,7 +557,7 @@ def run_pass2(
     failed_entries = failed_log.entries()
     if intermediate_dir is not None:
         (intermediate_dir / "failed_chunks.json").write_text(
-            json.dumps(failed_entries, indent=_cfg.JSON_INDENT)
+            json.dumps(failed_entries, indent=_cfg.JSON_INDENT), encoding="utf-8"
         )
 
     return results, chunk_index, failed_entries
@@ -621,7 +621,7 @@ def run_pass2_batched(
             "failed": 0,
             "batches": {name: {**entry, "status": "pending"} for name, entry in batch_map.items()},
         }
-        progress_path.write_text(json.dumps(progress, indent=2))
+        progress_path.write_text(json.dumps(progress, indent=2), encoding="utf-8")
 
     # Accumulated per-file results (keyed by source_file).
     file_nodes: dict[str, list[dict]] = {f: [] for f in files}
@@ -692,7 +692,7 @@ def run_pass2_batched(
                 entry["error"] = error
             progress["failed"] += 1
         tmp = progress_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(progress, indent=2))
+        tmp.write_text(json.dumps(progress, indent=2), encoding="utf-8")
         tmp.replace(progress_path)
 
     batch_start = time.monotonic()

@@ -28,14 +28,14 @@ def _annotate_aliases(raw_with_ids: dict, alias_index: dict[str, dict[str, list[
 
 
 def run_assemble(ctx: PipelineContext) -> None:
-    raw = json.loads((ctx.intermediate_dir / "raw_extractions.json").read_text())
+    raw = json.loads((ctx.intermediate_dir / "raw_extractions.json").read_text(encoding="utf-8"))
     log.info("Steps 7–9 — assigning stable IDs and deduplicating …")
     raw_with_ids = assign_stable_ids(raw)
 
     # Derive aliases from name_normalization.json at assembly time (D29)
     norm_path = ctx.intermediate_dir / "name_normalization.json"
     if norm_path.exists():
-        norm_data = json.loads(norm_path.read_text())
+        norm_data = json.loads(norm_path.read_text(encoding="utf-8"))
         norm_map = norm_data.get("mappings", {})
         if norm_map:
             alias_index = build_alias_index(norm_map)
@@ -59,7 +59,7 @@ def run_assemble(ctx: PipelineContext) -> None:
     synonym_events: list[dict] = []
     if merge_log_path.exists():
         try:
-            existing = json.loads(merge_log_path.read_text())
+            existing = json.loads(merge_log_path.read_text(encoding="utf-8"))
             synonym_events = [e for e in existing if e.get("event") == "synonym_collapse"]
         except (json.JSONDecodeError, ValueError):
             synonym_events = []

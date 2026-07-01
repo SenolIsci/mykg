@@ -64,7 +64,7 @@ def write_schema(
     prev: dict = {}
     if schema_path.exists():
         try:
-            prev = json.loads(schema_path.read_text())
+            prev = json.loads(schema_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             pass
 
@@ -79,7 +79,7 @@ def write_schema(
     properties_removed = sorted(prev_props - curr_props)
 
     # Write schema.json.
-    schema_path.write_text(json.dumps(schema, indent=_cfg.JSON_INDENT))
+    schema_path.write_text(json.dumps(schema, indent=_cfg.JSON_INDENT), encoding="utf-8")
 
     # Write delta entry.
     history_dir = intermediate_dir / SCHEMA_HISTORY_DIR
@@ -104,7 +104,7 @@ def write_schema(
         delta.update(extra)
 
     delta_path = history_dir / f"{seq:04d}_{trigger}.json"
-    delta_path.write_text(json.dumps(delta, indent=_cfg.JSON_INDENT))
+    delta_path.write_text(json.dumps(delta, indent=_cfg.JSON_INDENT), encoding="utf-8")
 
     log.debug(
         "schema_history — delta %04d (%s): +%d concept(s), +%d property(ies)",

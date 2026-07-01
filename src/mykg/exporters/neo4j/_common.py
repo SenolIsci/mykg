@@ -27,7 +27,7 @@ def load_session(session_root: Path) -> tuple[list[dict], list[dict], dict]:
         nodes = [json.loads(line) for line in f if line.strip()]
     with edges_path.open(encoding="utf-8") as f:
         edges = [json.loads(line) for line in f if line.strip()]
-    schema = json.loads(schema_path.read_text())
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
     return nodes, edges, schema
 
 

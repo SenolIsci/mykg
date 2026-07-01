@@ -175,7 +175,7 @@ def init_config(
         # `pip install -U mykg`.
         if reinstall_skill or reinstall_claude_md:
             try:
-                existing = dest.read_text()
+                existing = dest.read_text(encoding="utf-8")
             except OSError:
                 existing = ""
             if "profile: agent-claude-code" in existing:
@@ -231,11 +231,11 @@ def init_config(
     import re
 
     template = Path(__file__).parent / "data" / "mykg_config.yaml"
-    content = template.read_text()
+    content = template.read_text(encoding="utf-8")
     content = re.sub(r"^profile:.*$", f"profile: {profile}", content, count=1, flags=re.MULTILINE)
     if model:
         content = _patch_profile_model(content, profile, model)
-    dest.write_text(content)
+    dest.write_text(content, encoding="utf-8")
     model_note = f", model: {model}" if model else ""
     click.echo(f"\nCreated mykg_config.yaml in {Path.cwd()} (profile: {profile}{model_note})")
 
@@ -256,7 +256,7 @@ def init_config(
     # Check if key is already set
     existing_key = None
     if env_file.exists():
-        for line in env_file.read_text().splitlines():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
             if line.startswith(f"{var}=") and line[len(var) + 1 :].strip():
                 existing_key = line[len(var) + 1 :].strip()
                 break
@@ -304,7 +304,7 @@ def _patch_profile_model(content: str, profile: str, model: str) -> str:
 
 def _write_env_key(env_file: Path, var: str, value: str) -> None:
     """Write or update a single key in .env.mykg, preserving other lines."""
-    lines = env_file.read_text().splitlines() if env_file.exists() else []
+    lines = env_file.read_text(encoding="utf-8").splitlines() if env_file.exists() else []
     updated = False
     for i, line in enumerate(lines):
         if line.startswith(f"{var}="):
@@ -313,7 +313,7 @@ def _write_env_key(env_file: Path, var: str, value: str) -> None:
             break
     if not updated:
         lines.append(f"{var}={value}")
-    env_file.write_text("\n".join(lines) + "\n")
+    env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 _SKILL_VERSION_STAMP = ".mykg_skill_version"
@@ -402,7 +402,7 @@ def _install_agent_skill(*, force: bool = False) -> None:
                 return
         elif stamp.is_file():
             try:
-                installed_version = stamp.read_text().strip()
+                installed_version = stamp.read_text(encoding="utf-8").strip()
             except OSError:
                 installed_version = "(unreadable)"
             if installed_version == mykg.__version__ and not force:
@@ -451,7 +451,7 @@ def _install_agent_skill(*, force: bool = False) -> None:
         return
 
     try:
-        (target / _SKILL_VERSION_STAMP).write_text(mykg.__version__)
+        (target / _SKILL_VERSION_STAMP).write_text(mykg.__version__, encoding="utf-8")
     except OSError as exc:
         click.echo(f"[skill] Warning: could not write version stamp: {exc}")
 
@@ -765,19 +765,19 @@ def extract_graph(
         from mykg.base_schema import parse_base_schema
 
         session_schema_ttl = Path(intermediate_dir) / "schema.ttl"
-        base = parse_base_schema(session_schema_ttl.read_text())
+        base = parse_base_schema(session_schema_ttl.read_text(encoding="utf-8"))
         base["_source"] = str(session_schema_ttl)
     elif base_schema:
         from mykg.base_schema import parse_base_schema
 
-        base = parse_base_schema(Path(base_schema).read_text())
+        base = parse_base_schema(Path(base_schema).read_text(encoding="utf-8"))
         base["_source"] = str(base_schema)
 
     thes = None
     if thesaurus:
         from mykg.thesaurus import parse_thesaurus
 
-        thes = parse_thesaurus(Path(thesaurus).read_text(), source=str(thesaurus))
+        thes = parse_thesaurus(Path(thesaurus).read_text(encoding="utf-8"), source=str(thesaurus))
 
     ctx = PipelineContext(
         input_dir=input_dir,
@@ -845,15 +845,15 @@ def approve_schema(intermediate_dir, log_file, verbose, session):
     if not schema_path.exists():
         raise click.ClickException(f"schema.json not found in {intermediate_dir}")
 
-    schema = json.loads(schema_path.read_text())
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
 
     from mykg.exporter import export_ttl
 
     ttl = export_ttl(schema, [], {})
-    (Path(intermediate_dir) / "schema.ttl").write_text(ttl)
+    (Path(intermediate_dir) / "schema.ttl").write_text(ttl, encoding="utf-8")
 
     flag = Path(intermediate_dir) / "schema_approved.flag"
-    flag.write_text("approved")
+    flag.write_text("approved", encoding="utf-8")
     click.echo(
         "Schema approved. schema.ttl regenerated. Resume with the original extract-graph command."
     )
@@ -968,14 +968,14 @@ def merge_graphs(
     if base_schema:
         from mykg.base_schema import parse_base_schema
 
-        base = parse_base_schema(Path(base_schema).read_text())
+        base = parse_base_schema(Path(base_schema).read_text(encoding="utf-8"))
         base["_source"] = str(base_schema)
 
     thes = None
     if thesaurus:
         from mykg.thesaurus import parse_thesaurus
 
-        thes = parse_thesaurus(Path(thesaurus).read_text(), source=str(thesaurus))
+        thes = parse_thesaurus(Path(thesaurus).read_text(encoding="utf-8"), source=str(thesaurus))
 
     from mykg.config import MERGE_GRAPHS_HUMAN_REVIEW
     from mykg.merge_orchestrator import run_merge_graphs
@@ -1797,14 +1797,14 @@ def mcp_serve(session, transport, host, port, stop):
             click.echo("No MCP server is running (no PID file found).")
             return
         try:
-            pid = int(pid_path.read_text().strip())
+            pid = int(pid_path.read_text(encoding="utf-8").strip())
             if sys.platform == "win32":
                 os.kill(pid, signal.CTRL_BREAK_EVENT)
             else:
                 os.kill(pid, signal.SIGTERM)
             click.echo(f"MCP server stopped (PID {pid}).")
         except ProcessLookupError:
-            click.echo(f"MCP server process (PID {pid_path.read_text().strip()}) not found — stale PID file removed.")
+            click.echo(f"MCP server process (PID {pid}) not found — stale PID file removed.")
         except ValueError:
             click.echo("Corrupt PID file — removing.")
         pid_path.unlink(missing_ok=True)
@@ -1854,7 +1854,7 @@ def mcp_serve(session, transport, host, port, stop):
     port = port or getattr(cfg, "MCP_PORT", 3100)
 
     if transport == "streamable_http":
-        pid_path.write_text(str(os.getpid()))
+        pid_path.write_text(str(os.getpid()), encoding="utf-8")
 
     click.echo(
         f"Serving session '{session_root.name}' via {transport}"

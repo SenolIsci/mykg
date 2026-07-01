@@ -326,16 +326,16 @@ def export_neo4j_csv(
 
     written: list[str] = []
     for rel_path, content in csvs.items():
-        (vault_dir / rel_path.name).write_text(content)
+        (vault_dir / rel_path.name).write_text(content, encoding="utf-8")
         written.append(f"{_cfg.NEO4J_CSV_DIR}/{rel_path.name}")
 
-    (vault_dir / "import_browser.cypher").write_text(build_browser_cypher(csvs))
+    (vault_dir / "import_browser.cypher").write_text(build_browser_cypher(csvs), encoding="utf-8")
     written.append(f"{_cfg.NEO4J_CSV_DIR}/import_browser.cypher")
 
-    (vault_dir / "import_shell.cypher").write_text(build_shell_cypher(csvs, vault_dir_abs))
+    (vault_dir / "import_shell.cypher").write_text(build_shell_cypher(csvs, vault_dir_abs), encoding="utf-8")
     written.append(f"{_cfg.NEO4J_CSV_DIR}/import_shell.cypher")
 
-    (vault_dir / "README.md").write_text(build_readme(vault_dir_abs, list(csvs.keys())))
+    (vault_dir / "README.md").write_text(build_readme(vault_dir_abs, list(csvs.keys())), encoding="utf-8")
     written.append(f"{_cfg.NEO4J_CSV_DIR}/README.md")
 
     return written

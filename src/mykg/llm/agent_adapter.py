@@ -90,7 +90,7 @@ class AgentAdapter(LLMAdapter):
     @staticmethod
     def _atomic_write_json(path: Path, payload: dict) -> None:
         tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(json.dumps(payload, indent=2))
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         tmp.replace(path)
 
     def complete(
@@ -154,7 +154,7 @@ class AgentAdapter(LLMAdapter):
         t0: float,
     ) -> str:
         """Read the answer, log the call, return the (fence-stripped) string."""
-        answer = json.loads(answer_path.read_text()).get("answer", "")
+        answer = json.loads(answer_path.read_text(encoding="utf-8")).get("answer", "")
         record_llm_call(
             provider="agent",
             model="claude-code",

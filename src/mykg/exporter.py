@@ -739,7 +739,7 @@ def export_networkx(nodes: list[dict], edge_metadata: dict, output_dir: Path) ->
         nx.write_pajek(G, str(nx_dir / "knowledge_graph.net"))
     written.append("knowledge_graph.net")
 
-    with open(nx_dir / "knowledge_graph.json", "w") as f:
+    with open(nx_dir / "knowledge_graph.json", "w", encoding="utf-8") as f:
         json.dump(json_graph.node_link_data(G), f, indent=_cfg.JSON_INDENT)
     written.append("knowledge_graph.json")
 

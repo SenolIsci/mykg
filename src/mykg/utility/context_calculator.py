@@ -66,7 +66,7 @@ def load_mykg_config() -> tuple[dict, Path]:
     for directory in [here, *here.parents]:
         config_path = directory / "mykg_config.yaml"
         if config_path.exists():
-            with open(config_path) as f:
+            with open(config_path, encoding="utf-8") as f:
                 raw = yaml.safe_load(f)
             profile_name = raw.get("profile")
             if profile_name:
@@ -205,7 +205,7 @@ def write_candidate_config(config_path: "Path", profile_name: str, result: dict)
     """
     import re
 
-    text = config_path.read_text()
+    text = config_path.read_text(encoding="utf-8")
     lines = text.splitlines(keepends=True)
 
     # `batch_token_target` appears under both pass1 and pass2 with the same
@@ -250,7 +250,7 @@ def write_candidate_config(config_path: "Path", profile_name: str, result: dict)
     stem = config_path.stem  # "mykg_config"
     suffix = config_path.suffix  # ".yaml"
     out_path = config_path.with_name(f"{stem}_candidate{suffix}")
-    out_path.write_text("".join(new_lines))
+    out_path.write_text("".join(new_lines), encoding="utf-8")
     return out_path
 
 

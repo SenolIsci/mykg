@@ -22,16 +22,17 @@ def run_normalize_names(ctx: PipelineContext) -> None:
     if not _cfg.NORMALIZE_NAMES_ENABLED:
         log.info("Step 6b — normalize_names disabled; writing empty sentinel")
         norm_path.write_text(
-            json.dumps({"metadata": {"enabled": False}, "mappings": {}}, indent=_cfg.JSON_INDENT)
+            json.dumps({"metadata": {"enabled": False}, "mappings": {}}, indent=_cfg.JSON_INDENT),
+            encoding="utf-8",
         )
         return
 
-    raw = json.loads((ctx.intermediate_dir / "raw_extractions.json").read_text())
+    raw = json.loads((ctx.intermediate_dir / "raw_extractions.json").read_text(encoding="utf-8"))
     inventory = build_name_inventory(raw)
 
     if not inventory:
         log.info("Step 6b — no named nodes found; writing empty sentinel")
-        norm_path.write_text(json.dumps(build_normalization_file({}, {}), indent=_cfg.JSON_INDENT))
+        norm_path.write_text(json.dumps(build_normalization_file({}, {}), indent=_cfg.JSON_INDENT), encoding="utf-8")
         return
 
     log.info(
@@ -46,7 +47,7 @@ def run_normalize_names(ctx: PipelineContext) -> None:
         log.warning("Step 6b — normalization warning: %s", err)
 
     payload = build_normalization_file(norm_map, inventory, validation_warnings=errors or None)
-    norm_path.write_text(json.dumps(payload, indent=_cfg.JSON_INDENT))
+    norm_path.write_text(json.dumps(payload, indent=_cfg.JSON_INDENT), encoding="utf-8")
     log.info(
         "Step 6b — %d alias(es) mapped; name_normalization.json written",
         payload["metadata"]["aliases_mapped"],
@@ -55,7 +56,7 @@ def run_normalize_names(ctx: PipelineContext) -> None:
     if norm_map:
         normalized_raw = apply_normalization_map(raw, norm_map)
         (ctx.intermediate_dir / "raw_extractions.json").write_text(
-            json.dumps(normalized_raw, indent=_cfg.JSON_INDENT)
+            json.dumps(normalized_raw, indent=_cfg.JSON_INDENT), encoding="utf-8"
         )
         log.info("Step 6b — raw_extractions.json rewritten with canonical names")
 
@@ -68,7 +69,7 @@ def run_normalize_names(ctx: PipelineContext) -> None:
 
         chunk_idx_path = ctx.intermediate_dir / "chunk_node_index.json"
         if id_remap and chunk_idx_path.exists():
-            chunk_idx = json.loads(chunk_idx_path.read_text())
+            chunk_idx = json.loads(chunk_idx_path.read_text(encoding="utf-8"))
             updated = {
                 fname: {
                     chunk_key: [id_remap.get(nid, nid) for nid in ids]
@@ -76,7 +77,7 @@ def run_normalize_names(ctx: PipelineContext) -> None:
                 }
                 for fname, chunks in chunk_idx.items()
             }
-            chunk_idx_path.write_text(json.dumps(updated, indent=_cfg.JSON_INDENT))
+            chunk_idx_path.write_text(json.dumps(updated, indent=_cfg.JSON_INDENT), encoding="utf-8")
             log.info(
                 "Step 6b — chunk_node_index.json IDs remapped (%d ID(s) changed)", len(id_remap)
             )
@@ -84,10 +85,10 @@ def run_normalize_names(ctx: PipelineContext) -> None:
         shard_dir = ctx.intermediate_dir / "chunk_index_shards"
         if id_remap and shard_dir.exists():
             for shard_file in shard_dir.glob("*.json"):
-                shard = json.loads(shard_file.read_text())
+                shard = json.loads(shard_file.read_text(encoding="utf-8"))
                 shard["data"] = {
                     chunk_key: [id_remap.get(nid, nid) for nid in ids]
                     for chunk_key, ids in shard["data"].items()
                 }
-                shard_file.write_text(json.dumps(shard, indent=_cfg.JSON_INDENT))
+                shard_file.write_text(json.dumps(shard, indent=_cfg.JSON_INDENT), encoding="utf-8")
             log.debug("Step 6b — chunk_index_shards updated")
