@@ -1804,7 +1804,7 @@ def mcp_serve(session, transport, host, port, stop):
                 os.kill(pid, signal.SIGTERM)
             click.echo(f"MCP server stopped (PID {pid}).")
         except ProcessLookupError:
-            click.echo(f"MCP server process (PID {pid_path.read_text(encoding='utf-8').strip()}) not found — stale PID file removed.")
+            click.echo(f"MCP server process (PID {pid}) not found — stale PID file removed.")
         except ValueError:
             click.echo("Corrupt PID file — removing.")
         pid_path.unlink(missing_ok=True)
