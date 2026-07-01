@@ -575,3 +575,64 @@ def test_dedup_nodes_with_non_dict_attrs():
     nodes, _ = deduplicate_nodes(raw)
     assert len(nodes) == 1
     assert nodes[0]["attributes"]["name"]["value"] == "Alice"
+
+
+def test_deduplicate_nodes_malformed_confidence_does_not_raise():
+    """Nodes with non-numeric confidence (e.g. '#') must not crash deduplicate_nodes (issue #32 Bug 1)."""
+    from mykg.assembler import assign_stable_ids, deduplicate_nodes
+
+    raw = {
+        "file_a.md": {
+            "nodes": [
+                {
+                    "id": "person-alice",
+                    "type": "Person",
+                    "confidence": "#",
+                    "attributes": {"name": {"value": "Alice", "confidence": 0.9}},
+                }
+            ],
+            "edges": [],
+        }
+    }
+    updated = assign_stable_ids(raw)
+    nodes, _ = deduplicate_nodes(updated)
+    assert len(nodes) == 1
+    assert 0.0 <= nodes[0]["confidence"] <= 1.0
+
+
+def test_deduplicate_edges_malformed_confidence_does_not_raise():
+    """Edges with non-numeric confidence (e.g. 'N/A') must not crash deduplicate_edges (issue #32 Bug 1)."""
+    from mykg.assembler import assign_stable_ids, deduplicate_edges
+
+    raw = {
+        "file_a.md": {
+            "nodes": [
+                {
+                    "id": "person-alice",
+                    "type": "Person",
+                    "confidence": 1.0,
+                    "attributes": {"name": {"value": "Alice", "confidence": 1.0}},
+                },
+                {
+                    "id": "org-acme",
+                    "type": "Organization",
+                    "confidence": 1.0,
+                    "attributes": {"name": {"value": "Acme", "confidence": 1.0}},
+                },
+            ],
+            "edges": [
+                {
+                    "type": "works_at",
+                    "from": "person-alice",
+                    "to": "org-acme",
+                    "confidence": "N/A",
+                    "attributes": {},
+                }
+            ],
+        }
+    }
+    updated = assign_stable_ids(raw)
+    edge_metadata, _ = deduplicate_edges(updated)
+    assert len(edge_metadata) == 1
+    edge = next(iter(edge_metadata.values()))
+    assert 0.0 <= edge["confidence"] <= 1.0

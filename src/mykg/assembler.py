@@ -50,6 +50,31 @@ def _coerce_attr(val) -> dict:
     return {"value": val, "confidence": _cfg.CONFIDENCE_FALLBACK}
 
 
+def _coerce_conf(val) -> float:
+    """Safely convert a top-level node/edge confidence value to float.
+
+    Mirrors _coerce_attr's try/except+clamp logic for the scalar confidence
+    field that sits at the node/edge level (not inside an attribute dict).
+    """
+    try:
+        conf = float(val)
+    except (TypeError, ValueError):
+        log.warning(
+            "_coerce_conf: confidence value %r is not numeric; using fallback %s",
+            val,
+            _cfg.CONFIDENCE_FALLBACK,
+        )
+        return float(_cfg.CONFIDENCE_FALLBACK)
+    clamped = max(0.0, min(1.0, conf))
+    if clamped != conf:
+        log.warning(
+            "_coerce_conf: confidence value %s out of range [0.0, 1.0]; clamped to %s",
+            conf,
+            clamped,
+        )
+    return clamped
+
+
 def _stable_id(node_type: str, name_value: str) -> str:
     """Thin wrapper kept for backwards-compatibility; delegates to ids.stable_id."""
     return _ids_stable_id(node_type, name_value)
@@ -130,7 +155,7 @@ def deduplicate_nodes(
 
         for source_file, node in occurrences:
             merged["source_files"].append(source_file)
-            confs.append(float(node.get("confidence", _cfg.CONFIDENCE_FALLBACK)))
+            confs.append(_coerce_conf(node.get("confidence", _cfg.CONFIDENCE_FALLBACK)))
             node_attrs = node.get("attributes", {})
             if not isinstance(node_attrs, dict):
                 node_attrs = {}
@@ -232,7 +257,7 @@ def deduplicate_edges(
 
         for source_file, edge in occurrences:
             merged["source_files"].append(source_file)
-            confs.append(float(edge.get("confidence", _cfg.CONFIDENCE_FALLBACK)))
+            confs.append(_coerce_conf(edge.get("confidence", _cfg.CONFIDENCE_FALLBACK)))
             attrs = edge.get("attributes", {})
             if not isinstance(attrs, dict):
                 attrs = {}
