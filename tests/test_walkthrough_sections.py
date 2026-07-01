@@ -883,7 +883,8 @@ def test_parse_log_lines_handles_bad_lines(tmp_path):
     log.write_text(
         "10:00:00 [INFO] mykg.orchestrator — RUN  ingest\n"
         "garbage line that does not match\n"
-        "10:00:02 [DONE] mykg.orchestrator — done\n"
+        "10:00:02 [DONE] mykg.orchestrator — done\n",
+        encoding="utf-8",
     )
     out = _parse_log_lines(log)
     # Two well-formed lines, garbage skipped

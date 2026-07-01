@@ -184,7 +184,7 @@ def test_parse_docs_command_invokes_mineru_with_correct_shape(tmp_path: Path) ->
     assert output_dir.exists()
 
     cmd = captured["cmd"]
-    assert Path(cmd[0]).name == "mineru"
+    assert Path(cmd[0]).stem == "mineru"
     assert cmd[1:3] == ["-p", str(pdf_file)]
     assert cmd[3] == "-o"
     assert cmd[4] == str(output_dir)
