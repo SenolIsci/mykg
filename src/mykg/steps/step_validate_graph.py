@@ -12,13 +12,13 @@ log = get("mykg.steps.validate_graph")
 
 
 def run_validate_graph(ctx: PipelineContext) -> None:
-    schema = json.loads((ctx.intermediate_dir / "schema.json").read_text())
+    schema = json.loads((ctx.intermediate_dir / "schema.json").read_text(encoding="utf-8"))
     nodes = ctx.nodes
     if nodes is None:
-        nodes = json.loads((ctx.intermediate_dir / "nodes.json").read_text())
+        nodes = json.loads((ctx.intermediate_dir / "nodes.json").read_text(encoding="utf-8"))
     edge_metadata = ctx.edge_metadata
     if edge_metadata is None:
-        edge_metadata = json.loads((ctx.intermediate_dir / "edge_metadata.json").read_text())
+        edge_metadata = json.loads((ctx.intermediate_dir / "edge_metadata.json").read_text(encoding="utf-8"))
     log.info("Steps 10–12 — validating and writing graph outputs …")
     declared_props = {p["name"] for p in schema.get("properties", [])}
     valid_edge_metadata = {
@@ -27,9 +27,9 @@ def run_validate_graph(ctx: PipelineContext) -> None:
     ttl = sanitize_abox_ttl(export_ttl(schema, nodes, valid_edge_metadata), schema)
     result = validate_knowledge_graph_ttl(ttl)
 
-    (ctx.output_dir / "nodes.jsonl").write_text(export_nodes_jsonl(nodes))
-    (ctx.output_dir / "edges.jsonl").write_text(export_edges_jsonl(valid_edge_metadata))
-    (ctx.output_dir / "knowledge_graph.ttl").write_text(ttl)
+    (ctx.output_dir / "nodes.jsonl").write_text(export_nodes_jsonl(nodes), encoding="utf-8")
+    (ctx.output_dir / "edges.jsonl").write_text(export_edges_jsonl(valid_edge_metadata), encoding="utf-8")
+    (ctx.output_dir / "knowledge_graph.ttl").write_text(ttl, encoding="utf-8")
 
     if _cfg.NETWORKX_ENABLED:
         written = export_networkx(nodes, valid_edge_metadata, ctx.output_dir)
@@ -48,7 +48,7 @@ def run_validate_graph(ctx: PipelineContext) -> None:
         log.info("Step 12e — Neo4j CSV export: %d file(s) written", len(n4j_written))
 
     (ctx.output_dir / "knowledge_graph_validation.json").write_text(
-        json.dumps(result, indent=_cfg.JSON_INDENT)
+        json.dumps(result, indent=_cfg.JSON_INDENT), encoding="utf-8"
     )
     if result["valid"]:
         log.info("Step 12b — knowledge_graph.ttl valid")

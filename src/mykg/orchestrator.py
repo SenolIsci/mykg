@@ -152,7 +152,7 @@ class PipelineState(BaseModel):
             "errors": self.errors,
         }
         (intermediate_dir / "pipeline_state.json").write_text(
-            json.dumps(payload, indent=_cfg.JSON_INDENT)
+            json.dumps(payload, indent=_cfg.JSON_INDENT), encoding="utf-8"
         )
 
     @classmethod
@@ -160,7 +160,7 @@ class PipelineState(BaseModel):
         path = intermediate_dir / "pipeline_state.json"
         if not path.exists():
             return cls(step_names=step_names)
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
         state = cls(step_names=step_names)
         state.steps = data.get("steps", {})
         state.errors = data.get("errors", {})
@@ -434,9 +434,9 @@ def run(steps: list[Step], ctx: PipelineContext) -> None:
                 if _schema_json_path.exists():
                     from mykg.exporter import export_ttl as _export_ttl
 
-                    _updated_schema = json.loads(_schema_json_path.read_text())
+                    _updated_schema = json.loads(_schema_json_path.read_text(encoding="utf-8"))
                     _ttl_text = _export_ttl(_updated_schema, [], {})
-                    (ctx.intermediate_dir / "schema.ttl").write_text(_ttl_text)
+                    (ctx.intermediate_dir / "schema.ttl").write_text(_ttl_text, encoding="utf-8")
                     log.info(
                         "Schema-gap restart — regenerated schema.ttl "
                         "(%d concept(s), %d property/properties)",

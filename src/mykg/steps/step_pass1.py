@@ -35,9 +35,9 @@ def run_pass1_step(ctx: PipelineContext) -> None:
 
         write_schema(schema, ctx.intermediate_dir, TRIGGER_FREEZE_SCHEMA)
         ttl = export_ttl(schema, [], {})
-        (ctx.intermediate_dir / "schema.ttl").write_text(ttl)
+        (ctx.intermediate_dir / "schema.ttl").write_text(ttl, encoding="utf-8")
         merge_log_path = ctx.intermediate_dir / "merge_log.json"
-        merge_log_path.write_text(json.dumps([], indent=_cfg.JSON_INDENT))
+        merge_log_path.write_text(json.dumps([], indent=_cfg.JSON_INDENT), encoding="utf-8")
         return
 
     # --append-with-grow-schema (D52): run the locked re-induction over ONLY the changed
@@ -51,7 +51,7 @@ def run_pass1_step(ctx: PipelineContext) -> None:
             raise RuntimeError(
                 "grow_schema: file_manifest.json not found — re-run from the ingest step."
             )
-        file_contents: dict[str, str | dict] = json.loads(manifest_path.read_text())
+        file_contents: dict[str, str | dict] = json.loads(manifest_path.read_text(encoding="utf-8"))
         ctx.all_chunks = []
         changed = [f for f in ctx.append_new_files if f in file_contents]
         for fname in changed:
@@ -65,7 +65,7 @@ def run_pass1_step(ctx: PipelineContext) -> None:
     elif ctx.all_chunks is None:
         manifest_path = ctx.intermediate_dir / "file_manifest.json"
         if manifest_path.exists():
-            file_contents = json.loads(manifest_path.read_text())
+            file_contents = json.loads(manifest_path.read_text(encoding="utf-8"))
             ctx.all_chunks = []
             for fname, entry in file_contents.items():
                 ctx.all_chunks.extend(chunk_file(fname, _content_from_entry(entry)))
@@ -116,7 +116,7 @@ def run_pass1_step(ctx: PipelineContext) -> None:
     # Write synonym events. step_assemble reads these back and prepends them
     # to its own dedup events so the full audit trail is preserved on Re-entry C.
     merge_log_path = ctx.intermediate_dir / "merge_log.json"
-    merge_log_path.write_text(json.dumps(synonym_log, indent=_cfg.JSON_INDENT))
+    merge_log_path.write_text(json.dumps(synonym_log, indent=_cfg.JSON_INDENT), encoding="utf-8")
     if synonym_log:
         log.info("Step 3 — %d synonym collapse(s) logged to merge_log.json", len(synonym_log))
 
@@ -152,4 +152,4 @@ def run_pass1_step(ctx: PipelineContext) -> None:
     write_schema(schema, ctx.intermediate_dir, TRIGGER_SCHEMA_QUALITY)
 
     ttl = export_ttl(schema, [], {})
-    (ctx.intermediate_dir / "schema.ttl").write_text(ttl)
+    (ctx.intermediate_dir / "schema.ttl").write_text(ttl, encoding="utf-8")

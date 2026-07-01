@@ -184,9 +184,9 @@ def run_merge(ctx: MergeContext) -> None:
 
                     from mykg.exporter import export_ttl as _export_ttl
 
-                    _updated_schema = json.loads(_schema_json_path.read_text())
+                    _updated_schema = json.loads(_schema_json_path.read_text(encoding="utf-8"))
                     _ttl_text = _export_ttl(_updated_schema, [], {})
-                    (ctx.intermediate_dir / "schema.ttl").write_text(_ttl_text)
+                    (ctx.intermediate_dir / "schema.ttl").write_text(_ttl_text, encoding="utf-8")
                     log.info(
                         "Schema-gap restart — regenerated schema.ttl "
                         "(%d concept(s), %d property/properties)",

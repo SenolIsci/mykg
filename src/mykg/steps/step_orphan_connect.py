@@ -32,21 +32,21 @@ def run_orphan_connect(ctx: PipelineContext) -> None:
         atomic_write_json(ctx.intermediate_dir / "orphan_log.json", [])
         return
 
-    raw_payload = json.loads((ctx.intermediate_dir / "orphan_candidates.json").read_text())
+    raw_payload = json.loads((ctx.intermediate_dir / "orphan_candidates.json").read_text(encoding="utf-8"))
     groups = [OrphanChunkGroup(**g) for g in raw_payload.get("groups", [])]
     schema_gap_orphans = [SchemaGapOrphan(**g) for g in raw_payload.get("schema_gap_orphans", [])]
 
     nodes = ctx.nodes
     if nodes is None:
-        nodes = json.loads((ctx.intermediate_dir / "nodes.json").read_text())
+        nodes = json.loads((ctx.intermediate_dir / "nodes.json").read_text(encoding="utf-8"))
 
-    schema = json.loads((ctx.intermediate_dir / "schema.json").read_text())
+    schema = json.loads((ctx.intermediate_dir / "schema.json").read_text(encoding="utf-8"))
 
     file_manifest = ctx.file_contents
     if file_manifest is None:
         manifest_path = ctx.intermediate_dir / "file_manifest.json"
         if manifest_path.exists():
-            file_manifest = json.loads(manifest_path.read_text())
+            file_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     chunk_texts: dict[str, str] = build_chunk_texts(file_manifest) if file_manifest else {}
     if not chunk_texts:
@@ -59,7 +59,7 @@ def run_orphan_connect(ctx: PipelineContext) -> None:
     prior_connections: dict[str, dict] = {}
     orphan_connections_path = ctx.intermediate_dir / "orphan_connections.json"
     if ctx.orphan_incremental and orphan_connections_path.exists():
-        prior_connections = json.loads(orphan_connections_path.read_text())
+        prior_connections = json.loads(orphan_connections_path.read_text(encoding="utf-8"))
 
     already_connected: set[str] = set()
     for edge in prior_connections.values():
@@ -141,7 +141,7 @@ def run_orphan_connect(ctx: PipelineContext) -> None:
             )
 
     edge_metadata_path = ctx.intermediate_dir / "edge_metadata.json"
-    edge_metadata = json.loads(edge_metadata_path.read_text())
+    edge_metadata = json.loads(edge_metadata_path.read_text(encoding="utf-8"))
     skipped = 0
     for eid, edge in orphan_connections.items():
         if eid in edge_metadata:

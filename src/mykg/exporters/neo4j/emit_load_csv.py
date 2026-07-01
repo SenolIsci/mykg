@@ -53,11 +53,11 @@ def main(argv: list[str] | None = None) -> int:
     csvs = build_plain_csvs(nodes, edges, schema)
 
     for rel_path, content in csvs.items():
-        (out_dir / rel_path.name).write_text(content)
+        (out_dir / rel_path.name).write_text(content, encoding="utf-8")
 
-    (out_dir / "import_browser.cypher").write_text(build_browser_cypher(csvs))
-    (out_dir / "import_shell.cypher").write_text(build_shell_cypher(csvs, out_dir))
-    (out_dir / "README.md").write_text(build_readme(out_dir, list(csvs.keys())))
+    (out_dir / "import_browser.cypher").write_text(build_browser_cypher(csvs), encoding="utf-8")
+    (out_dir / "import_shell.cypher").write_text(build_shell_cypher(csvs, out_dir), encoding="utf-8")
+    (out_dir / "README.md").write_text(build_readme(out_dir, list(csvs.keys())), encoding="utf-8")
 
     _print_recipe(out_dir, len(csvs))
     return 0

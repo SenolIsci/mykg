@@ -27,7 +27,7 @@ _TXT_BACKEND_SUFFIXES: frozenset[str] = frozenset({".txt"})
 
 def _write_sentinel(intermediate_dir: Path, manifest: dict) -> None:
     intermediate_dir.mkdir(parents=True, exist_ok=True)
-    (intermediate_dir / "preprocess.done").write_text("done")
+    (intermediate_dir / "preprocess.done").write_text("done", encoding="utf-8")
     _atomic_write_json(intermediate_dir / "preprocess_manifest.json", manifest)
 
 
@@ -51,7 +51,7 @@ def _load_prior_manifest(intermediate_dir: Path) -> dict:
     if not p.exists():
         return {}
     try:
-        return json.loads(p.read_text())
+        return json.loads(p.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return {}
 

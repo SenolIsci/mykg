@@ -14,17 +14,18 @@ def run_orphan_score(ctx: PipelineContext) -> None:
     if not _cfg.ORPHAN_PASS_ENABLED:
         log.info("Step orphan_score — skipped (orphan_pass.enabled: false)")
         (ctx.intermediate_dir / "orphan_candidates.json").write_text(
-            json.dumps({"groups": [], "schema_gap_orphans": []}, indent=_cfg.JSON_INDENT)
+            json.dumps({"groups": [], "schema_gap_orphans": []}, indent=_cfg.JSON_INDENT),
+            encoding="utf-8",
         )
         return
 
     nodes = ctx.nodes
     if nodes is None:
-        nodes = json.loads((ctx.intermediate_dir / "nodes.json").read_text())
+        nodes = json.loads((ctx.intermediate_dir / "nodes.json").read_text(encoding="utf-8"))
 
     edge_metadata = ctx.edge_metadata
     if edge_metadata is None:
-        edge_metadata = json.loads((ctx.intermediate_dir / "edge_metadata.json").read_text())
+        edge_metadata = json.loads((ctx.intermediate_dir / "edge_metadata.json").read_text(encoding="utf-8"))
 
     chunk_node_index = ctx.chunk_node_index
     if chunk_node_index is None:
@@ -34,20 +35,20 @@ def run_orphan_score(ctx: PipelineContext) -> None:
                 "intermediate/chunk_node_index.json not found. "
                 "Re-run from --from-step pass2 to regenerate it."
             )
-        chunk_node_index = json.loads(index_path.read_text())
+        chunk_node_index = json.loads(index_path.read_text(encoding="utf-8"))
 
-    schema = json.loads((ctx.intermediate_dir / "schema.json").read_text())
+    schema = json.loads((ctx.intermediate_dir / "schema.json").read_text(encoding="utf-8"))
 
     failed_chunks: list[dict] = []
     failed_path = ctx.intermediate_dir / "failed_chunks.json"
     if failed_path.exists() and _cfg.ORPHAN_BLANK_RECOVERY_ENABLED:
-        failed_chunks = json.loads(failed_path.read_text())
+        failed_chunks = json.loads(failed_path.read_text(encoding="utf-8"))
 
     file_manifest = ctx.file_contents
     if file_manifest is None:
         manifest_path = ctx.intermediate_dir / "file_manifest.json"
         if manifest_path.exists():
-            file_manifest = json.loads(manifest_path.read_text())
+            file_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     groups, unresolvable_orphans = score_orphan_candidates_v2(
         nodes,
@@ -58,7 +59,7 @@ def run_orphan_score(ctx: PipelineContext) -> None:
         file_manifest=file_manifest,
     )
 
-    (ctx.intermediate_dir / "nodes.json").write_text(json.dumps(nodes, indent=_cfg.JSON_INDENT))
+    (ctx.intermediate_dir / "nodes.json").write_text(json.dumps(nodes, indent=_cfg.JSON_INDENT), encoding="utf-8")
     ctx.nodes = nodes
 
     payload = {
@@ -66,7 +67,7 @@ def run_orphan_score(ctx: PipelineContext) -> None:
         "schema_gap_orphans": [],
     }
     (ctx.intermediate_dir / "orphan_candidates.json").write_text(
-        json.dumps(payload, indent=_cfg.JSON_INDENT)
+        json.dumps(payload, indent=_cfg.JSON_INDENT), encoding="utf-8"
     )
 
     # Write advisory events for orphans with no resolvable source chunk.
@@ -75,12 +76,12 @@ def run_orphan_score(ctx: PipelineContext) -> None:
         existing: list[dict] = []
         if orphan_log_path.exists():
             try:
-                existing = json.loads(orphan_log_path.read_text())
+                existing = json.loads(orphan_log_path.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError):
                 existing = []
         for orphan_id in unresolvable_orphans:
             existing.append({"event": "orphan_unconnectable", "orphan_id": orphan_id})
-        orphan_log_path.write_text(json.dumps(existing, indent=_cfg.JSON_INDENT))
+        orphan_log_path.write_text(json.dumps(existing, indent=_cfg.JSON_INDENT), encoding="utf-8")
 
     total_orphans = sum(len(g.orphan_ids) for g in groups)
     blank_groups = sum(1 for g in groups if g.is_blank_response)

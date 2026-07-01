@@ -45,7 +45,7 @@ def _validate_schema_response(corrected: object) -> None:
 
 def _fix_schema(error: str, ctx: PipelineContext) -> None:
     schema_path = ctx.intermediate_dir / "schema.json"
-    current = schema_path.read_text() if schema_path.exists() else "{}"
+    current = schema_path.read_text(encoding="utf-8") if schema_path.exists() else "{}"
     prompt = FEEDBACK_PROMPT.format(
         step_name="schema",
         error=error,
@@ -75,7 +75,7 @@ def _regenerate_schema_ttl(schema: dict, ctx: PipelineContext) -> None:
     from mykg.exporter import export_ttl
 
     ttl = export_ttl(schema, [], {})
-    (ctx.intermediate_dir / "schema.ttl").write_text(ttl)
+    (ctx.intermediate_dir / "schema.ttl").write_text(ttl, encoding="utf-8")
 
 
 def _fix_schema_extend(error: str, ctx: PipelineContext) -> None:
@@ -86,8 +86,8 @@ def _fix_schema_extend(error: str, ctx: PipelineContext) -> None:
     """
     schema_path = ctx.intermediate_dir / "schema.json"
     proposals_path = ctx.intermediate_dir / "schema_gap_proposals.json"
-    current_schema = schema_path.read_text() if schema_path.exists() else "{}"
-    proposals = proposals_path.read_text() if proposals_path.exists() else "{}"
+    current_schema = schema_path.read_text(encoding="utf-8") if schema_path.exists() else "{}"
+    proposals = proposals_path.read_text(encoding="utf-8") if proposals_path.exists() else "{}"
     prompt = FEEDBACK_PROMPT.format(
         step_name="schema_extend",
         error=error,
@@ -111,7 +111,7 @@ def _fix_schema_extend(error: str, ctx: PipelineContext) -> None:
 
 def _fix_normalization(error: str, ctx: PipelineContext) -> None:
     norm_path = ctx.intermediate_dir / "name_normalization.json"
-    current = norm_path.read_text() if norm_path.exists() else "{}"
+    current = norm_path.read_text(encoding="utf-8") if norm_path.exists() else "{}"
     prompt = FEEDBACK_PROMPT.format(
         step_name="normalize_names",
         error=error,
@@ -127,15 +127,15 @@ def _fix_normalization(error: str, ctx: PipelineContext) -> None:
             f"LLM returned invalid normalization structure — expected "
             f'{{"mappings": {{...}}}}, got: {str(corrected)[:200]}'
         )
-    norm_path.write_text(json.dumps(corrected, indent=_cfg.JSON_INDENT))
+    norm_path.write_text(json.dumps(corrected, indent=_cfg.JSON_INDENT), encoding="utf-8")
     log.info("Feedback applied to name_normalization.json")
 
 
 def _fix_orphan_connect(error: str, ctx: PipelineContext) -> None:
     candidates_path = ctx.intermediate_dir / "orphan_candidates.json"
     connections_path = ctx.intermediate_dir / "orphan_connections.json"
-    candidates = candidates_path.read_text() if candidates_path.exists() else "{}"
-    current = connections_path.read_text() if connections_path.exists() else "{}"
+    candidates = candidates_path.read_text(encoding="utf-8") if candidates_path.exists() else "{}"
+    current = connections_path.read_text(encoding="utf-8") if connections_path.exists() else "{}"
     prompt = FEEDBACK_PROMPT.format(
         step_name="orphan_connect",
         error=error,
@@ -154,7 +154,7 @@ def _fix_orphan_connect(error: str, ctx: PipelineContext) -> None:
             f"LLM returned invalid orphan_connections structure — expected a dict, "
             f"got: {str(corrected)[:200]}"
         )
-    connections_path.write_text(json.dumps(corrected, indent=_cfg.JSON_INDENT))
+    connections_path.write_text(json.dumps(corrected, indent=_cfg.JSON_INDENT), encoding="utf-8")
     log.info("Feedback applied to orphan_connections.json")
 
 

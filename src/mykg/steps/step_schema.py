@@ -28,10 +28,10 @@ def run_schema_validate(ctx: PipelineContext) -> None:
                 "Neither schema.ttl nor schema.json found in intermediate dir "
                 "— cannot run schema validation"
             )
-        schema = json.loads(schema_json_path.read_text())
-        schema_ttl_path.write_text(export_ttl(schema, [], {}))
+        schema = json.loads(schema_json_path.read_text(encoding="utf-8"))
+        schema_ttl_path.write_text(export_ttl(schema, [], {}), encoding="utf-8")
         log.info("Step 3b — regenerated schema.ttl from schema.json")
-    schema_ttl = schema_ttl_path.read_text()
+    schema_ttl = schema_ttl_path.read_text(encoding="utf-8")
 
     # First attempt
     first = validate_schema_ttl(schema_ttl)
@@ -52,7 +52,7 @@ def run_schema_validate(ctx: PipelineContext) -> None:
             llm_attempted = False
 
         # Second attempt (re-read schema.ttl in case correction rewrote it)
-        schema_ttl2 = (ctx.intermediate_dir / "schema.ttl").read_text()
+        schema_ttl2 = (ctx.intermediate_dir / "schema.ttl").read_text(encoding="utf-8")
         second = validate_schema_ttl(schema_ttl2)
 
         record = {
@@ -61,7 +61,7 @@ def run_schema_validate(ctx: PipelineContext) -> None:
             "second_attempt": {"errors": second.errors, "passed": second.valid},
         }
         (ctx.intermediate_dir / "schema_validation_errors.json").write_text(
-            json.dumps(record, indent=_cfg.JSON_INDENT)
+            json.dumps(record, indent=_cfg.JSON_INDENT), encoding="utf-8"
         )
 
         if second.valid:
@@ -78,13 +78,13 @@ def run_schema_validate(ctx: PipelineContext) -> None:
     from datetime import datetime, timezone
 
     sentinel_content = datetime.now(timezone.utc).isoformat()
-    (ctx.intermediate_dir / "schema_validate.done").write_text(sentinel_content)
+    (ctx.intermediate_dir / "schema_validate.done").write_text(sentinel_content, encoding="utf-8")
 
 
 def run_human_review(ctx: PipelineContext) -> None:
     flag = ctx.intermediate_dir / "schema_approved.flag"
     if not ctx.review:
-        flag.write_text("auto-approved")
+        flag.write_text("auto-approved", encoding="utf-8")
         log.info("Step 4 — review gate skipped (--review not set)")
         return
     if flag.exists():
