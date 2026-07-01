@@ -526,6 +526,24 @@ def test_harmonize_for_merge_falls_back_on_adapter_exception():
     assert result is _MERGED_SCHEMA_FOR_MERGE
 
 
+def test_harmonize_for_merge_samples_proposals_when_over_limit(monkeypatch):
+    """When session schemas exceed max_schema_proposals, only the cap reaches the LLM."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS1_MAX_SCHEMA_PROPOSALS", 1)
+    proposals = [
+        {"concepts": [{"type": f"Type{i}", "parent": None, "attributes": ["name"]}], "properties": []}
+        for i in range(3)
+    ]
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps(_MERGED_SCHEMA_FOR_MERGE)
+    harmonize_schema_for_merge(_MERGED_SCHEMA_FOR_MERGE, proposals, adapter)
+
+    user_prompt = adapter.complete.call_args[0][1]
+    sent = json.loads(user_prompt.split("SESSION SCHEMAS:\n")[1])
+    assert len(sent) == 1
+
+
 # ---------------------------------------------------------------------------
 # review_schema_quality_for_merge tests
 # ---------------------------------------------------------------------------
