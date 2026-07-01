@@ -311,6 +311,8 @@ It runs four sequential stages:
 
 **Harmonization.** A single LLM call sees both the merged schema and the raw batch proposals. It collapses semantic near-duplicates the algorithmic step missed — for example, collapsing "MilitaryUnit" and "ArmyUnit" into one canonical type. The original is kept if the response is unparseable.
 
+On large corpora, hundreds of batch proposals can be produced. Sending all of them in one call would exceed any provider's context window. The pipeline therefore caps the proposal list at `pass1.max_schema_proposals` (default 50) before building the harmonization prompt, using a deterministic fixed-seed sample (`random.Random(0)`) so re-entry runs are reproducible. A warning is logged when the cap fires. The merged schema itself is always included in full — only the supporting raw proposals are sampled, since the merged schema already carries the union of all concept and property names. The same cap applies to `harmonize_schema_for_merge` in the merge pipeline.
+
 **Quality review.** A second LLM call removes over-narrow named-entity singletons (a concept like "FourthAirForce" should be an instance of MilitaryUnit, not a concept type), fixes singleton types with no meaningful abstraction, and ensures every concept has at least a name attribute.
 
 The result is written to `intermediate/schema.json` and `intermediate/schema.ttl`. If you run with `--review`, the pipeline pauses here so you can inspect and edit the schema in Protégé or a text editor before any entity is extracted.
@@ -437,6 +439,8 @@ Orphans that cannot be connected — because no source chunk can be found, or be
 Before assembly, the pipeline runs a name normalization step. It sends all extracted names per concept type to the LLM and asks it to group surface-form variants of the same entity — for example, recognizing that "Acme Corp", "ACME", and "Acme Corporation" all refer to the same organization.
 
 The LLM returns an alias-to-canonical mapping. At assembly time, this mapping is inverted and the aliases are attached to each node. In the JSONL output, aliases appear as a flat sorted list. In the Turtle output, each alias is emitted as a `skos:altLabel` triple.
+
+On large corpora, the total number of names across all concept types can easily exceed any provider's context window. The pipeline handles this by bin-packing names into token-bounded batches (sized by `normalize_names.batch_token_target`, default 32,000 tokens) and making one LLM call per batch rather than one call for the whole corpus. Batches are split per concept type: names of the same type are never split across batches, so the LLM always sees a coherent group. A per-type safety cap (`normalize_names.max_names_per_type`, default 50,000) prevents a single runaway type from consuming the entire budget. All batch results are merged into a single `name_normalization.json` file before assembly.
 
 ---
 
