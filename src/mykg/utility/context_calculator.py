@@ -26,7 +26,8 @@ In auto mode the script:
     mykg_config_candidate.yaml that patches: llm.context_window, llm.max_output_tokens,
     chunking.window_tokens, chunking.overlap_tokens, pass1.batch_token_target,
     pass2.batch_token_target, pass2.concat_batch_token_target, feedback.max_file_chars,
-    and normalize_names.batch_token_target
+    normalize_names.batch_token_target, and pass1.max_schema_proposals (shown as a
+    fixed reminder; not derived from context window)
 """
 
 import argparse
@@ -341,6 +342,7 @@ def print_report(
     print(f"        overlap_tokens: {ot}  # = window_tokens × {OVERLAP_RATIO:.0%}")
     print("      pass1:")
     print(f"        batch_token_target: {btt}  # = input_headroom × {1 - SAFETY_MARGIN_RATIO:.0%}")
+    print("        max_schema_proposals: 50  # fixed cap; lower on small-context models")
     print("      pass2:")
     print(f"        batch_token_target: {btt}        # used when prep_mode=batch_chunks")
     print(f"        concat_batch_token_target: {btt}  # used when prep_mode=concat")
