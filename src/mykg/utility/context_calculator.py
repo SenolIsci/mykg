@@ -25,7 +25,8 @@ In auto mode the script:
   - Prints a ready-to-paste YAML snippet for the active profile and writes a
     mykg_config_candidate.yaml that patches: llm.context_window, llm.max_output_tokens,
     chunking.window_tokens, chunking.overlap_tokens, pass1.batch_token_target,
-    pass2.batch_token_target, pass2.concat_batch_token_target, and feedback.max_file_chars
+    pass2.batch_token_target, pass2.concat_batch_token_target, feedback.max_file_chars,
+    and normalize_names.batch_token_target
 """
 
 import argparse
@@ -347,6 +348,8 @@ def print_report(
     print(
         f"        max_file_chars: {mfc}  # = safety margin remainder × {CHARS_PER_TOKEN} chars/token ({ftr:,} tokens)"
     )
+    print("      normalize_names:")
+    print(f"        batch_token_target: {btt}  # matches concat_batch_token_target")
     print()
 
 

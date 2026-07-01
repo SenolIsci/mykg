@@ -779,3 +779,11 @@ profiles:
     out = capsys.readouterr().out
     assert "32000" in out
     assert "Token Budget Calculator" in out
+
+
+def test_print_report_includes_normalize_names_in_yaml_snippet(capsys):
+    """print_report YAML snippet includes the normalize_names.batch_token_target line."""
+    print_report(PRINT_RESULT, model="test-model", chunk_divisor=12)
+    out = capsys.readouterr().out
+    assert "normalize_names:" in out
+    assert "batch_token_target: 20000" in out
