@@ -44,6 +44,11 @@ def setup(log_file: Path | None = None, verbose: bool = False) -> None:
 
     from mykg import config
 
+    if sys.platform == "win32":
+        for _stream in (sys.stdout, sys.stderr):
+            if hasattr(_stream, "reconfigure"):
+                _stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+
     level = logging.DEBUG if verbose else logging.INFO
     root = logging.getLogger()
     root.setLevel(level)
