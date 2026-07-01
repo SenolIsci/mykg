@@ -86,6 +86,9 @@ def ephemeral_venv(
             timeout=install_timeout,
             phase="uv venv",
         )
+        # Split spec on whitespace so multi-package specs like
+        # "mineru[all] pdftext<0.7.0" expand into separate arguments.
+        spec_args = spec.split()
         _run(
             [
                 resolved_uv,
@@ -94,7 +97,7 @@ def ephemeral_venv(
                 "--python",
                 str(_venv_bin(venv_dir, "python")),
                 "-U",
-                spec,
+                *spec_args,
             ],
             timeout=install_timeout,
             phase=f"uv pip install {spec}",
