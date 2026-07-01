@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from mykg.exporters.neo4j._common import load_session
 from mykg.exporters.neo4j.load_csv import build_plain_csvs, export_neo4j_csv
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "neo4j_sample_session"
 EXPECTED_DIR = FIXTURE_ROOT / "expected_load_csv"
+# Cross-platform absolute placeholder: PurePosixPath is always absolute for
+# /... paths and serializes with forward slashes on all OSes.
+_FIXTURE_OUT_DIR = PurePosixPath("/FIXTURE_OUT_DIR")
 
 
 def test_plain_csv_file_set():
@@ -29,7 +32,7 @@ def test_plain_csv_contents_match_snapshots():
     for path, content in csvs.items():
         expected_path = EXPECTED_DIR / path.name
         assert expected_path.exists(), f"missing expected CSV: {expected_path}"
-        assert content == expected_path.read_text(), f"mismatch in {path.name}"
+        assert content == expected_path.read_text(encoding="utf-8"), f"mismatch in {path.name}"
 
 
 def test_node_csv_header_is_plain():
@@ -68,7 +71,7 @@ def test_browser_cypher_matches_snapshot():
     nodes, edges, schema = load_session(FIXTURE_ROOT)
     csvs = build_plain_csvs(nodes, edges, schema)
     cypher = build_browser_cypher(csvs)
-    expected = (EXPECTED_DIR / "import_browser.cypher").read_text()
+    expected = (EXPECTED_DIR / "import_browser.cypher").read_text(encoding="utf-8")
     assert cypher == expected
 
 
@@ -110,15 +113,15 @@ from mykg.exporters.neo4j.load_csv import build_shell_cypher
 def test_shell_cypher_matches_snapshot():
     nodes, edges, schema = load_session(FIXTURE_ROOT)
     csvs = build_plain_csvs(nodes, edges, schema)
-    cypher = build_shell_cypher(csvs, Path("/FIXTURE_OUT_DIR"))
-    expected = (EXPECTED_DIR / "import_shell.cypher").read_text()
+    cypher = build_shell_cypher(csvs, _FIXTURE_OUT_DIR)
+    expected = (EXPECTED_DIR / "import_shell.cypher").read_text(encoding="utf-8")
     assert cypher == expected
 
 
 def test_shell_cypher_uses_absolute_paths():
     nodes, edges, schema = load_session(FIXTURE_ROOT)
     csvs = build_plain_csvs(nodes, edges, schema)
-    cypher = build_shell_cypher(csvs, Path("/FIXTURE_OUT_DIR"))
+    cypher = build_shell_cypher(csvs, _FIXTURE_OUT_DIR)
     for line in cypher.splitlines():
         if "LOAD CSV WITH HEADERS FROM" in line:
             assert "'file:///" in line, line
@@ -129,7 +132,7 @@ def test_shell_cypher_has_same_block_count_as_browser():
     nodes, edges, schema = load_session(FIXTURE_ROOT)
     csvs = build_plain_csvs(nodes, edges, schema)
     browser = build_browser_cypher(csvs)
-    shell = build_shell_cypher(csvs, Path("/FIXTURE_OUT_DIR"))
+    shell = build_shell_cypher(csvs, _FIXTURE_OUT_DIR)
     assert browser.count("LOAD CSV WITH HEADERS FROM") == shell.count("LOAD CSV WITH HEADERS FROM")
     assert browser.count("CREATE CONSTRAINT") == shell.count("CREATE CONSTRAINT") == 1
 
@@ -150,15 +153,15 @@ from mykg.exporters.neo4j.load_csv import build_readme
 def test_readme_matches_snapshot():
     nodes, edges, schema = load_session(FIXTURE_ROOT)
     csvs = build_plain_csvs(nodes, edges, schema)
-    readme = build_readme(Path("/FIXTURE_OUT_DIR"), list(csvs.keys()))
-    expected = (EXPECTED_DIR / "README.md").read_text()
+    readme = build_readme(_FIXTURE_OUT_DIR, list(csvs.keys()))
+    expected = (EXPECTED_DIR / "README.md").read_text(encoding="utf-8")
     assert readme == expected
 
 
 def test_readme_mentions_both_flows():
     nodes, edges, schema = load_session(FIXTURE_ROOT)
     csvs = build_plain_csvs(nodes, edges, schema)
-    readme = build_readme(Path("/FIXTURE_OUT_DIR"), list(csvs.keys()))
+    readme = build_readme(_FIXTURE_OUT_DIR, list(csvs.keys()))
     assert "Neo4j Browser" in readme
     assert "cypher-shell" in readme
     assert "import_browser.cypher" in readme
@@ -273,6 +276,6 @@ def test_export_neo4j_csv_shell_script_uses_absolute_uris(tmp_path, monkeypatch)
     nodes, edge_metadata, schema = _fixture_inputs()
     export_neo4j_csv(nodes, edge_metadata, schema, tmp_path)
 
-    shell_cypher = (tmp_path / "neo4j_csv" / "import_shell.cypher").read_text()
+    shell_cypher = (tmp_path / "neo4j_csv" / "import_shell.cypher").read_text(encoding="utf-8")
     vault_uri_prefix = (tmp_path / "neo4j_csv").absolute().as_uri()
     assert vault_uri_prefix in shell_cypher

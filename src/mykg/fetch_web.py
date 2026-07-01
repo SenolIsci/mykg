@@ -154,9 +154,9 @@ def filter_repo_files(
             dest = input_dir / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dest)
-            copied.append(str(rel))
+            copied.append(rel.as_posix())
         else:
-            skipped.append({"path": str(rel), "ext": ext})
+            skipped.append({"path": rel.as_posix(), "ext": ext})
 
     return {
         "copied": copied,

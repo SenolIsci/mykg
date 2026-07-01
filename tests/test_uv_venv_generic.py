@@ -16,7 +16,8 @@ def _fake_run_factory(bin_names):
             bin_dir = venv_dir / ("Scripts" if sys.platform == "win32" else "bin")
             bin_dir.mkdir(parents=True, exist_ok=True)
             for name in bin_names:
-                (bin_dir / name).write_text("")
+                ext = ".exe" if sys.platform == "win32" else ""
+                (bin_dir / (name + ext)).write_text("")
         proc = MagicMock()
         proc.returncode = 0
         proc.stdout = ""
