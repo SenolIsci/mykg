@@ -4,7 +4,7 @@
 # ACTIVE PROFILE — change this one line to switch provider and all settings.
 # Available: ollama-local | anthropic-claude | openai | openrouter-free | claude-cli | agent-claude-code
 # =============================================================================
-profile: openai
+profile: openrouter-free
 
 # ---------------------------------------------------------------------------
 # Profiles — each is fully self-contained: provider, credentials, and pipeline.
@@ -19,26 +19,26 @@ profiles:
   # Requires OPENROUTER_API_KEY in env / .env.mykg
   #
   # Token budget chain (use context-calculator to recompute when switching models):
-  #   ① context_window    = 64000
-  #   ② max_output_tokens = 16000
-  #   ③ input_headroom    = ① − ② = 48000
-  #      batch_token_target = 16000  (conservative — safe for weaker models)
-  #      window_tokens      = batch_token_target / 4 = 4000
-  #      overlap_tokens     = window_tokens × 0.10 = 400
+  #   ① context_window    = 128000
+  #   ② max_output_tokens = 32000
+  #   ③ input_headroom    = ① − ② = 96000
+  #      batch_token_target = 32000  (manually reduced further from 64000 to shrink per-batch blast radius on failure)
+  #      window_tokens      = batch_token_target / 5 = 6400
+  #      overlap_tokens     = window_tokens × 0.10 = 640
   # ---------------------------------------------------------------------------
     provider: openrouter
     llm_retry:
       max_retries: 1        # retries on empty/blank response; set to 0 to disable
     llm:
-      context_window: 64000     # ① model's total context limit — root anchor for all budget calculations below
-      max_output_tokens: 16000   # ② output cap — conservative for free-tier models
+      context_window: 128000     # ① model's total context limit — root anchor for all budget calculations below
+      max_output_tokens: 32000   # ② output cap — google/gemma-4-31b-it supports far more; raised from free-tier default
       # If a chunk response hits the output cap, the JSON is truncated mid-stream causing parse errors.
       # Reduce window_tokens so the model has less to say per chunk, or raise max_output_tokens if the model supports it.
       base_url: https://openrouter.ai/api/v1
       # Set model to a specific OpenRouter model slug (see openrouter.ai/models).
       # For 128K+ models raise window_tokens, overlap_tokens, and batch_token_target proportionally
       # (run: context-calculator --context <N> --max-output <M>).
-      model: openrouter/free #google/gemma-4-31b-it
+      model: google/gemma-4-31b-it
       timeout: 1800                # seconds per LLM call before raising a timeout error
       retry_429_max: 1          # max retries on HTTP 429 rate-limit before giving up
       retry_429_base_delay: 2.0 # initial backoff seconds; doubles on each retry (exponential)
@@ -97,12 +97,12 @@ profiles:
         github_clone_timeout_seconds: 1800  # git clone timeout (30 min)
         max_workers: 2                 # max concurrent seed crawls inside one shared venv for --url-list
       chunking:
-        window_tokens: 4000      # = batch_token_target / 4
-        overlap_tokens: 400      # = window_tokens × 0.10
+        window_tokens: 6400      # = batch_token_target / 5
+        overlap_tokens: 640      # = window_tokens × 0.10
         tiktoken_encoding: cl100k_base  # tokenizer used for token counting (matches most OpenAI-family models)
       # --- Pass 1: schema induction -------------------------------------------
       pass1:
-        batch_token_target: 16000  # conservative; MUST stay ≤ context_window − max_output_tokens
+        batch_token_target: 32000  # MUST stay ≤ context_window − max_output_tokens
         max_workers: 8
         per_file_batching: false  # set true for Option B: one batch per source file
         max_schema_proposals: 50  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
@@ -111,14 +111,14 @@ profiles:
         max_workers: 8
         stateful_chunks: true   # pass prior-chunk nodes to next chunk so IDs stay stable across chunk boundaries
         prep_mode: batch_chunks                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
-        concat_batch_token_target: 16000  # target token budget per virtual batch; used when prep_mode=concat
-        batch_token_target: 16000          # token budget per chunk batch; used when prep_mode=batch_chunks
+        concat_batch_token_target: 32000  # target token budget per virtual batch; used when prep_mode=concat
+        batch_token_target: 32000          # token budget per chunk batch; used when prep_mode=batch_chunks
         batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
         batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
         enabled: true           # run the name-normalization LLM step to resolve surface-form variants before deduplication
         max_names_per_type: 50000 # safety-net cap per type; primary batch sizing is controlled by batch_token_target
-        batch_token_target: 16000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
+        batch_token_target: 32000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
       # --- Orphan recovery -----------------------------------------------------
       orphan_pass:
         enabled: false
