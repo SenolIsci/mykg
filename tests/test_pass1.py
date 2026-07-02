@@ -248,6 +248,26 @@ def test_run_pass1_proposal_order_deterministic():
     assert proposals[1]["concepts"][0]["type"] == "Organization"
 
 
+def test_run_pass1_samples_batches_when_over_cap(monkeypatch):
+    """When batches exceed max_schema_proposals, only cap-many are dispatched."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS1_MAX_SCHEMA_PROPOSALS", 1)
+    # _BIG_CHUNKS produces 2 batches; cap=1 → only 1 LLM call → 1 proposal
+    proposals = run_pass1(_BIG_CHUNKS, MockAdapter(VALID_PROPOSAL), locked_schema_block="")
+    assert len(proposals) == 1
+
+
+def test_run_pass1_no_sample_when_minus_one(monkeypatch):
+    """When cap is -1, all batches are dispatched regardless of count."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS1_MAX_SCHEMA_PROPOSALS", -1)
+    # _BIG_CHUNKS produces 2 batches; cap=-1 → both dispatched → 2 proposals
+    proposals = run_pass1(_BIG_CHUNKS, MockAdapter(VALID_PROPOSAL), locked_schema_block="")
+    assert len(proposals) == 2
+
+
 # ---------------------------------------------------------------------------
 # review_schema_quality tests
 # ---------------------------------------------------------------------------

@@ -307,11 +307,11 @@ It runs four sequential stages:
 
 **Parallel batch induction.** Documents are split into overlapping windows. All windows are dispatched concurrently to the LLM, each batch producing a schema proposal: a set of concept types (like Person, Organization, Project) and relationship types (like works_at, depends_on). Batching is parallelised to minimise wall-clock time on large corpora.
 
+On large corpora, thousands of batches can be produced. The pipeline caps batch dispatch at `pass1.max_schema_proposals` (default 50) — batches are sampled down to that count before the `ThreadPoolExecutor` runs, using a deterministic fixed-seed sample (`random.Random(0)`) so re-entry runs are reproducible. A warning is logged when the cap fires. Set `pass1.max_schema_proposals: -1` to disable the cap and dispatch all batches.
+
 **Algorithmic merge.** All batch proposals are merged without another LLM call. Exact duplicates are collapsed first, then near-duplicates are resolved using string normalization and, if you supplied a SKOS thesaurus, vocabulary-aware synonym matching. Attributes from duplicate entries are unioned. If you supplied a locked base schema, those classes and properties are protected — the LLM cannot rename, remove, or restructure them.
 
-**Harmonization.** A single LLM call sees both the merged schema and the raw batch proposals. It collapses semantic near-duplicates the algorithmic step missed — for example, collapsing "MilitaryUnit" and "ArmyUnit" into one canonical type. The original is kept if the response is unparseable.
-
-On large corpora, hundreds of batch proposals can be produced. Sending all of them in one call would exceed any provider's context window. The pipeline therefore caps the proposal list at `pass1.max_schema_proposals` (default 50) before building the harmonization prompt, using a deterministic fixed-seed sample (`random.Random(0)`) so re-entry runs are reproducible. A warning is logged when the cap fires. The merged schema itself is always included in full — only the supporting raw proposals are sampled, since the merged schema already carries the union of all concept and property names. The same cap applies to `harmonize_schema_for_merge` in the merge pipeline.
+**Harmonization.** A single LLM call sees both the merged schema and the raw batch proposals. It collapses semantic near-duplicates the algorithmic step missed — for example, collapsing "MilitaryUnit" and "ArmyUnit" into one canonical type. The original is kept if the response is unparseable. The same call is used in the merge pipeline via `harmonize_schema_for_merge`.
 
 **Quality review.** A second LLM call removes over-narrow named-entity singletons (a concept like "FourthAirForce" should be an instance of MilitaryUnit, not a concept type), fixes singleton types with no meaningful abstraction, and ensures every concept has at least a name attribute.
 

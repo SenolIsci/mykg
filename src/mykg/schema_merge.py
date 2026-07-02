@@ -2,18 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
-import random as _random
 import re
 
-from mykg import config as _cfg
 from mykg.llm.adapter import LLMAdapter
 from mykg.llm.retry import llm_complete_with_retry
 from mykg.prompts import load_prompt
 from mykg.thesaurus import SynonymIndex
 
 _log = logging.getLogger("mykg.schema_merge")
-_PROPOSALS_RNG = _random.Random(0)
-
 _QUALITY_SYSTEM_PROMPT = load_prompt("schema_merge/quality_system")
 _HARMONIZE_SYSTEM_PROMPT = load_prompt("schema_merge/harmonize_system")
 _MERGE_HARMONIZE_SYSTEM_PROMPT = load_prompt("schema_merge/merge_harmonize_system")
@@ -168,14 +164,6 @@ def harmonize_schema(
     remove, or duplicate — the same mechanism Pass 1 extraction uses. Empty by default,
     so behaviour is unchanged when no base schema is in play.
     """
-    cap = _cfg.PASS1_MAX_SCHEMA_PROPOSALS
-    if len(proposals) > cap:
-        _log.warning(
-            "harmonize_schema — %d proposals sampled down to %d (pass1.max_schema_proposals)",
-            len(proposals),
-            cap,
-        )
-        proposals = _PROPOSALS_RNG.sample(proposals, cap)
     proposals_block = json.dumps(proposals, indent=2)
     merged_block = json.dumps(schema, indent=2)
     user = "MERGED SCHEMA:\n" + merged_block + "\n\nRAW PROPOSALS:\n" + proposals_block
@@ -263,14 +251,6 @@ def harmonize_schema_for_merge(schema: dict, proposals: list[dict], adapter: LLM
     Sees both the merged schema and the two source session schemas as proposals.
     Returns the improved schema, or the original if the response is unparseable.
     """
-    cap = _cfg.PASS1_MAX_SCHEMA_PROPOSALS
-    if len(proposals) > cap:
-        _log.warning(
-            "harmonize_schema_for_merge — %d proposals sampled down to %d (pass1.max_schema_proposals)",
-            len(proposals),
-            cap,
-        )
-        proposals = _PROPOSALS_RNG.sample(proposals, cap)
     proposals_block = json.dumps(proposals, indent=2)
     merged_block = json.dumps(schema, indent=2)
     user = "MERGED SCHEMA:\n" + merged_block + "\n\nSESSION SCHEMAS:\n" + proposals_block

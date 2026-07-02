@@ -356,7 +356,7 @@ The pipeline runs 12 steps in sequence. All intermediate state is written to dis
 | 11 | `orphan_connect` | ✓ | `orphan_connections.json`, `orphan_log.json` |
 | 12 | `validate_graph` | — | `nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, `knowledge_graph.html`, `networkx_output/`, `obsidian_vault/`, `neo4j_csv/` *(optional)* |
 
-Pass 1 internally runs four sequential stages: parallel batch induction → algorithmic merge → harmonization LLM call → quality review LLM call.
+Pass 1 internally runs four sequential stages: parallel batch induction → algorithmic merge → harmonization LLM call → quality review LLM call. `pass1.max_schema_proposals` (default 50) caps the number of batches dispatched to the LLM; set to `-1` to dispatch all batches on large corpora.
 
 ## Outputs
 

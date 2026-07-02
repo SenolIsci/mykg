@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random as _random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from mykg import config as _cfg
@@ -14,6 +15,8 @@ from mykg.prompts import load_prompt
 log = get("mykg.pass1")
 
 PASS1_SYSTEM_PROMPT = load_prompt("pass1/system")
+
+_BATCHES_RNG = _random.Random(0)
 
 
 def _build_batches(chunks: list[Chunk]) -> list[list[Chunk]]:
@@ -63,6 +66,15 @@ def run_pass1(
     error_gate: ErrorGate | None = None,
 ) -> list[dict]:
     batches = _build_batches(chunks)
+    cap = _cfg.PASS1_MAX_SCHEMA_PROPOSALS
+    if cap != -1 and len(batches) > cap:
+        original_count = len(batches)
+        batches = _BATCHES_RNG.sample(batches, cap)
+        log.warning(
+            "Pass 1 — %d batches sampled down to %d (pass1.max_schema_proposals)",
+            original_count,
+            cap,
+        )
 
     system = PASS1_SYSTEM_PROMPT
     if locked_schema_block:
