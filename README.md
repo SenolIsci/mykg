@@ -221,6 +221,22 @@ context-calculator --from-config --input-dir my_notes/
 
 `--from-config` reads the active profile from `mykg_config.yaml`, measures token counts across your input files, and writes suggested values to `mykg_config_candidate.yaml` for review before copying them into `mykg_config.yaml`.
 
+### Diagnosing Truncated/Rejected LLM Calls
+
+If Pass 1 or Pass 2 chunks are failing with JSON parse errors (`Expecting value: line 1 column 1 (char 0)`, `Expecting ',' delimiter: ...`) or "Unknown node/edge type" validation errors, check `run.log` for a `mykg.llm.retry` warning immediately above the failure — it tells you *why* the response was malformed, not just that it was:
+
+```
+[WARNING] mykg.llm.retry — openrouter/openrouter-free [pass2 chunk 13] — output truncated (finish_reason=length); response may be incomplete/unparseable
+[WARNING] mykg.pass2 —     chunk 13 — JSON parse error: Expecting value: line 1 column 1 (char 0) — retrying
+```
+
+Two distinct signals, both logged unconditionally to `run.log` — independent of `logging.llm_log` (the opt-in `llm.log` sidecar with full per-call token/response detail, off by default):
+
+- **`output truncated (finish_reason=...)`** — the model hit its `max_output_tokens` cap mid-response. The chunk/batch is producing more content than fits the configured output budget — lower `pipeline.chunking.window_tokens` (fewer chunks packed per call) or raise `llm.max_output_tokens` if the model supports it, then recompute the chain with `context-calculator` (see [Token Budgets](#token-budgets) above).
+- **`context length exceeded, request rejected: ...`** — the API rejected the prompt outright because the *input* didn't fit the model's context window. Lower `pipeline.pass1.batch_token_target` / `pipeline.pass2.concat_batch_token_target` (or `batch_token_target`), since the packed input itself is too large for this model.
+
+Both are logged at `WARNING` level on the standard logger, so they always land in `run.log` and stdout — no config toggle required. This is a diagnostic signal only: mykg does not automatically shrink chunks or retry with a smaller prompt; you rescale `pipeline.chunking`/`pipeline.pass1`/`pipeline.pass2` values in `mykg_config.yaml` and re-run.
+
 ### Pass 2 Prep Mode (`pass2.prep_mode`)
 
 Controls how source files are packed into Pass 2 LLM calls (set per profile in `mykg_config.yaml`):
