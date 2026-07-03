@@ -38,7 +38,7 @@ profiles:
       # Set model to a specific OpenRouter model slug (see openrouter.ai/models).
       # For 128K+ models raise window_tokens, overlap_tokens, and batch_token_target proportionally
       # (run: context-calculator --context <N> --max-output <M>).
-      model: google/gemma-4-31b-it
+      model: openrouter/free
       timeout: 1800                # seconds per LLM call before raising a timeout error
       retry_429_max: 1          # max retries on HTTP 429 rate-limit before giving up
       retry_429_base_delay: 2.0 # initial backoff seconds; doubles on each retry (exponential)
