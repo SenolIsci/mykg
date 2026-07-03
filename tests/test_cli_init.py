@@ -57,6 +57,61 @@ def test_init_interactive_prompt_selects_profile(tmp_path, monkeypatch):
     assert "profile: anthropic-claude" in cfg
 
 
+def test_init_interactive_model_matching_default_is_still_written(tmp_path, monkeypatch):
+    """Retyping the exact default model must not silently no-op (previously
+    compared model_input to default_model and dropped the write when equal,
+    indistinguishable from a bare Enter — see openrouter-free whose
+    default_model is itself 'openrouter/free')."""
+    import mykg.cli as cli_mod
+
+    runner = _runner_in(tmp_path, monkeypatch)
+    result = runner.invoke(
+        cli_mod.cli,
+        ["init"],
+        input="1\nopenrouter/free\n\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "model: openrouter/free" in result.output
+    cfg = (tmp_path / "mykg_config.yaml").read_text()
+    assert "model: openrouter/free" in cfg
+
+
+def test_init_interactive_blank_model_reprompts(tmp_path, monkeypatch):
+    """A blank/whitespace-only model entry is rejected and re-prompted, not
+    silently accepted as an empty model name."""
+    import mykg.cli as cli_mod
+
+    runner = _runner_in(tmp_path, monkeypatch)
+    result = runner.invoke(
+        cli_mod.cli,
+        ["init"],
+        input="1\n \ndsjcds\n\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Model name cannot be blank" in result.output
+    cfg = (tmp_path / "mykg_config.yaml").read_text()
+    assert "model: dsjcds" in cfg
+
+
+def test_init_interactive_model_with_spaces_reprompts(tmp_path, monkeypatch):
+    """A model entry containing embedded whitespace is rejected and re-prompted."""
+    import mykg.cli as cli_mod
+
+    runner = _runner_in(tmp_path, monkeypatch)
+    result = runner.invoke(
+        cli_mod.cli,
+        ["init"],
+        input="1\nthis is not a model\ndsjcds\n\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Model name cannot contain spaces" in result.output
+    cfg = (tmp_path / "mykg_config.yaml").read_text()
+    assert "model: dsjcds" in cfg
+
+
 def test_init_invalid_interactive_choice_falls_back_to_default(tmp_path, monkeypatch):
     import mykg.cli as cli_mod
 

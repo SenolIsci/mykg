@@ -220,12 +220,17 @@ def init_config(
     # --- Model selection -----------------------------------------------------
     if model is None and meta["default_model"] is not None:
         default_model = meta["default_model"]
-        model_input = click.prompt(
+        # click.prompt returns default_model verbatim on a bare Enter, so
+        # model_input is never empty here — always honour whatever it holds
+        # (including a retyped default) rather than comparing against
+        # default_model, which previously made an explicit retype of the
+        # default silently no-op (indistinguishable from pressing Enter).
+        model = click.prompt(
             "Model name (press Enter for default)",
             default=default_model,
             show_default=True,
-        ).strip()
-        model = model_input if model_input != default_model else None
+            value_proc=_validate_model_name,
+        )
 
     # --- Write mykg_config.yaml with selected profile and optional model -
     import re
@@ -286,6 +291,24 @@ def init_config(
         reinstall_claude_md=reinstall_claude_md,
         force=force,
     )
+
+
+def _validate_model_name(raw: str) -> str:
+    """Basic sanity check for an interactively-entered model name.
+
+    Deliberately permissive — model slugs vary wildly across providers
+    (``openrouter/free``, ``gemma4:e4b``, ``claude-sonnet-4-5``,
+    ``gpt-4o``) so this only rejects input that can never be a valid
+    model name: blank/whitespace-only, or containing embedded whitespace
+    (a sign of a pasted sentence rather than a slug). ``click.prompt``
+    re-prompts automatically when this raises ``click.UsageError``.
+    """
+    value = raw.strip()
+    if not value:
+        raise click.UsageError("Model name cannot be blank.")
+    if any(ch.isspace() for ch in value):
+        raise click.UsageError("Model name cannot contain spaces.")
+    return value
 
 
 def _patch_profile_model(content: str, profile: str, model: str) -> str:
