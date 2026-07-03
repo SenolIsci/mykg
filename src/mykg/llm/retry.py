@@ -14,6 +14,37 @@ log = get("mykg.llm.retry")
 
 E = TypeVar("E", bound=BaseException)
 
+# Substrings seen across providers/SDKs when a prompt is rejected outright for not
+# fitting the model's context window (HTTP 400 from OpenAI, Ollama, vLLM, etc.).
+# There is no single exception type shared across SDKs for this, so detection is a
+# heuristic match on the stringified exception — observability only, this does not
+# drive a retry (see `looks_like_context_exceeded` callers).
+_CONTEXT_EXCEEDED_MARKERS = (
+    "context size",
+    "context length",
+    "context_length",
+    "context window",
+    "n_ctx",
+    "exceeds the available",
+    "maximum context",
+    "too many tokens",
+    "prompt is too long",
+    "context_length_exceeded",
+)
+
+
+def looks_like_context_exceeded(exc: BaseException) -> bool:
+    """Heuristically classify an exception as a context-window overflow.
+
+    Different backends raise different exception types/messages for the same
+    underlying problem (the prompt didn't fit the model's context window). This
+    matches on substrings of the stringified exception so callers can log a clear
+    diagnostic marker before re-raising, without depending on a specific SDK
+    exception class.
+    """
+    msg = str(exc).lower()
+    return any(marker in msg for marker in _CONTEXT_EXCEEDED_MARKERS)
+
 
 def llm_complete_with_retry(
     adapter: LLMAdapter,

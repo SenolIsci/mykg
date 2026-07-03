@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import openai
 
 from mykg.llm.adapter import LLMAdapter
-from mykg.llm.retry import retry_on_rate_limit
+from mykg.llm.retry import looks_like_context_exceeded, retry_on_rate_limit
 from mykg.logging import record_llm_call
 
 if TYPE_CHECKING:
@@ -129,9 +129,26 @@ class OpenAIAdapter(LLMAdapter):
                         use_completion_key=True,
                     )
                 else:
+                    if looks_like_context_exceeded(exc):
+                        record_llm_call(
+                            provider="openai",
+                            model=self._model,
+                            context_label=context_label,
+                            input_tokens=0,
+                            output_tokens=0,
+                            duration_s=time.monotonic() - t0,
+                            system_prompt=system,
+                            user_prompt=user,
+                            error=f"context_length_exceeded: {exc}",
+                        )
                     raise
             usage = resp.usage
             raw = resp.choices[0].message.content or "" if resp.choices else ""
+            # finish_reason == "length" means output was truncated at the token cap —
+            # surfaced for diagnosability only (see Invariant 13: window/max_tokens
+            # sizing should prevent this in normal operation).
+            choice_finish_reason = resp.choices[0].finish_reason if resp.choices else None
+            finish_reason = "length" if choice_finish_reason == "length" else None
             record_llm_call(
                 provider="openai",
                 model=self._model,
@@ -142,6 +159,7 @@ class OpenAIAdapter(LLMAdapter):
                 system_prompt=system,
                 user_prompt=user,
                 raw_response=raw,
+                finish_reason=finish_reason,
             )
             return self.strip_code_fences(raw)
 
