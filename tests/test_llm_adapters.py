@@ -1225,3 +1225,311 @@ def test_openrouter_live_call_respects_timeout():
     print(f"[live] tight timeout raised: {type(exc_info.value).__name__}: {exc_info.value}")
     # Accept any exception — the SDK raises openai.APITimeoutError or httpx.ReadTimeout
     assert exc_info.value is not None
+
+
+# ── finish_reason (truncation) detection ─────────────────────────────────────
+
+
+def test_anthropic_adapter_truncated_response_logs_finish_reason():
+    """stop_reason == 'max_tokens' is surfaced as finish_reason='max_tokens'."""
+    truncated_block = MagicMock()
+    truncated_block.text = "{ incomplete json"
+    truncated_response = MagicMock()
+    truncated_response.content = [truncated_block]
+    truncated_response.stop_reason = "max_tokens"
+
+    with (
+        patch("anthropic.Anthropic") as mock_cls,
+        patch("mykg.llm.anthropic_adapter.record_llm_call") as mock_record,
+    ):
+        mock_client = MagicMock()
+        mock_cls.return_value = mock_client
+        mock_client.messages.create.return_value = truncated_response
+
+        from mykg.llm.anthropic_adapter import AnthropicAdapter
+
+        adapter = AnthropicAdapter(
+            model="claude-sonnet-4-6", max_tokens=10, timeout=10, api_key="test-key"
+        )
+        adapter.complete("sys", "user")
+
+    assert mock_record.call_args.kwargs.get("finish_reason") == "max_tokens"
+
+
+def test_anthropic_adapter_normal_response_omits_finish_reason():
+    """stop_reason == 'end_turn' does not set finish_reason."""
+    ok_block = MagicMock()
+    ok_block.text = "{}"
+    ok_response = MagicMock()
+    ok_response.content = [ok_block]
+    ok_response.stop_reason = "end_turn"
+
+    with (
+        patch("anthropic.Anthropic") as mock_cls,
+        patch("mykg.llm.anthropic_adapter.record_llm_call") as mock_record,
+    ):
+        mock_client = MagicMock()
+        mock_cls.return_value = mock_client
+        mock_client.messages.create.return_value = ok_response
+
+        from mykg.llm.anthropic_adapter import AnthropicAdapter
+
+        adapter = AnthropicAdapter(
+            model="claude-sonnet-4-6", max_tokens=10, timeout=10, api_key="test-key"
+        )
+        adapter.complete("sys", "user")
+
+    assert mock_record.call_args.kwargs.get("finish_reason") is None
+
+
+def test_anthropic_adapter_context_exceeded_logs_and_reraises():
+    """A context-length-exceeded APIStatusError is logged with a marker and re-raised."""
+    import anthropic
+
+    api_err = anthropic.APIStatusError(
+        message="prompt is too long: 250000 tokens > 200000 maximum",
+        response=MagicMock(status_code=400, headers={}),
+        body={"error": {"message": "prompt is too long: 250000 tokens > 200000 maximum"}},
+    )
+
+    with (
+        patch("anthropic.Anthropic") as mock_cls,
+        patch("mykg.llm.anthropic_adapter.record_llm_call") as mock_record,
+    ):
+        mock_client = MagicMock()
+        mock_cls.return_value = mock_client
+        mock_client.messages.create.side_effect = api_err
+
+        from mykg.llm.anthropic_adapter import AnthropicAdapter
+
+        adapter = AnthropicAdapter(
+            model="claude-sonnet-4-6", max_tokens=10, timeout=10, api_key="test-key"
+        )
+        with pytest.raises(anthropic.APIStatusError):
+            adapter.complete("sys", "user")
+
+    call_kwargs_list = [c.kwargs for c in mock_record.call_args_list]
+    assert any(
+        "context_length_exceeded" in str(k.get("error", "")) for k in call_kwargs_list
+    )
+
+
+def test_openai_adapter_truncated_response_logs_finish_reason():
+    """finish_reason == 'length' is surfaced as finish_reason='length'."""
+    mock_response = MagicMock()
+    mock_response.choices[0].message.content = "{ incomplete"
+    mock_response.choices[0].finish_reason = "length"
+
+    with (
+        patch("openai.OpenAI") as mock_client_cls,
+        patch("mykg.llm.openai_adapter.record_llm_call") as mock_record,
+    ):
+        mock_client = MagicMock()
+        mock_client_cls.return_value = mock_client
+        mock_client.chat.completions.create.return_value = mock_response
+
+        from mykg.llm.openai_adapter import OpenAIAdapter
+
+        adapter = OpenAIAdapter(model="gpt-4o", max_tokens=10, timeout=30, api_key="test-key")
+        adapter.complete("system prompt", "user prompt")
+
+    assert mock_record.call_args.kwargs.get("finish_reason") == "length"
+
+
+def test_openai_adapter_normal_response_omits_finish_reason():
+    """finish_reason == 'stop' does not set finish_reason."""
+    mock_response = MagicMock()
+    mock_response.choices[0].message.content = "hello"
+    mock_response.choices[0].finish_reason = "stop"
+
+    with (
+        patch("openai.OpenAI") as mock_client_cls,
+        patch("mykg.llm.openai_adapter.record_llm_call") as mock_record,
+    ):
+        mock_client = MagicMock()
+        mock_client_cls.return_value = mock_client
+        mock_client.chat.completions.create.return_value = mock_response
+
+        from mykg.llm.openai_adapter import OpenAIAdapter
+
+        adapter = OpenAIAdapter(model="gpt-4o", max_tokens=10, timeout=30, api_key="test-key")
+        adapter.complete("system prompt", "user prompt")
+
+    assert mock_record.call_args.kwargs.get("finish_reason") is None
+
+
+def test_openai_adapter_context_exceeded_logs_and_reraises():
+    """A context-length-exceeded BadRequestError is logged with a marker and re-raised."""
+    import openai
+
+    api_err = openai.BadRequestError(
+        message="This model's maximum context length is 128000 tokens",
+        response=MagicMock(status_code=400, headers={}),
+        body={
+            "error": {
+                "message": "This model's maximum context length is 128000 tokens",
+            }
+        },
+    )
+
+    with (
+        patch("openai.OpenAI") as mock_cls,
+        patch("mykg.llm.openai_adapter.record_llm_call") as mock_record,
+    ):
+        mock_client = MagicMock()
+        mock_cls.return_value = mock_client
+        mock_client.chat.completions.create.side_effect = api_err
+
+        from mykg.llm.openai_adapter import OpenAIAdapter
+
+        adapter = OpenAIAdapter(model="gpt-4o", max_tokens=10, timeout=30, api_key="test-key")
+        with pytest.raises(openai.BadRequestError):
+            adapter.complete("sys", "user")
+
+    call_kwargs_list = [c.kwargs for c in mock_record.call_args_list]
+    assert any(
+        "context_length_exceeded" in str(k.get("error", "")) for k in call_kwargs_list
+    )
+
+
+def test_openrouter_adapter_truncated_response_logs_finish_reason():
+    """finish_reason == 'length' is surfaced as finish_reason='length'."""
+    mock_response = MagicMock()
+    mock_response.choices[0].message.content = "{ incomplete"
+    mock_response.choices[0].finish_reason = "length"
+
+    with (
+        patch("openai.OpenAI") as mock_client_cls,
+        patch("mykg.llm.openrouter_adapter.record_llm_call") as mock_record,
+    ):
+        mock_client = MagicMock()
+        mock_client_cls.return_value = mock_client
+        mock_client.chat.completions.create.return_value = mock_response
+
+        from mykg.llm.openrouter_adapter import OpenRouterAdapter
+
+        adapter = OpenRouterAdapter(model="m", max_tokens=10, timeout=10, api_key="test-key")
+        adapter.complete("s", "u")
+
+    assert mock_record.call_args.kwargs.get("finish_reason") == "length"
+
+
+def test_openrouter_adapter_normal_response_omits_finish_reason():
+    """finish_reason == 'stop' does not set finish_reason."""
+    mock_response = MagicMock()
+    mock_response.choices[0].message.content = "hello"
+    mock_response.choices[0].finish_reason = "stop"
+
+    with (
+        patch("openai.OpenAI") as mock_client_cls,
+        patch("mykg.llm.openrouter_adapter.record_llm_call") as mock_record,
+    ):
+        mock_client = MagicMock()
+        mock_client_cls.return_value = mock_client
+        mock_client.chat.completions.create.return_value = mock_response
+
+        from mykg.llm.openrouter_adapter import OpenRouterAdapter
+
+        adapter = OpenRouterAdapter(model="m", max_tokens=10, timeout=10, api_key="test-key")
+        adapter.complete("s", "u")
+
+    assert mock_record.call_args.kwargs.get("finish_reason") is None
+
+
+def test_openrouter_adapter_context_exceeded_marks_error():
+    """A context-length-exceeded 4xx APIStatusError gets the marker prefix on error."""
+    import openai
+
+    api_err = openai.APIStatusError(
+        message="maximum context length exceeded",
+        response=MagicMock(status_code=400, headers={}),
+        body={"error": {"message": "maximum context length exceeded"}},
+    )
+
+    with (
+        patch("openai.OpenAI") as mock_cls,
+        patch("mykg.llm.openrouter_adapter.record_llm_call") as mock_record,
+    ):
+        mock_client = MagicMock()
+        mock_cls.return_value = mock_client
+        mock_client.chat.completions.create.side_effect = api_err
+
+        from mykg.llm.openrouter_adapter import OpenRouterAdapter
+
+        adapter = OpenRouterAdapter(
+            model="m", max_tokens=10, timeout=10, api_key="test-key", retry_429_max=0
+        )
+        with pytest.raises(openai.APIStatusError):
+            adapter.complete("s", "u")
+
+    call_kwargs_list = [c.kwargs for c in mock_record.call_args_list]
+    assert any(
+        "context_length_exceeded" in str(k.get("error", "")) for k in call_kwargs_list
+    )
+
+
+def test_ollama_adapter_truncated_response_logs_finish_reason():
+    """done_reason == 'length' is surfaced as finish_reason='length'."""
+    mock_response = MagicMock()
+    mock_response.read.return_value = json.dumps(
+        {"response": "trunc", "done_reason": "length"}
+    ).encode()
+
+    with (
+        patch("urllib.request.urlopen") as mock_urlopen,
+        patch("mykg.llm.ollama_adapter.record_llm_call") as mock_record,
+    ):
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+
+        from mykg.llm.ollama_adapter import OllamaAdapter
+
+        adapter = OllamaAdapter(
+            model="gemma4:31b",
+            base_url="http://localhost:11434",
+            timeout=120,
+            stream=False,
+            max_tokens=10,
+            context_window=64000,
+        )
+        adapter.complete("system prompt", "user prompt")
+
+    assert mock_record.call_args.kwargs.get("finish_reason") == "length"
+
+
+def test_ollama_adapter_normal_response_omits_finish_reason():
+    """done_reason == 'stop' does not set finish_reason."""
+    mock_response = MagicMock()
+    mock_response.read.return_value = json.dumps(
+        {"response": "hello", "done_reason": "stop"}
+    ).encode()
+
+    with (
+        patch("urllib.request.urlopen") as mock_urlopen,
+        patch("mykg.llm.ollama_adapter.record_llm_call") as mock_record,
+    ):
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+
+        from mykg.llm.ollama_adapter import OllamaAdapter
+
+        adapter = OllamaAdapter(
+            model="gemma4:31b",
+            base_url="http://localhost:11434",
+            timeout=120,
+            stream=False,
+            max_tokens=10,
+            context_window=64000,
+        )
+        adapter.complete("system prompt", "user prompt")
+
+    assert mock_record.call_args.kwargs.get("finish_reason") is None
+
+
+def test_looks_like_context_exceeded_matches_known_markers():
+    """The shared heuristic matches common cross-provider context-overflow phrasing."""
+    from mykg.llm.retry import looks_like_context_exceeded
+
+    assert looks_like_context_exceeded(Exception("maximum context length is 128000 tokens"))
+    assert looks_like_context_exceeded(Exception("prompt is too long for this model"))
+    assert looks_like_context_exceeded(RuntimeError("n_ctx exceeded"))
+    assert not looks_like_context_exceeded(Exception("rate limit exceeded"))
+    assert not looks_like_context_exceeded(Exception("connection refused"))

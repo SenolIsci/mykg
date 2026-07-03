@@ -7,7 +7,7 @@ import urllib.request
 from typing import TYPE_CHECKING
 
 from mykg.llm.adapter import LLMAdapter
-from mykg.llm.retry import retry_on_rate_limit
+from mykg.llm.retry import looks_like_context_exceeded, retry_on_rate_limit
 from mykg.logging import record_llm_call
 
 if TYPE_CHECKING:
@@ -78,6 +78,12 @@ class OllamaAdapter(LLMAdapter):
                 with urllib.request.urlopen(req, timeout=effective_timeout) as resp:
                     data = json.loads(resp.read())
                     raw = data.get("response", "")
+                    # done_reason == "length" means output was truncated at the
+                    # num_predict cap — surfaced for diagnosability only (see
+                    # Invariant 13: window/max_tokens sizing should prevent this in
+                    # normal operation).
+                    done_reason = data.get("done_reason")
+                    finish_reason = "length" if done_reason == "length" else None
                     record_llm_call(
                         provider="ollama",
                         model=self._model,
@@ -88,13 +94,38 @@ class OllamaAdapter(LLMAdapter):
                         raw_response=raw,
                         system_prompt=system,
                         user_prompt=user,
+                        finish_reason=finish_reason,
                     )
                     return self.strip_code_fences(raw)
             except urllib.error.HTTPError as exc:
                 if exc.code == 429:
                     raise
+                if looks_like_context_exceeded(exc):
+                    record_llm_call(
+                        provider="ollama",
+                        model=self._model,
+                        context_label=context_label,
+                        input_tokens=0,
+                        output_tokens=0,
+                        duration_s=time.monotonic() - t0,
+                        system_prompt=system,
+                        user_prompt=user,
+                        error=f"context_length_exceeded: {exc}",
+                    )
                 raise RuntimeError(f"Ollama request failed: {exc}") from exc
             except urllib.error.URLError as exc:
+                if looks_like_context_exceeded(exc):
+                    record_llm_call(
+                        provider="ollama",
+                        model=self._model,
+                        context_label=context_label,
+                        input_tokens=0,
+                        output_tokens=0,
+                        duration_s=time.monotonic() - t0,
+                        system_prompt=system,
+                        user_prompt=user,
+                        error=f"context_length_exceeded: {exc}",
+                    )
                 raise RuntimeError(f"Ollama request failed: {exc}") from exc
 
         return retry_on_rate_limit(  # type: ignore[return-value]

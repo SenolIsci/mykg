@@ -9,7 +9,7 @@ import httpx
 import openai
 
 from mykg.llm.adapter import LLMAdapter
-from mykg.llm.retry import retry_on_rate_limit
+from mykg.llm.retry import looks_like_context_exceeded, retry_on_rate_limit
 from mykg.logging import record_llm_call
 
 if TYPE_CHECKING:
@@ -72,7 +72,7 @@ class OpenRouterAdapter(LLMAdapter):
         def _call() -> str:
             t0 = time.monotonic()
 
-            def _do_request() -> tuple[str, object]:
+            def _do_request() -> tuple[str, object, str | None]:
                 resp = self._client.chat.completions.create(
                     model=self._model,
                     max_tokens=effective_max_tokens,
@@ -83,14 +83,16 @@ class OpenRouterAdapter(LLMAdapter):
                 )
                 usage = resp.usage
                 raw = resp.choices[0].message.content or "" if resp.choices else ""
-                return raw, usage
+                choice_finish_reason = resp.choices[0].finish_reason if resp.choices else None
+                finish_reason = "length" if choice_finish_reason == "length" else None
+                return raw, usage, finish_reason
 
             # Hard wall-clock deadline — prevents OpenRouter keep-alive bytes
             # from resetting the httpx read timeout indefinitely.
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(_do_request)
                 try:
-                    raw, usage = future.result(timeout=effective_timeout)
+                    raw, usage, finish_reason = future.result(timeout=effective_timeout)
                 except concurrent.futures.TimeoutError:
                     duration_s = time.monotonic() - t0
                     record_llm_call(
@@ -118,6 +120,7 @@ class OpenRouterAdapter(LLMAdapter):
                 raw_response=raw,
                 system_prompt=system,
                 user_prompt=user,
+                finish_reason=finish_reason,
             )
             return self.strip_code_fences(raw)
 
@@ -128,6 +131,9 @@ class OpenRouterAdapter(LLMAdapter):
                 raise  # handled by retry_on_rate_limit below
             except openai.APIStatusError as exc:
                 status = exc.status_code
+                error_msg = str(exc.message)
+                if looks_like_context_exceeded(exc):
+                    error_msg = f"context_length_exceeded: {error_msg}"
                 record_llm_call(
                     provider="openrouter",
                     model=self._model,
@@ -138,7 +144,7 @@ class OpenRouterAdapter(LLMAdapter):
                     system_prompt=system,
                     user_prompt=user,
                     status_code=status,
-                    error=str(exc.message),
+                    error=error_msg,
                 )
                 # Retry 5xx as transient; surface all others immediately.
                 if status >= 500:

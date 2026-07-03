@@ -323,7 +323,7 @@ def _claude_skills_dir() -> Path:
     """Return the user-level Claude Code skills folder.
 
     Resolution order:
-      1. ``$CLAUDE_CONFIG_DIR/skills`` — explicit override (graphify-style).
+      1. ``$CLAUDE_CONFIG_DIR/skills`` — explicit override.
       2. ``~/.claude/skills`` — macOS / Linux / Windows-Desktop default.
       3. ``%APPDATA%/Claude/skills`` — Windows fallback if it already exists
          on disk and ``~/.claude/skills`` does not (some Windows Claude Code
@@ -361,7 +361,7 @@ def _manual_copy_hint(source: Path, target: Path) -> str:
 def _install_agent_skill(*, force: bool = False) -> None:
     """Copy the bundled mykg skill into ~/.claude/skills/mykg.
 
-    Uses graphify v8's atomic install pattern: copy to ``<target>.tmp``, then
+    Uses an atomic install pattern: copy to ``<target>.tmp``, then
     ``os.replace`` over the final destination. A ``.mykg_skill_version`` stamp
     file is written next to the skill so a future ``mykg init`` invocation can
     detect a stale install (package upgraded but skill not refreshed).
