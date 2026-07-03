@@ -345,6 +345,39 @@ def test_record_llm_call_status_code_and_error_branches(tmp_path):
     assert '"error": "rate-limited"' in contents
 
 
+def test_record_llm_call_finish_reason_branch(tmp_path):
+    """record_llm_call adds finish_reason field only when provided."""
+    from unittest.mock import patch
+
+    import mykg.logging as mykg_logging
+
+    log_file = tmp_path / "run.log"
+    with patch("mykg.config.LOG_LLM_LOG", True):
+        mykg_logging.setup(log_file=log_file)
+
+    mykg_logging.record_llm_call(
+        provider="p",
+        model="m",
+        context_label="ctx-truncated",
+        input_tokens=0,
+        output_tokens=20,
+        duration_s=0.0,
+        finish_reason="max_tokens",
+    )
+    mykg_logging.record_llm_call(
+        provider="p",
+        model="m",
+        context_label="ctx-normal",
+        input_tokens=0,
+        output_tokens=5,
+        duration_s=0.0,
+    )
+    mykg_logging._llm_handler.flush()
+    lines = (tmp_path / "llm.log").read_text(encoding="utf-8").strip().splitlines()
+    assert '"finish_reason": "max_tokens"' in lines[0]
+    assert "finish_reason" not in lines[1]
+
+
 def test_record_llm_call_noop_when_handler_is_none(tmp_path):
     """record_llm_call short-circuits when LOG_LLM_LOG is False (no _llm_handler)."""
     from unittest.mock import patch

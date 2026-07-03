@@ -1524,6 +1524,65 @@ def test_ollama_adapter_normal_response_omits_finish_reason():
     assert mock_record.call_args.kwargs.get("finish_reason") is None
 
 
+def test_ollama_adapter_context_exceeded_http_error_logs_and_reraises():
+    """A context-length-exceeded HTTPError is logged with a marker and re-raised."""
+    # looks_like_context_exceeded matches on str(exc), which for HTTPError is
+    # "HTTP Error <code>: <msg>" — the marker must be in msg, not the body.
+    exc = urllib.error.HTTPError(
+        url="http://localhost:11434/api/generate",
+        code=400,
+        msg="maximum context length exceeded",
+        hdrs=None,  # type: ignore[arg-type]
+        fp=io.BytesIO(b""),
+    )
+
+    with (
+        patch("urllib.request.urlopen", side_effect=exc),
+        patch("mykg.llm.ollama_adapter.record_llm_call") as mock_record,
+    ):
+        adapter = _ollama_adapter(retry_max=0)
+        with pytest.raises(RuntimeError, match="Ollama request failed"):
+            adapter.complete("sys", "user")
+
+    call_kwargs_list = [c.kwargs for c in mock_record.call_args_list]
+    assert any(
+        "context_length_exceeded" in str(k.get("error", "")) for k in call_kwargs_list
+    )
+
+
+def test_ollama_adapter_context_exceeded_url_error_logs_and_reraises():
+    """A context-length-exceeded URLError is logged with a marker and re-raised."""
+    exc = urllib.error.URLError("maximum context length exceeded")
+
+    with (
+        patch("urllib.request.urlopen", side_effect=exc),
+        patch("mykg.llm.ollama_adapter.record_llm_call") as mock_record,
+    ):
+        adapter = _ollama_adapter(retry_max=0)
+        with pytest.raises(RuntimeError, match="Ollama request failed"):
+            adapter.complete("sys", "user")
+
+    call_kwargs_list = [c.kwargs for c in mock_record.call_args_list]
+    assert any(
+        "context_length_exceeded" in str(k.get("error", "")) for k in call_kwargs_list
+    )
+
+
+def test_ollama_adapter_non_context_url_error_not_logged():
+    """A plain URLError unrelated to context overflow does not get the marker."""
+    exc = urllib.error.URLError("connection refused")
+
+    with (
+        patch("urllib.request.urlopen", side_effect=exc),
+        patch("mykg.llm.ollama_adapter.record_llm_call") as mock_record,
+    ):
+        adapter = _ollama_adapter(retry_max=0)
+        with pytest.raises(RuntimeError, match="Ollama request failed"):
+            adapter.complete("sys", "user")
+
+    mock_record.assert_not_called()
+
+
 def test_looks_like_context_exceeded_matches_known_markers():
     """The shared heuristic matches common cross-provider context-overflow phrasing."""
     from mykg.llm.retry import looks_like_context_exceeded
