@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING
 import anthropic
 
 from mykg.llm.adapter import LLMAdapter
-from mykg.llm.retry import looks_like_context_exceeded, retry_on_rate_limit
+from mykg.llm.retry import (
+    log_context_overflow,
+    log_truncated_output,
+    looks_like_context_exceeded,
+    retry_on_rate_limit,
+)
 from mykg.logging import record_llm_call
 
 if TYPE_CHECKING:
@@ -72,6 +77,7 @@ class AnthropicAdapter(LLMAdapter):
                 )
             except anthropic.APIStatusError as exc:
                 if looks_like_context_exceeded(exc):
+                    log_context_overflow("anthropic", self._model, context_label, exc)
                     record_llm_call(
                         provider="anthropic",
                         model=self._model,
@@ -93,6 +99,8 @@ class AnthropicAdapter(LLMAdapter):
             # the max_tokens cap — surfaced for diagnosability only (see Invariant 13:
             # window/max_tokens sizing should prevent this in normal operation).
             finish_reason = "max_tokens" if message.stop_reason == "max_tokens" else None
+            if finish_reason is not None:
+                log_truncated_output("anthropic", self._model, context_label, finish_reason)
             record_llm_call(
                 provider="anthropic",
                 model=self._model,

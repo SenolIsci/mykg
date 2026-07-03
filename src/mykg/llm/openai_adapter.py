@@ -8,7 +8,12 @@ from typing import TYPE_CHECKING
 import openai
 
 from mykg.llm.adapter import LLMAdapter
-from mykg.llm.retry import looks_like_context_exceeded, retry_on_rate_limit
+from mykg.llm.retry import (
+    log_context_overflow,
+    log_truncated_output,
+    looks_like_context_exceeded,
+    retry_on_rate_limit,
+)
 from mykg.logging import record_llm_call
 
 if TYPE_CHECKING:
@@ -130,6 +135,7 @@ class OpenAIAdapter(LLMAdapter):
                     )
                 else:
                     if looks_like_context_exceeded(exc):
+                        log_context_overflow("openai", self._model, context_label, exc)
                         record_llm_call(
                             provider="openai",
                             model=self._model,
@@ -149,6 +155,8 @@ class OpenAIAdapter(LLMAdapter):
             # sizing should prevent this in normal operation).
             choice_finish_reason = resp.choices[0].finish_reason if resp.choices else None
             finish_reason = "length" if choice_finish_reason == "length" else None
+            if finish_reason is not None:
+                log_truncated_output("openai", self._model, context_label, finish_reason)
             record_llm_call(
                 provider="openai",
                 model=self._model,

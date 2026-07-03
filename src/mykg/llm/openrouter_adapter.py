@@ -9,7 +9,12 @@ import httpx
 import openai
 
 from mykg.llm.adapter import LLMAdapter
-from mykg.llm.retry import looks_like_context_exceeded, retry_on_rate_limit
+from mykg.llm.retry import (
+    log_context_overflow,
+    log_truncated_output,
+    looks_like_context_exceeded,
+    retry_on_rate_limit,
+)
 from mykg.logging import record_llm_call
 
 if TYPE_CHECKING:
@@ -110,6 +115,8 @@ class OpenRouterAdapter(LLMAdapter):
                         f"OpenRouter call exceeded wall-clock timeout of {effective_timeout}s"
                     )
 
+            if finish_reason is not None:
+                log_truncated_output("openrouter", self._model, context_label, finish_reason)
             record_llm_call(
                 provider="openrouter",
                 model=self._model,
@@ -133,6 +140,7 @@ class OpenRouterAdapter(LLMAdapter):
                 status = exc.status_code
                 error_msg = str(exc.message)
                 if looks_like_context_exceeded(exc):
+                    log_context_overflow("openrouter", self._model, context_label, exc)
                     error_msg = f"context_length_exceeded: {error_msg}"
                 record_llm_call(
                     provider="openrouter",

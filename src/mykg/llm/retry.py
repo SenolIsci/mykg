@@ -46,6 +46,37 @@ def looks_like_context_exceeded(exc: BaseException) -> bool:
     return any(marker in msg for marker in _CONTEXT_EXCEEDED_MARKERS)
 
 
+def log_truncated_output(provider: str, model: str, context_label: str, finish_reason: str) -> None:
+    """Warn on the standard logger (→ stdout + run.log) when output was
+    truncated at the token cap. Independent of llm.log / LOG_LLM_LOG — this is
+    the only copy of the signal visible when the opt-in llm.log sink is off.
+    """
+    label = f" [{context_label}]" if context_label else ""
+    log.warning(
+        "%s/%s%s — output truncated (finish_reason=%s); response may be "
+        "incomplete/unparseable",
+        provider,
+        model,
+        label,
+        finish_reason,
+    )
+
+
+def log_context_overflow(provider: str, model: str, context_label: str, exc: BaseException) -> None:
+    """Warn on the standard logger (→ stdout + run.log) when the prompt was
+    rejected for exceeding the model's context window. Independent of
+    llm.log / LOG_LLM_LOG.
+    """
+    label = f" [{context_label}]" if context_label else ""
+    log.warning(
+        "%s/%s%s — context length exceeded, request rejected: %s",
+        provider,
+        model,
+        label,
+        exc,
+    )
+
+
 def llm_complete_with_retry(
     adapter: LLMAdapter,
     system: str,
