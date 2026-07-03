@@ -4,7 +4,7 @@
 # ACTIVE PROFILE — change this one line to switch provider and all settings.
 # Available: ollama-local | anthropic-claude | openai | openrouter-free | claude-cli | agent-claude-code
 # =============================================================================
-profile: openrouter-free
+profile: openai
 
 # ---------------------------------------------------------------------------
 # Profiles — each is fully self-contained: provider, credentials, and pipeline.
