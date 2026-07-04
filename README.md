@@ -352,7 +352,7 @@ The pipeline runs 12 steps in sequence. All intermediate state is written to dis
 |---|---|---|---|
 | 1 | `preprocess` | — | `preprocess.done`, `preprocess_manifest.json`, files under `input/_preprocessed/` *(routes non-md inputs to MinerU, markdownify, or rename; no-op for pure Markdown corpora)* |
 | 2 | `ingest` | — | `file_manifest.json` |
-| 3 | `pass1` | ✓ (3 calls) | `schema.json`, `schema.ttl`, `schema_history/` |
+| 3 | `pass1` | ✓ (3 calls) | `schema.json`, `schema.ttl`, `schema_history/`, `pass1_batch_selection.json`, `pass1_batch_proposals/` |
 | 4 | `schema_validate` | — | `schema_validate.done` |
 | 5 | `human_review` | — | `schema_approved.flag` *(only with `--review`)* |
 | 6 | `schema_flatten` | — | `flattened_schema.json` |
@@ -505,13 +505,17 @@ mykg extract-graph my_notes/ --session $SESSION --from-step orphan_connect_fulls
 
 # Orphan LLM pass only — additive (preserves prior confirmed edges)
 mykg extract-graph my_notes/ --session $SESSION --from-step orphan_connect_incremental
+
+# Re-run only merge/harmonize/quality-review (reuse existing Pass 1 batch proposals)
+mykg extract-graph my_notes/ --session $SESSION --from-step merge_proposals
 ```
 
-**Four re-entry patterns:**
+**Five re-entry patterns:**
 
 | Pattern | When to use | Command |
 |---|---|---|
 | **A — Schema changed** | Wrong concept types, missing properties | Edit `schema.json` → `approve-schema` → `--from-step pass1` |
+| **A (merge-only)** | Want to re-run merge/harmonize with a different `--thesaurus`/`--base-schema`, without re-paying for Pass 1's schema-induction LLM calls | `--from-step merge_proposals` (requires `pass1_batch_proposals/` from a prior run; unlike plain `--from-step pass1`, does not delete it) |
 | **B — Extraction errors** | LLM missed entities or invented edge types | Edit shard in `raw_extractions_shards/` → `--from-step pass2` |
 | **C — Assembly errors** | Bad dedup decisions in `merge_log.json` | Edit `raw_extractions.json` → `--from-step assemble` |
 | **D — Orphan pass** | Wrong candidates or confirmations | `--from-step orphan_score` or `orphan_connect_fullsweep` |

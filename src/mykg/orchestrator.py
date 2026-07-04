@@ -83,6 +83,10 @@ class PipelineContext(BaseModel):
     # Set by --from-step orphan_connect_incremental: load prior orphan_connections.json
     # as a seed and only re-send unresolved groups to the LLM.
     orphan_incremental: bool = False
+    # Set by --from-step merge_proposals: skip Pass 1 LLM dispatch entirely and
+    # reconstruct proposals from intermediate/pass1_batch_proposals/ shards,
+    # jumping straight to merge/harmonize/quality-review.
+    pass1_merge_only: bool = False
 
 
 class Step(BaseModel):

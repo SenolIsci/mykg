@@ -495,33 +495,46 @@ def test_extract_session_refreshes_input_copy(tmp_path, input_dir, monkeypatch):
 def test_resolve_from_step_fullsweep_alias():
     from mykg.cli import _resolve_from_step
 
-    step, incremental = _resolve_from_step("orphan_connect_fullsweep")
+    step, incremental, pass1_merge_only = _resolve_from_step("orphan_connect_fullsweep")
     assert step == "orphan_connect"
     assert incremental is False
+    assert pass1_merge_only is False
 
 
 def test_resolve_from_step_incremental_alias():
     from mykg.cli import _resolve_from_step
 
-    step, incremental = _resolve_from_step("orphan_connect_incremental")
+    step, incremental, pass1_merge_only = _resolve_from_step("orphan_connect_incremental")
     assert step == "orphan_connect"
     assert incremental is True
+    assert pass1_merge_only is False
 
 
 def test_resolve_from_step_plain_step_name_unchanged():
     from mykg.cli import _resolve_from_step
 
-    step, incremental = _resolve_from_step("pass2")
+    step, incremental, pass1_merge_only = _resolve_from_step("pass2")
     assert step == "pass2"
     assert incremental is False
+    assert pass1_merge_only is False
 
 
 def test_resolve_from_step_unknown_name_passthrough():
     from mykg.cli import _resolve_from_step
 
-    step, incremental = _resolve_from_step("totally_made_up_step")
+    step, incremental, pass1_merge_only = _resolve_from_step("totally_made_up_step")
     assert step == "totally_made_up_step"
     assert incremental is False
+    assert pass1_merge_only is False
+
+
+def test_resolve_from_step_merge_proposals_alias():
+    from mykg.cli import _resolve_from_step
+
+    step, incremental, pass1_merge_only = _resolve_from_step("merge_proposals")
+    assert step == "pass1"
+    assert incremental is False
+    assert pass1_merge_only is True
 
 
 # ===========================================================================

@@ -289,9 +289,10 @@ def test_extract_thesaurus_argument(tmp_path, input_dir, monkeypatch):
 def test_resolve_from_step_aliases():
     from mykg.cli import _resolve_from_step
 
-    assert _resolve_from_step("orphan_connect_fullsweep") == ("orphan_connect", False)
-    assert _resolve_from_step("orphan_connect_incremental") == ("orphan_connect", True)
-    assert _resolve_from_step("pass2") == ("pass2", False)
+    assert _resolve_from_step("orphan_connect_fullsweep") == ("orphan_connect", False, False)
+    assert _resolve_from_step("orphan_connect_incremental") == ("orphan_connect", True, False)
+    assert _resolve_from_step("pass2") == ("pass2", False, False)
+    assert _resolve_from_step("merge_proposals") == ("pass1", False, True)
 
 
 def test_delete_from_step_unknown_step_raises(tmp_path):

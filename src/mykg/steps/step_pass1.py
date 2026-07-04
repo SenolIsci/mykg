@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import click
+
 from mykg import config as _cfg
 from mykg.chunker import chunk_file
 from mykg.exporter import export_ttl
@@ -14,7 +16,78 @@ from mykg.steps.step_pass2 import _content_from_entry
 log = get("mykg.steps.pass1")
 
 
+def _write_batch_proposal_shard(
+    intermediate_dir,
+    batch_index: int,
+    proposal: dict | None,
+    error: str | None,
+) -> None:
+    """Write intermediate/pass1_batch_proposals/<index>.json — called
+    incrementally as each batch resolves, so a crash mid-dispatch only loses
+    batches still in flight (see run_pass1's on_batch_done callback).
+    """
+    shard_dir = intermediate_dir / "pass1_batch_proposals"
+    shard_dir.mkdir(exist_ok=True)
+    if proposal is not None:
+        entry = {"batch_index": batch_index, "status": "ok", "proposal": proposal}
+    else:
+        entry = {"batch_index": batch_index, "status": "failed", "error": error or "unknown error"}
+    (shard_dir / f"{batch_index:04d}.json").write_text(
+        json.dumps(entry, indent=_cfg.JSON_INDENT), encoding="utf-8"
+    )
+
+
+def _load_batch_proposals_for_merge(intermediate_dir) -> list[dict]:
+    """Load every pass1_batch_proposals/*.json shard and return the "ok"
+    proposals as a list, in the same shape run_pass1() would have returned —
+    used by the merge_proposals --from-step entry point, which skips Pass 1
+    LLM dispatch entirely and jumps straight to merge/harmonize/quality-review.
+    """
+    shard_dir = intermediate_dir / "pass1_batch_proposals"
+    if not shard_dir.exists():
+        raise click.ClickException(
+            "--from-step merge_proposals requires intermediate/pass1_batch_proposals/ "
+            "to already exist (from a prior Pass 1 run) — nothing to merge."
+        )
+    entries = []
+    for shard_file in sorted(shard_dir.glob("*.json")):
+        try:
+            entry = json.loads(shard_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        entries.append(entry)
+    proposals = [e["proposal"] for e in entries if e.get("status") == "ok"]
+    if not proposals:
+        raise click.ClickException(
+            "--from-step merge_proposals found no successful batch proposals in "
+            "intermediate/pass1_batch_proposals/ — nothing to merge."
+        )
+    return proposals
+
+
 def run_pass1_step(ctx: PipelineContext) -> None:
+    if ctx.pass1_merge_only:
+        locked_classes = ctx.base_schema.get("locked_classes", {}) if ctx.base_schema else {}
+        locked_properties = ctx.base_schema.get("locked_properties", {}) if ctx.base_schema else {}
+        locked_block = ""
+        if locked_classes or locked_properties:
+            class_names = ", ".join(locked_classes.keys())
+            prop_names = ", ".join(locked_properties.keys())
+            locked_block = (
+                "EXISTING SCHEMA (DO NOT RENAME, REMOVE, OR DUPLICATE THESE):\n"
+                f"Classes: {class_names}\nProperties: {prop_names}\n"
+                "You may add new subclasses, new properties, or new root classes.\n"
+                "Do not output any of the locked names as new entries."
+            )
+        proposals = _load_batch_proposals_for_merge(ctx.intermediate_dir)
+        log.info(
+            "Step 2 — merge_proposals: reusing %d persisted batch proposal(s), "
+            "skipping Pass 1 LLM dispatch entirely",
+            len(proposals),
+        )
+        _merge_harmonize_and_write(ctx, proposals, locked_classes, locked_properties, locked_block)
+        return
+
     if ctx.freeze_schema:
         if not ctx.base_schema:
             raise RuntimeError(
@@ -94,8 +167,17 @@ def run_pass1_step(ctx: PipelineContext) -> None:
         )
 
     log.info("Step 2 — running Pass 1 (schema induction) …")
+
+    def _on_batch_done(idx: int, proposal: dict | None, error: str | None) -> None:
+        _write_batch_proposal_shard(ctx.intermediate_dir, idx, proposal, error)
+
     proposals = run_pass1(
-        ctx.all_chunks, ctx.adapter, locked_schema_block=locked_block, error_gate=ctx.error_gate
+        ctx.all_chunks,
+        ctx.adapter,
+        locked_schema_block=locked_block,
+        error_gate=ctx.error_gate,
+        intermediate_dir=ctx.intermediate_dir,
+        on_batch_done=_on_batch_done,
     )
     log.info("Step 2 — received %d schema proposal(s)", len(proposals))
 
@@ -105,6 +187,21 @@ def run_pass1_step(ctx: PipelineContext) -> None:
             "Check LLM configuration and adapter logs."
         )
 
+    _merge_harmonize_and_write(ctx, proposals, locked_classes, locked_properties, locked_block)
+
+
+def _merge_harmonize_and_write(
+    ctx: PipelineContext,
+    proposals: list[dict],
+    locked_classes: dict,
+    locked_properties: dict,
+    locked_block: str,
+) -> None:
+    """Merge batch proposals, harmonize, review quality, and write schema.json
+    / schema.ttl. Shared by the normal Pass 1 path and the merge_proposals
+    --from-step entry point (which supplies proposals loaded from disk
+    instead of freshly dispatching Pass 1 LLM batches).
+    """
     log.info("Step 3 — merging schema proposals …")
     schema, synonym_log = merge_proposals(
         proposals, locked_classes, locked_properties, ctx.thesaurus

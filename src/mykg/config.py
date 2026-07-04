@@ -101,6 +101,7 @@ PASS1_BATCH_TOKEN_TARGET: int = _get("pass1", "batch_token_target")
 PASS1_MAX_WORKERS: int = _get("pass1", "max_workers")
 PASS1_PER_FILE_BATCHING: bool = _get_opt("pass1", "per_file_batching", False)
 PASS1_MAX_SCHEMA_PROPOSALS: int = _get_opt("pass1", "max_schema_proposals", 50)
+PASS1_RANDOM_SEED: int = _get_opt("pass1", "random_seed", 0)
 
 # ---------------------------------------------------------------------------
 # Pass 2
