@@ -169,6 +169,57 @@ def test_run_retries_on_failure(tmp_path):
     assert call_counts["n"] == 2
 
 
+def test_run_does_not_retry_click_exception(tmp_path):
+    """A click.ClickException (precondition/usage error) fails immediately —
+    no second attempt, since retrying cannot fix a missing-precondition error."""
+    import click
+
+    call_counts = {"n": 0}
+    ctx = _make_ctx(tmp_path)
+    ctx.intermediate_dir.mkdir(parents=True, exist_ok=True)
+
+    def bad_precondition(c):
+        call_counts["n"] += 1
+        raise click.ClickException("no batch proposals found")
+
+    steps = [Step(name="bad", fn=bad_precondition, outputs=["x.json"], blocking=True)]
+    with pytest.raises(PipelineHaltError) as exc_info:
+        run(steps, ctx)
+    assert call_counts["n"] == 1
+    assert "no batch proposals found" in str(exc_info.value)
+
+
+def test_run_skips_feedback_on_click_exception(tmp_path, monkeypatch):
+    """A click.ClickException on an is_llm_step=True step must not invoke
+    feedback.apply — the error is a usage/precondition failure, not
+    LLM-fixable schema content, and asking the LLM to "correct" it wastes
+    time or can produce a nonsensical schema edit."""
+    import click
+
+    import mykg.feedback as feedback
+
+    feedback_called = {"called": False}
+
+    def fake_apply(step_name, error, ctx):
+        feedback_called["called"] = True
+        return False
+
+    monkeypatch.setattr(feedback, "apply", fake_apply)
+
+    ctx = _make_ctx(tmp_path)
+    ctx.intermediate_dir.mkdir(parents=True, exist_ok=True)
+
+    def bad_precondition(c):
+        raise click.ClickException("no batch proposals found")
+
+    steps = [
+        Step(name="pass1", fn=bad_precondition, outputs=["x.json"], is_llm_step=True, blocking=True)
+    ]
+    with pytest.raises(PipelineHaltError):
+        run(steps, ctx)
+    assert feedback_called["called"] is False
+
+
 def test_run_halts_on_blocking_failure(tmp_path):
     ctx = _make_ctx(tmp_path)
     ctx.intermediate_dir.mkdir(parents=True, exist_ok=True)

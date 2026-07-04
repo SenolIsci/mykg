@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
+import click
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 if TYPE_CHECKING:
@@ -175,14 +176,26 @@ class PipelineState(BaseModel):
         return state
 
 
-def _try_run(step: Step, ctx: PipelineContext) -> str | None:
+def _try_run(step: Step, ctx: PipelineContext) -> tuple[str | None, bool]:
+    """Run one step, returning (error_message, non_retryable).
+
+    non_retryable is True when the failure is a click.ClickException — a
+    precondition/usage error raised deliberately by step code (e.g. "no
+    batch proposals found for --from-step merge_proposals"). These are not
+    LLM content errors, so retrying the step or asking the LLM feedback
+    handler to "fix" schema.json cannot resolve them and only wastes time
+    (or, if the feedback handler misfires on an unrelated error, can crash
+    with a masking exception of its own).
+    """
     try:
         step.fn(ctx)
-        return None
+        return None, False
     except SchemaUpdatedError:
         raise  # propagate; orchestrator handles restart
+    except click.ClickException as exc:
+        return str(exc.message if hasattr(exc, "message") else exc), True
     except Exception as exc:
-        return str(exc)
+        return str(exc), False
 
 
 def _log_advisory(step: Step, error: str, ctx: PipelineContext) -> None:
@@ -364,7 +377,7 @@ def run(steps: list[Step], ctx: PipelineContext) -> None:
             state.save(ctx.intermediate_dir)
 
             try:
-                error = _try_run(step, ctx)
+                error, non_retryable = _try_run(step, ctx)
             except (KeyboardInterrupt, SystemExit) as exc:
                 # Signal or Ctrl-C — save failure before the process exits so
                 # pipeline_state.json doesn't stay stuck as "running".
@@ -456,21 +469,34 @@ def run(steps: list[Step], ctx: PipelineContext) -> None:
                 schema_restart_triggered = True
                 break  # restart the for-loop via the outer while
 
-            if error:
+            if error and non_retryable:
+                log.warning(
+                    "PRECONDITION FAILED %s — %s (skipping retry and LLM feedback; "
+                    "this is a usage/precondition error, not a transient or content error)",
+                    step.name,
+                    error,
+                )
+
+            if error and not non_retryable:
                 log.warning("RETRY %s — attempt 1 failed: %s", step.name, error)
-                error = _try_run(step, ctx)
+                error, non_retryable = _try_run(step, ctx)
 
             llm_correction = False
-            if error and step.is_llm_step:
+            if error and not non_retryable and step.is_llm_step:
                 log.warning("FEEDBACK %s — requesting LLM correction", step.name)
                 try:
                     llm_correction = feedback.apply(step.name, error, ctx)
                 except Exception as fb_exc:
                     log.warning("Feedback handler failed: %s", fb_exc)
-                error = _try_run(step, ctx)
+                error, non_retryable = _try_run(step, ctx)
 
             if error:
-                attempts = 3 if (step.is_llm_step and llm_correction) else 2
+                if non_retryable:
+                    attempts = 1
+                elif step.is_llm_step and llm_correction:
+                    attempts = 3
+                else:
+                    attempts = 2
                 state.mark_failed(
                     step.name, error, attempts=attempts, llm_correction=llm_correction
                 )

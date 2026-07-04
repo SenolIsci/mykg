@@ -55,6 +55,30 @@ def test_write_schema_no_diff_still_writes_delta(tmp_path: Path) -> None:
     assert second["properties_total"] == 0
 
 
+def test_write_schema_handles_concept_missing_type_key(tmp_path: Path) -> None:
+    """A malformed concept/property dict missing 'type'/'name' (e.g. from a bad
+    LLM feedback correction) must not raise KeyError — it is skipped from the
+    delta diff rather than crashing the write."""
+    schema = {
+        "concepts": [
+            {"type": "Person", "parent": None, "attributes": ["name"]},
+            {"parent": None, "attributes": ["bad"]},  # missing "type"
+        ],
+        "properties": [
+            {"name": "works_at", "domain": "Person", "range": "Organization"},
+            {"domain": "Person", "range": "Organization"},  # missing "name"
+        ],
+    }
+    write_schema(schema, tmp_path, TRIGGER_PASS1_MERGE)
+
+    schema_path = tmp_path / "schema.json"
+    assert schema_path.exists()
+    deltas = sorted((tmp_path / "schema_history").glob("*.json"))
+    delta = json.loads(deltas[0].read_text())
+    assert "Person" in delta["concepts_added"]
+    assert "works_at" in delta["properties_added"]
+
+
 def test_write_schema_handles_corrupt_previous_schema(tmp_path: Path) -> None:
     """If the existing schema.json is invalid JSON, write_schema still proceeds (lines 67-68)."""
     # Pre-create a corrupt schema.json

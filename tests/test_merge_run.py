@@ -92,7 +92,7 @@ def test_run_merge_schema_restart_invalidates_outputs(tmp_path):
         call_count[0] += 1
         if call_count[0] == 1:
             raise _schema_updated_error()
-        return None
+        return None, False
 
     with (
         patch("mykg.merge_run._try_run", side_effect=side_effect),
@@ -123,7 +123,7 @@ def test_run_merge_schema_restart_regenerates_schema_ttl(tmp_path):
         call_count[0] += 1
         if call_count[0] == 1:
             raise _schema_updated_error(["new_prop"])
-        return None
+        return None, False
 
     fake_ttl = "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n"
 
@@ -151,7 +151,7 @@ def test_run_merge_schema_restart_removes_approval_flag(tmp_path):
         call_count[0] += 1
         if call_count[0] == 1:
             raise _schema_updated_error()
-        return None
+        return None, False
 
     with (
         patch("mykg.merge_run._try_run", side_effect=side_effect),
@@ -175,7 +175,7 @@ def test_run_merge_schema_restart_clears_runtime_fields(tmp_path):
         call_count[0] += 1
         if call_count[0] == 1:
             raise _schema_updated_error()
-        return None
+        return None, False
 
     captured = {}
 
@@ -217,7 +217,7 @@ def test_run_merge_schema_restart_resets_step_states_to_pending(tmp_path):
             state_path = ctx_arg.intermediate_dir / "pipeline_state.json"
             if state_path.exists():
                 state_at_restart.update(json.loads(state_path.read_text()).get("steps", {}))
-        return None
+        return None, False
 
     with (
         patch("mykg.merge_run._try_run", side_effect=side_effect),
@@ -247,7 +247,7 @@ def test_run_merge_schema_restart_increments_restart_count(tmp_path):
         if call_count[0] == 1:
             raise _schema_updated_error()
         restart_counts_seen.append(ctx_arg.schema_restart_count)
-        return None
+        return None, False
 
     with (
         patch("mykg.merge_run._try_run", side_effect=side_effect),
@@ -290,7 +290,7 @@ def test_run_merge_sets_schema_hints_on_restart(tmp_path):
             raise schema_exc
         if not captured_hints and ctx_arg.schema_hints:
             captured_hints.extend(ctx_arg.schema_hints)
-        return None
+        return None, False
 
     with (
         patch("mykg.merge_run._try_run", side_effect=side_effect),
@@ -325,7 +325,7 @@ def test_run_merge_schema_restart_limit_reached_continues(tmp_path):
         call_count[0] += 1
         if call_count[0] == 1:
             raise _schema_updated_error()
-        return None
+        return None, False
 
     # Should not raise; the limit-exceeded branch logs a warning and continues
     with (
@@ -371,7 +371,7 @@ def test_run_merge_halt_error_raised_on_blocking_step_failure(tmp_path):
 
     # Always return an error string (simulates step failure on every attempt)
     with (
-        patch("mykg.merge_run._try_run", return_value="simulated failure"),
+        patch("mykg.merge_run._try_run", return_value=("simulated failure", False)),
         patch("mykg.merge_run._is_done", return_value=False),
         patch("mykg.merge_run.log"),
     ):
@@ -391,7 +391,7 @@ def test_run_merge_log_advisory_called_on_step_failure(tmp_path):
     ctx = _make_ctx(tmp_path)
 
     with (
-        patch("mykg.merge_run._try_run", return_value="oops"),
+        patch("mykg.merge_run._try_run", return_value=("oops", False)),
         patch("mykg.merge_run._is_done", return_value=False),
         patch("mykg.merge_run._log_merge_advisory") as mock_advisory,
         patch("mykg.merge_run.log"),
@@ -420,8 +420,8 @@ def test_run_merge_non_blocking_step_continues_after_failure(tmp_path):
 
     def try_run_side_effect(step, ctx_arg):
         if step.name == target_step_name:
-            return "non-blocking failure"
-        return None
+            return "non-blocking failure", False
+        return None, False
 
     with (
         patch("mykg.merge_run._try_run", side_effect=try_run_side_effect),
@@ -448,7 +448,7 @@ def test_run_merge_waits_at_human_review_when_review_enabled(tmp_path):
 
     def try_run_side_effect(step, ctx_arg):
         seen_steps.append(step.name)
-        return None
+        return None, False
 
     # human_review step is the only one with requires_review_flag=True
     with (
@@ -480,8 +480,8 @@ def test_run_merge_feedback_path_triggered_on_llm_step_failure(tmp_path):
 
     def try_run_side_effect(step, ctx_arg):
         if step.name == llm_step_name:
-            return f"simulated {step.name} error"
-        return None
+            return f"simulated {step.name} error", False
+        return None, False
 
     with (
         patch("mykg.merge_run._try_run", side_effect=try_run_side_effect),
@@ -510,8 +510,8 @@ def test_run_merge_feedback_handler_exception_logged_not_raised(tmp_path):
 
     def try_run_side_effect(step, ctx_arg):
         if step.name == llm_step_name:
-            return f"simulated {step.name} error"
-        return None
+            return f"simulated {step.name} error", False
+        return None, False
 
     with (
         patch("mykg.merge_run._try_run", side_effect=try_run_side_effect),
