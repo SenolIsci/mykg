@@ -9,11 +9,13 @@ a crash mid-run only loses batches still in flight, not everything computed
 so far.
 """
 
+import json
+import threading
 import unittest.mock as mock
 from unittest.mock import MagicMock
 
 import mykg.pass2 as p2_mod
-from mykg.pass2 import run_pass2_batched
+from mykg.pass2 import _load_existing_raw_batches, run_pass2_batched
 
 
 def test_on_file_done_fires_before_all_batches_complete():
@@ -203,3 +205,289 @@ def test_shard_files_written_incrementally(tmp_path):
     # at the very end.
     assert written_before_second_file_done[0] == ["early.json"]
     assert written_before_second_file_done[1] == ["early.json", "late.json"]
+
+
+# ---------------------------------------------------------------------------
+# on_batch_done incremental raw-batch persistence + resume-skip.
+#
+# Unlike the on_file_done tests above, these use max_workers > 1 to exercise
+# the real production shape: thousands of batches dispatched concurrently via
+# ThreadPoolExecutor, all sitting in as_completed together. The on_file_done
+# tests' max_workers=1 makes batches resolve strictly in submission order,
+# which never reproduces the reported bug (73/3002 batches done, zero shards
+# persisted) — on_batch_done must fire per-batch regardless of dispatch order.
+# ---------------------------------------------------------------------------
+
+
+def test_on_batch_done_fires_before_as_completed_loop_drains():
+    """on_batch_done must fire for each batch as it resolves, not only after
+    the whole as_completed(futures) loop for the entire corpus has drained —
+    this is the real bug: with max_workers>1 and many batches, the batch that
+    finishes first must trigger on_batch_done before the last batch (still in
+    flight) has resolved."""
+    files = {f"f{i}.md": f"# F{i}\nshort content about topic {i}" for i in range(6)}
+    schema = {"concepts": [], "properties": []}
+    flat = {}
+
+    release_last = threading.Event()
+
+    def fake_extract(batch, *args, **kwargs):
+        # Identify "the last batch" by content — block only the one
+        # containing f5.md so it resolves last regardless of thread timing.
+        is_last = any(c.source_file == "f5.md" for c in batch)
+        if is_last:
+            release_last.wait(timeout=5)
+        return {"nodes": [], "edges": []}
+
+    on_batch_done_indices: list[int] = []
+
+    def on_batch_done(idx, extraction, error, batch_map_entry):
+        on_batch_done_indices.append(idx)
+        # Once at least one batch (not the blocked last one) has reported
+        # done, release the last batch so the test terminates.
+        if len(on_batch_done_indices) >= 1:
+            release_last.set()
+
+    with mock.patch.object(p2_mod, "_extract_batch", side_effect=fake_extract):
+        run_pass2_batched(
+            files,
+            schema,
+            flat,
+            MagicMock(),
+            batch_token_target=1,
+            per_file=True,
+            max_workers=4,
+            on_batch_done=on_batch_done,
+        )
+
+    # All 6 single-file batches reported via on_batch_done, and the first
+    # report happened while the last batch was still blocked in flight —
+    # proof on_batch_done isn't gated behind the full as_completed drain.
+    assert len(on_batch_done_indices) == 6
+
+
+def test_on_batch_done_persists_and_resume_skips_dispatched_batches(tmp_path):
+    """A batch shard written via on_batch_done (mirroring step_pass2.py's
+    _write_raw_batch_shard) is reloaded on a second run_pass2_batched() call
+    and that batch index is not re-dispatched to the LLM."""
+    files = {"a.md": "# A\nshort content", "b.md": "# B\nshort content"}
+    schema = {"concepts": [], "properties": []}
+    flat = {}
+    shard_dir = tmp_path / "pass2_raw_batches"
+
+    extract_call_count = {"n": 0}
+
+    def fake_extract(batch, *args, **kwargs):
+        extract_call_count["n"] += 1
+        return {"nodes": [], "edges": []}
+
+    def write_shard(idx, extraction, error, batch_map_entry):
+        shard_dir.mkdir(exist_ok=True)
+        entry = {
+            "batch_index": idx,
+            "status": "ok" if extraction is not None else "failed",
+            "chunk_count": len(batch_map_entry.get("chunks", [])),
+            "source_files": batch_map_entry.get("files", []),
+        }
+        if extraction is not None:
+            entry["extraction"] = extraction
+        (shard_dir / f"{idx:04d}.json").write_text(json.dumps(entry))
+
+    with mock.patch.object(p2_mod, "_extract_batch", side_effect=fake_extract):
+        run_pass2_batched(
+            files,
+            schema,
+            flat,
+            MagicMock(),
+            batch_token_target=1,
+            per_file=True,
+            max_workers=2,
+            on_batch_done=write_shard,
+            intermediate_dir=tmp_path,
+        )
+
+    first_run_calls = extract_call_count["n"]
+    assert first_run_calls == 2  # one batch per file (per_file=True, tiny content)
+    assert sorted(p.name for p in shard_dir.glob("*.json")) == ["0000.json", "0001.json"]
+
+    # Second call over the SAME files/config: both shards should be reused,
+    # zero new LLM calls.
+    extract_call_count["n"] = 0
+    with mock.patch.object(p2_mod, "_extract_batch", side_effect=fake_extract):
+        results, _chunk_idx, _failed, _batch_map = run_pass2_batched(
+            files,
+            schema,
+            flat,
+            MagicMock(),
+            batch_token_target=1,
+            per_file=True,
+            max_workers=2,
+            on_batch_done=write_shard,
+            intermediate_dir=tmp_path,
+        )
+
+    assert extract_call_count["n"] == 0
+    assert set(results.keys()) == {"a.md", "b.md"}
+
+
+def test_on_batch_done_shard_not_reused_when_composition_differs(tmp_path):
+    """A persisted shard whose chunk_count/source_files no longer match the
+    freshly-rebuilt batch at that index (e.g. a different corpus reusing the
+    same intermediate_dir) must not be reused — that batch is re-dispatched."""
+    schema = {"concepts": [], "properties": []}
+    flat = {}
+    shard_dir = tmp_path / "pass2_raw_batches"
+    shard_dir.mkdir()
+
+    # Plant a stale shard for index 0 claiming a completely different
+    # composition (source_files that don't exist in this run's corpus).
+    (shard_dir / "0000.json").write_text(
+        json.dumps(
+            {
+                "batch_index": 0,
+                "status": "ok",
+                "chunk_count": 99,
+                "source_files": ["nonexistent.md"],
+                "extraction": {"nodes": [], "edges": []},
+            }
+        )
+    )
+
+    files = {"a.md": "# A\nshort content"}
+    extract_call_count = {"n": 0}
+
+    def fake_extract(batch, *args, **kwargs):
+        extract_call_count["n"] += 1
+        return {"nodes": [], "edges": []}
+
+    with mock.patch.object(p2_mod, "_extract_batch", side_effect=fake_extract):
+        run_pass2_batched(
+            files,
+            schema,
+            flat,
+            MagicMock(),
+            batch_token_target=1,
+            per_file=True,
+            max_workers=1,
+            intermediate_dir=tmp_path,
+        )
+
+    # The stale/mismatched shard must not have been trusted — batch 0 for
+    # a.md was re-dispatched to the (mocked) LLM.
+    assert extract_call_count["n"] == 1
+
+
+def test_on_batch_done_failed_shard_is_retried_not_skipped(tmp_path):
+    """A shard with status 'failed' must not be treated as done — it is
+    still dispatched (and can succeed) on resume, mirroring Pass 1's
+    None-proposal handling for failed shards."""
+    schema = {"concepts": [], "properties": []}
+    flat = {}
+    shard_dir = tmp_path / "pass2_raw_batches"
+    shard_dir.mkdir()
+
+    files = {"a.md": "# A\nshort content"}
+
+    def fake_extract(batch, *args, **kwargs):
+        return {"nodes": [], "edges": []}
+
+    # First, dispatch and persist a genuine "failed" shard.
+    def fail_extract(batch, *args, **kwargs):
+        raise RuntimeError("simulated failure")
+
+    def write_shard(idx, extraction, error, batch_map_entry):
+        entry = {
+            "batch_index": idx,
+            "status": "ok" if extraction is not None else "failed",
+            "chunk_count": len(batch_map_entry.get("chunks", [])),
+            "source_files": batch_map_entry.get("files", []),
+        }
+        if extraction is not None:
+            entry["extraction"] = extraction
+        else:
+            entry["error"] = error
+        (shard_dir / f"{idx:04d}.json").write_text(json.dumps(entry))
+
+    with mock.patch.object(p2_mod, "_extract_batch", side_effect=fail_extract):
+        run_pass2_batched(
+            files,
+            schema,
+            flat,
+            MagicMock(),
+            batch_token_target=1,
+            per_file=True,
+            max_workers=1,
+            batch_retry_max=0,
+            on_batch_done=write_shard,
+            intermediate_dir=tmp_path,
+        )
+
+    assert json.loads((shard_dir / "0000.json").read_text())["status"] == "failed"
+
+    # Resume: the failed shard must be retried, not skipped.
+    extract_call_count = {"n": 0}
+
+    def succeed_extract(batch, *args, **kwargs):
+        extract_call_count["n"] += 1
+        return {"nodes": [], "edges": []}
+
+    with mock.patch.object(p2_mod, "_extract_batch", side_effect=succeed_extract):
+        results, _chunk_idx, _failed, _batch_map = run_pass2_batched(
+            files,
+            schema,
+            flat,
+            MagicMock(),
+            batch_token_target=1,
+            per_file=True,
+            max_workers=1,
+            on_batch_done=write_shard,
+            intermediate_dir=tmp_path,
+        )
+
+    assert extract_call_count["n"] == 1
+    assert "a.md" in results
+
+
+def test_load_existing_raw_batches_skips_corrupt_shard(tmp_path):
+    """A shard file that isn't valid JSON is skipped, not raised."""
+    shard_dir = tmp_path / "pass2_raw_batches"
+    shard_dir.mkdir()
+    (shard_dir / "0000.json").write_text("not valid json {{{")
+
+    batch_map = {"batch_0000": {"files": ["a.md"], "chunks": [{"file": "a.md", "chunk_idx": 1}]}}
+    existing = _load_existing_raw_batches(batch_map, tmp_path)
+    assert existing == {}
+
+
+def test_load_existing_raw_batches_skips_shard_missing_batch_index(tmp_path):
+    """A shard file missing the batch_index key is skipped."""
+    shard_dir = tmp_path / "pass2_raw_batches"
+    shard_dir.mkdir()
+    (shard_dir / "0000.json").write_text(json.dumps({"status": "ok", "extraction": {}}))
+
+    batch_map = {"batch_0000": {"files": ["a.md"], "chunks": [{"file": "a.md", "chunk_idx": 1}]}}
+    existing = _load_existing_raw_batches(batch_map, tmp_path)
+    assert existing == {}
+
+
+def test_load_existing_raw_batches_skips_shard_with_no_current_batch(tmp_path):
+    """A shard whose batch_index no longer exists in the freshly-rebuilt
+    batch_map (e.g. the corpus shrank) is skipped rather than reused."""
+    shard_dir = tmp_path / "pass2_raw_batches"
+    shard_dir.mkdir()
+    (shard_dir / "0005.json").write_text(
+        json.dumps(
+            {
+                "batch_index": 5,
+                "status": "ok",
+                "chunk_count": 1,
+                "source_files": ["a.md"],
+                "extraction": {"nodes": [], "edges": []},
+            }
+        )
+    )
+
+    # batch_map only has batch_0000 — index 5 has no current counterpart.
+    batch_map = {"batch_0000": {"files": ["a.md"], "chunks": [{"file": "a.md", "chunk_idx": 1}]}}
+    existing = _load_existing_raw_batches(batch_map, tmp_path)
+    assert existing == {}

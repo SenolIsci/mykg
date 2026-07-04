@@ -220,6 +220,36 @@ def test_run_pass2_step_batch_chunks_mode(tmp_path, monkeypatch):
     assert batch_map_path.exists()
 
 
+def test_run_pass2_step_batch_chunks_mode_persists_failed_batch_shard(tmp_path, monkeypatch):
+    """A batch whose LLM response never parses as valid JSON writes a
+    pass2_raw_batches/<index>.json shard with status "failed" and an error
+    message — not silently dropped."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS2_PREP_MODE", "batch_chunks")
+    monkeypatch.setattr(cfg, "PASS2_BATCH_RETRY_MAX", 0)
+
+    ctx = _make_ctx(tmp_path)
+    ctx.adapter = MockAdapter(response="not valid json {{{")
+    _write_schema(ctx)
+    (ctx.intermediate_dir / "flattened_schema.json").write_text(
+        json.dumps({"Person": ["name"], "Organization": ["name"]})
+    )
+    (ctx.intermediate_dir / "file_manifest.json").write_text(
+        json.dumps({"doc.md": "Alice works at Acme."})
+    )
+
+    run_pass2_step(ctx)
+
+    shard_dir = ctx.intermediate_dir / "pass2_raw_batches"
+    shards = list(shard_dir.glob("*.json"))
+    assert len(shards) == 1
+    entry = json.loads(shards[0].read_text())
+    assert entry["status"] == "failed"
+    assert "error" in entry
+    assert entry["source_files"] == ["doc.md"]
+
+
 def test_load_manifest_with_dict_entry(tmp_path):
     """Manifest entries may be dicts (with content key) or bare strings."""
     ctx = _make_ctx(tmp_path)

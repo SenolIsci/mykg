@@ -1763,7 +1763,11 @@ def _delete_from_step(
     # and skips all files, making Re-entry B a silent no-op.
     pass2_idx = step_names.index("pass2") if "pass2" in step_names else -1
     if pass2_idx >= 0 and idx <= pass2_idx:
-        for shard_dir_name in ("raw_extractions_shards", "chunk_index_shards"):
+        for shard_dir_name in (
+            "raw_extractions_shards",
+            "chunk_index_shards",
+            "pass2_raw_batches",
+        ):
             shard_path = intermediate_dir / shard_dir_name
             if shard_path.exists():
                 shutil.rmtree(shard_path)
@@ -1846,7 +1850,11 @@ def _delete_merge_from_step(
         step_names.index("merge_reextract") if "merge_reextract" in step_names else -1
     )
     if merge_reextract_idx >= 0 and idx <= merge_reextract_idx:
-        for shard_dir_name in ("raw_extractions_shards", "chunk_index_shards"):
+        for shard_dir_name in (
+            "raw_extractions_shards",
+            "chunk_index_shards",
+            "pass2_raw_batches",
+        ):
             shard_path = intermediate_dir / shard_dir_name
             if shard_path.exists():
                 shutil.rmtree(shard_path)
