@@ -601,7 +601,10 @@ def _print_next_steps(
     default=None,
     help="Force re-run from this step. Use 'orphan_connect_fullsweep' for a full clean "
     "sweep (deletes prior orphan_connections.json) or 'orphan_connect_incremental' "
-    "to preserve it and only re-send unresolved groups to the LLM.",
+    "to preserve it and only re-send unresolved groups to the LLM. Use "
+    "'merge_proposals' to skip Pass 1 LLM batch dispatch entirely and re-run only "
+    "merge/harmonize/quality-review from existing intermediate/pass1_batch_proposals/ "
+    "shards (plain 'pass1' wipes those shards for a full re-dispatch instead).",
 )
 @click.option(
     "--workers",
@@ -761,9 +764,16 @@ def extract_graph(
             )
 
     orphan_incremental = False
+    pass1_merge_only = False
     if from_step:
-        from_step, orphan_incremental = _resolve_from_step(from_step)
-        _delete_from_step(from_step, intermediate_dir, output_dir, incremental=orphan_incremental)
+        from_step, orphan_incremental, pass1_merge_only = _resolve_from_step(from_step)
+        _delete_from_step(
+            from_step,
+            intermediate_dir,
+            output_dir,
+            incremental=orphan_incremental,
+            pass1_merge_only=pass1_merge_only,
+        )
 
     if obsidian_vault:
         import mykg.config as _config_mod
@@ -817,6 +827,7 @@ def extract_graph(
         grow_schema=grow_schema,
         freeze_schema=freeze_schema,
         orphan_incremental=orphan_incremental,
+        pass1_merge_only=pass1_merge_only,
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     intermediate_dir.mkdir(parents=True, exist_ok=True)
@@ -1650,24 +1661,29 @@ def fetch_web(
     click.echo(f"Done. {len(seed_entries)} seed(s) fetched → {out_root}")
 
 
-# Aliases for --from-step that encode the orphan-connect sweep mode.
-# Maps alias → (real_step_name, orphan_incremental)
-_FROM_STEP_ALIASES: dict[str, tuple[str, bool]] = {
-    "orphan_connect_fullsweep": ("orphan_connect", False),
-    "orphan_connect_incremental": ("orphan_connect", True),
+# Aliases for --from-step that encode the orphan-connect sweep mode or the
+# Pass 1 merge_proposals shortcut.
+# Maps alias → (real_step_name, orphan_incremental, pass1_merge_only)
+_FROM_STEP_ALIASES: dict[str, tuple[str, bool, bool]] = {
+    "orphan_connect_fullsweep": ("orphan_connect", False, False),
+    "orphan_connect_incremental": ("orphan_connect", True, False),
+    "merge_proposals": ("pass1", False, True),
 }
 
 
-def _resolve_from_step(step_name: str) -> tuple[str, bool]:
-    """Resolve a --from-step value to (real_step_name, orphan_incremental).
+def _resolve_from_step(step_name: str) -> tuple[str, bool, bool]:
+    """Resolve a --from-step value to (real_step_name, orphan_incremental, pass1_merge_only).
 
     'orphan_connect_fullsweep' and 'orphan_connect_incremental' both map to
-    the real step 'orphan_connect' with different sweep modes. All other step
-    names pass through unchanged with orphan_incremental=False.
+    the real step 'orphan_connect' with different sweep modes. 'merge_proposals'
+    maps to the real step 'pass1' but skips LLM batch dispatch entirely,
+    reconstructing proposals from intermediate/pass1_batch_proposals/ shards
+    and jumping straight to merge/harmonize/quality-review. All other step
+    names pass through unchanged with both flags False.
     """
     if step_name in _FROM_STEP_ALIASES:
         return _FROM_STEP_ALIASES[step_name]
-    return step_name, False
+    return step_name, False, False
 
 
 def _delete_from_step(
@@ -1676,6 +1692,7 @@ def _delete_from_step(
     output_dir: Path,
     *,
     incremental: bool = False,
+    pass1_merge_only: bool = False,
 ) -> None:
     from mykg.pipeline import STEPS
 
@@ -1722,6 +1739,23 @@ def _delete_from_step(
             if map_path.exists():
                 map_path.unlink()
                 click.echo(f"Deleted {map_path}")
+
+    # pass1_batch_selection.json / pass1_batch_proposals/ are not listed in
+    # Step.outputs but must be cleared when re-running from pass1 or earlier —
+    # otherwise run_pass1() finds existing shards and skips re-dispatching
+    # those batches, making a plain --from-step pass1 a silent partial no-op.
+    # The one exception is --from-step merge_proposals, whose entire purpose
+    # is to reuse these exact files — it must NOT delete them.
+    pass1_idx = step_names.index("pass1") if "pass1" in step_names else -1
+    if pass1_idx >= 0 and idx <= pass1_idx and not pass1_merge_only:
+        selection_path = intermediate_dir / "pass1_batch_selection.json"
+        if selection_path.exists():
+            selection_path.unlink()
+            click.echo(f"Deleted {selection_path}")
+        batch_proposals_path = intermediate_dir / "pass1_batch_proposals"
+        if batch_proposals_path.exists():
+            shutil.rmtree(batch_proposals_path)
+            click.echo(f"Deleted {batch_proposals_path}")
 
     # obsidian_vault/ and neo4j_csv/ are written by validate_graph but not tracked in
     # Step.outputs (they are optional; omitting them prevents _is_done from breaking
