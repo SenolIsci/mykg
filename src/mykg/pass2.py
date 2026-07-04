@@ -563,6 +563,52 @@ def run_pass2(
     return results, chunk_index, failed_entries
 
 
+def _load_existing_raw_batches(
+    batch_map: dict[str, dict], intermediate_dir: pathlib.Path | None
+) -> dict[int, dict | None]:
+    """Load already-persisted pass2_raw_batches/<index>.json shards, but only
+    when the shard's recorded composition (chunk_count + source_files) matches
+    the freshly-rebuilt batch at that same index — i.e. this is a real resume
+    of the same run (same todo file set + batch_token_target), not a
+    different run_pass2_batched() call that happens to reuse the same
+    intermediate_dir with a different corpus. Pass 2's batches are
+    deterministic (no random sampling, unlike Pass 1), so no separate
+    selection file is needed — the composition check is done per-shard.
+
+    Returns {batch_index: extraction | None} — None for a shard whose status
+    is "failed" (so the caller can distinguish "already tried and failed"
+    from "never attempted"), keyed same as the in-memory results this
+    function's caller builds.
+    """
+    existing: dict[int, dict | None] = {}
+    if intermediate_dir is None:
+        return existing
+    shard_dir = intermediate_dir / "pass2_raw_batches"
+    if not shard_dir.exists():
+        return existing
+    for shard_file in shard_dir.glob("*.json"):
+        try:
+            entry = json.loads(shard_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        idx = entry.get("batch_index")
+        if idx is None:
+            continue
+        name = f"batch_{idx:04d}"
+        current = batch_map.get(name)
+        if current is None:
+            continue
+        current_chunk_count = len(current.get("chunks", []))
+        current_source_files = current.get("files", [])
+        if (
+            entry.get("chunk_count") != current_chunk_count
+            or entry.get("source_files") != current_source_files
+        ):
+            continue
+        existing[idx] = entry.get("extraction") if entry.get("status") == "ok" else None
+    return existing
+
+
 def run_pass2_batched(
     files: dict[str, str],
     schema: dict,
@@ -573,6 +619,7 @@ def run_pass2_batched(
     max_workers: int | None = None,
     schema_hints: list[dict] | None = None,
     on_file_done: Callable[[str, dict, dict], None] | None = None,
+    on_batch_done: Callable[[int, dict | None, str | None, dict], None] | None = None,
     error_gate: ErrorGate | None = None,
     intermediate_dir: pathlib.Path | None = None,
     batch_retry_max: int = 1,
@@ -589,6 +636,17 @@ def run_pass2_batched(
     When intermediate_dir is provided, writes pass2_progress.json before any LLM
     call and updates it atomically after each batch completes — advisory only,
     never read back by the pipeline.
+
+    on_batch_done(index, extraction, error, batch_map_entry): called once per
+    batch as its result becomes final (success or exhausted-retry failure) —
+    callers use this to persist per-batch raw results incrementally (see
+    step_pass2.py), so a crash/kill mid-run only loses batches still in
+    flight. batch_map_entry is that batch's own make_batch_map() entry
+    ({"files": [...], "chunks": [...], "total_tokens": ...}) — callers persist
+    "files"/len("chunks") alongside the raw result as the composition
+    fingerprint used to validate reuse on resume. Batches whose
+    pass2_raw_batches/<index>.json shard already exists (and whose composition
+    matches the current run) are skipped on resume — not re-dispatched.
     """
     if max_workers is None:
         max_workers = _cfg.PASS2_MAX_WORKERS
@@ -620,6 +678,14 @@ def run_pass2_batched(
         len(all_chunks),
         total_batches,
     )
+
+    existing_raw_batches = _load_existing_raw_batches(batch_map, intermediate_dir)
+    if existing_raw_batches:
+        log.info(
+            "Pass 2 batched — %d batch(es) already done, %d remaining",
+            len(existing_raw_batches),
+            total_batches - len(existing_raw_batches),
+        )
 
     # Initialize progress file if intermediate_dir is provided.
     progress_path = intermediate_dir / "pass2_progress.json" if intermediate_dir else None
@@ -705,13 +771,23 @@ def run_pass2_batched(
         tmp.replace(progress_path)
 
     batch_start = time.monotonic()
-    done_batches = 0
+    done_batches = len(existing_raw_batches)
+    # ETA is estimated from batches processed *this run* only — done_batches
+    # includes resumed batches (elapsed=0 for those), which would otherwise
+    # skew the seconds-per-batch estimate on a resume with many prior shards.
+    done_this_run = 0
+
+    # Seed with already-resumed batches so they participate in the stateful
+    # prior_nodes merge below exactly like freshly-dispatched ones.
+    completed: list[tuple[int, dict | None, list[Chunk]]] = [
+        (idx, extraction, batches[idx]) for idx, extraction in existing_raw_batches.items()
+    ]
+    to_dispatch = [
+        (i, batch) for i, batch in enumerate(batches) if i not in existing_raw_batches
+    ]
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(_process_batch, i, batch): i for i, batch in enumerate(batches)}
-        # Sort completed futures by batch index before merging so stateful
-        # prior_nodes are updated sequentially.
-        completed: list[tuple[int, dict | None, list[Chunk]]] = []
+        futures = {executor.submit(_process_batch, i, batch): i for i, batch in to_dispatch}
         for future in as_completed(futures):
             batch_idx_from_future = futures[future]
             batch_name = f"batch_{batch_idx_from_future:04d}"
@@ -719,16 +795,21 @@ def run_pass2_batched(
                 result = future.result()
                 completed.append(result)
                 _flush_progress(batch_name, result[1], None)
+                if on_batch_done is not None:
+                    on_batch_done(batch_idx_from_future, result[1], None, batch_map[batch_name])
             except Exception as exc:
                 gate.record_error(exc)
                 log.error("Pass 2 batched — batch %d failed: %s", batch_idx_from_future, exc)
                 completed.append((batch_idx_from_future, None, batches[batch_idx_from_future]))
                 _flush_progress(batch_name, None, str(exc))
+                if on_batch_done is not None:
+                    on_batch_done(batch_idx_from_future, None, str(exc), batch_map[batch_name])
 
             done_batches += 1
+            done_this_run += 1
             elapsed = time.monotonic() - batch_start
             remaining_secs = (
-                (elapsed / done_batches) * (total_batches - done_batches) if done_batches else 0.0
+                (elapsed / done_this_run) * (total_batches - done_batches) if done_this_run else 0.0
             )
             eta_h = int(remaining_secs // 3600)
             eta_m = int((remaining_secs % 3600) // 60)
@@ -769,6 +850,8 @@ def run_pass2_batched(
                         result = future.result()
                         retry_completed.append(result)
                         _flush_progress(bname, result[1], None)
+                        if on_batch_done is not None:
+                            on_batch_done(bi, result[1], None, batch_map[bname])
                         log.info(
                             "Pass 2 batched — retry round %d batch %d succeeded",
                             retry_round + 1,
@@ -784,6 +867,8 @@ def run_pass2_batched(
                         )
                         retry_completed.append((bi, None, batches[bi]))
                         _flush_progress(bname, None, str(exc))
+                        if on_batch_done is not None:
+                            on_batch_done(bi, None, str(exc), batch_map[bname])
 
             retry_by_idx = {entry[0]: entry for entry in retry_completed}
             completed = [retry_by_idx.get(orig[0], orig) for orig in completed]

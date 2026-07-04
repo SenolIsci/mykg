@@ -201,6 +201,33 @@ def _run(
         existing_chunk[fname] = file_idx
         _write_shard(fname, result, file_idx)
 
+    raw_batch_shard_dir = ctx.intermediate_dir / "pass2_raw_batches"
+
+    def _write_raw_batch_shard(
+        idx: int, extraction: dict | None, error: str | None, batch_map_entry: dict
+    ) -> None:
+        # Persists a batch's raw result the instant it resolves — independent
+        # of whether the file(s) it touches are fully done — so a crash/kill
+        # mid-run only loses batches still in flight, not everything computed
+        # so far. Only used by batch_chunks mode: per_file/concat already
+        # flush per-file shards incrementally via on_file_done (they call
+        # run_pass2(), whose on_file_done fires inside its own as_completed
+        # loop), so this second shard layer is unnecessary there.
+        raw_batch_shard_dir.mkdir(exist_ok=True)
+        entry = {
+            "batch_index": idx,
+            "status": "ok" if extraction is not None else "failed",
+            "chunk_count": len(batch_map_entry.get("chunks", [])),
+            "source_files": batch_map_entry.get("files", []),
+        }
+        if extraction is not None:
+            entry["extraction"] = extraction
+        else:
+            entry["error"] = error
+        (raw_batch_shard_dir / f"{idx:04d}.json").write_text(
+            json.dumps(entry, indent=_cfg.JSON_INDENT), encoding="utf-8"
+        )
+
     if _cfg.PASS2_PREP_MODE == "concat":
         # Original concat behaviour: bin-pack WHOLE files into virtual batches
         # (dir+prefix grouping, never splitting a file at the packing stage), then
@@ -250,6 +277,7 @@ def _run(
             max_workers=ctx.pass2_workers,
             schema_hints=ctx.schema_hints or None,
             on_file_done=_on_file_done,
+            on_batch_done=_write_raw_batch_shard,
             error_gate=ctx.error_gate,
             intermediate_dir=ctx.intermediate_dir,
             batch_retry_max=_cfg.PASS2_BATCH_RETRY_MAX,
