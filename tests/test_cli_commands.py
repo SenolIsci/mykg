@@ -329,6 +329,50 @@ def test_delete_from_step_pass2_clears_shards(tmp_path):
     assert not (intermediate / "pass2_concat_map.json").exists()
 
 
+def test_delete_from_step_pass1_clears_batch_shards(tmp_path):
+    """Plain --from-step pass1 must wipe pass1_batch_selection.json and
+    pass1_batch_proposals/ for a guaranteed clean, fully re-dispatched slate."""
+    from mykg.cli import _delete_from_step
+
+    intermediate = tmp_path / "intermediate"
+    output = tmp_path / "output"
+    intermediate.mkdir()
+    output.mkdir()
+
+    (intermediate / "pass1_batch_selection.json").write_text("{}")
+    shard_dir = intermediate / "pass1_batch_proposals"
+    shard_dir.mkdir()
+    (shard_dir / "0001.json").write_text("{}")
+
+    _delete_from_step("pass1", intermediate, output)
+
+    assert not (intermediate / "pass1_batch_selection.json").exists()
+    assert not shard_dir.exists()
+
+
+def test_delete_from_step_merge_proposals_preserves_batch_shards(tmp_path):
+    """--from-step merge_proposals (pass1_merge_only=True) must NOT delete
+    pass1_batch_selection.json / pass1_batch_proposals/ — reusing them is its
+    entire purpose."""
+    from mykg.cli import _delete_from_step
+
+    intermediate = tmp_path / "intermediate"
+    output = tmp_path / "output"
+    intermediate.mkdir()
+    output.mkdir()
+
+    (intermediate / "pass1_batch_selection.json").write_text("{}")
+    shard_dir = intermediate / "pass1_batch_proposals"
+    shard_dir.mkdir()
+    (shard_dir / "0001.json").write_text("{}")
+
+    _delete_from_step("pass1", intermediate, output, pass1_merge_only=True)
+
+    assert (intermediate / "pass1_batch_selection.json").exists()
+    assert shard_dir.exists()
+    assert (shard_dir / "0001.json").exists()
+
+
 def test_delete_from_step_validate_graph_clears_obsidian(tmp_path, monkeypatch):
     """Re-running from validate_graph deletes obsidian_vault directory."""
     import mykg.config as cfg_mod

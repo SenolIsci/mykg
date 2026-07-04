@@ -539,6 +539,49 @@ def test_merge_proposals_from_step_reuses_shards_without_llm_dispatch(tmp_path):
     assert "Person" in types
 
 
+def test_merge_proposals_from_step_propagates_locked_block(tmp_path):
+    """--from-step merge_proposals with a locked base_schema must build the
+    locked_block and pass it to the harmonize/quality-review cleanup prompts
+    — this is the pass1_merge_only-specific code path that builds locked_block
+    independently from the normal Pass 1 dispatch path."""
+    from mykg.orchestrator import PipelineContext
+    from mykg.schema_merge import _HARMONIZE_SYSTEM_PROMPT, _QUALITY_SYSTEM_PROMPT
+    from mykg.steps.step_pass1 import run_pass1_step
+
+    shard_dir = tmp_path / "pass1_batch_proposals"
+    shard_dir.mkdir(parents=True)
+    (shard_dir / "0001.json").write_text(
+        json.dumps({"batch_index": 1, "status": "ok", "proposal": json.loads(VALID_PROPOSAL)})
+    )
+
+    response = "not json {"  # harmonize/quality-review fall back to unchanged schema
+    adapter = SequenceAdapter([response, response])
+    ctx = PipelineContext(
+        input_dir=tmp_path,
+        output_dir=tmp_path,
+        intermediate_dir=tmp_path,
+        adapter=adapter,
+        pass1_merge_only=True,
+        base_schema={
+            "locked_classes": {
+                "Vehicle": {"type": "Vehicle", "parent": None, "attributes": ["name"]}
+            },
+            "locked_properties": {
+                "owns": {"name": "owns", "domain": "Person", "range": "Vehicle", "attributes": []}
+            },
+        },
+    )
+    run_pass1_step(ctx)
+
+    harmonize_systems = [s for s, _ in adapter.calls if s.startswith(_HARMONIZE_SYSTEM_PROMPT)]
+    quality_systems = [s for s, _ in adapter.calls if s.startswith(_QUALITY_SYSTEM_PROMPT)]
+    assert harmonize_systems and quality_systems
+    for system in harmonize_systems + quality_systems:
+        assert "Vehicle" in system
+        assert "owns" in system
+        assert "DO NOT RENAME, REMOVE, OR DUPLICATE" in system
+
+
 def test_merge_proposals_from_step_errors_when_no_shards(tmp_path):
     """--from-step merge_proposals with no pass1_batch_proposals/ on disk
     raises a clear error rather than silently producing an empty schema."""
@@ -557,6 +600,62 @@ def test_merge_proposals_from_step_errors_when_no_shards(tmp_path):
     )
     with pytest.raises(click.ClickException, match="pass1_batch_proposals"):
         run_pass1_step(ctx)
+
+
+def test_merge_proposals_from_step_errors_when_all_batches_failed(tmp_path):
+    """--from-step merge_proposals with a pass1_batch_proposals/ directory
+    that exists but holds only "failed" shards (no successful proposal to
+    merge) raises a clear error rather than silently producing an empty
+    schema."""
+    import click
+    import pytest
+
+    from mykg.orchestrator import PipelineContext
+    from mykg.steps.step_pass1 import run_pass1_step
+
+    shard_dir = tmp_path / "pass1_batch_proposals"
+    shard_dir.mkdir()
+    (shard_dir / "0001.json").write_text(
+        json.dumps({"batch_index": 1, "status": "failed", "error": "simulated failure"})
+    )
+
+    ctx = PipelineContext(
+        input_dir=tmp_path,
+        output_dir=tmp_path,
+        intermediate_dir=tmp_path,
+        adapter=MockAdapter(VALID_PROPOSAL),
+        pass1_merge_only=True,
+    )
+    with pytest.raises(click.ClickException, match="no successful batch proposals"):
+        run_pass1_step(ctx)
+
+
+def test_merge_proposals_from_step_skips_corrupted_shard(tmp_path):
+    """A corrupted (non-JSON) shard file is skipped rather than crashing the
+    whole merge_proposals reconstruction — the remaining valid shards are
+    still used."""
+    from mykg.orchestrator import PipelineContext
+    from mykg.steps.step_pass1 import run_pass1_step
+
+    shard_dir = tmp_path / "pass1_batch_proposals"
+    shard_dir.mkdir()
+    (shard_dir / "0001.json").write_text(
+        json.dumps({"batch_index": 1, "status": "ok", "proposal": json.loads(VALID_PROPOSAL)})
+    )
+    (shard_dir / "0002.json").write_text("not valid json {")
+
+    ctx = PipelineContext(
+        input_dir=tmp_path,
+        output_dir=tmp_path,
+        intermediate_dir=tmp_path,
+        adapter=MockAdapter("not json {"),  # harmonize/quality-review fall back unchanged
+        pass1_merge_only=True,
+    )
+    run_pass1_step(ctx)
+
+    schema = json.loads((tmp_path / "schema.json").read_text())
+    types = {c["type"] for c in schema["concepts"]}
+    assert "Person" in types
 
 
 # ---------------------------------------------------------------------------
