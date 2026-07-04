@@ -68,10 +68,10 @@ def write_schema(
         except (json.JSONDecodeError, OSError):
             pass
 
-    prev_concepts = {c["type"] for c in prev.get("concepts", [])}
-    prev_props = {p["name"] for p in prev.get("properties", [])}
-    curr_concepts = {c["type"] for c in schema.get("concepts", [])}
-    curr_props = {p["name"] for p in schema.get("properties", [])}
+    prev_concepts = {c["type"] for c in prev.get("concepts", []) if "type" in c}
+    prev_props = {p["name"] for p in prev.get("properties", []) if "name" in p}
+    curr_concepts = {c["type"] for c in schema.get("concepts", []) if "type" in c}
+    curr_props = {p["name"] for p in schema.get("properties", []) if "name" in p}
 
     concepts_added = sorted(curr_concepts - prev_concepts)
     concepts_removed = sorted(prev_concepts - curr_concepts)
