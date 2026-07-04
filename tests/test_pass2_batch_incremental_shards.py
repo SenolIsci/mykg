@@ -15,7 +15,7 @@ import unittest.mock as mock
 from unittest.mock import MagicMock
 
 import mykg.pass2 as p2_mod
-from mykg.pass2 import run_pass2_batched
+from mykg.pass2 import _load_existing_raw_batches, run_pass2_batched
 
 
 def test_on_file_done_fires_before_all_batches_complete():
@@ -446,3 +446,48 @@ def test_on_batch_done_failed_shard_is_retried_not_skipped(tmp_path):
 
     assert extract_call_count["n"] == 1
     assert "a.md" in results
+
+
+def test_load_existing_raw_batches_skips_corrupt_shard(tmp_path):
+    """A shard file that isn't valid JSON is skipped, not raised."""
+    shard_dir = tmp_path / "pass2_raw_batches"
+    shard_dir.mkdir()
+    (shard_dir / "0000.json").write_text("not valid json {{{")
+
+    batch_map = {"batch_0000": {"files": ["a.md"], "chunks": [{"file": "a.md", "chunk_idx": 1}]}}
+    existing = _load_existing_raw_batches(batch_map, tmp_path)
+    assert existing == {}
+
+
+def test_load_existing_raw_batches_skips_shard_missing_batch_index(tmp_path):
+    """A shard file missing the batch_index key is skipped."""
+    shard_dir = tmp_path / "pass2_raw_batches"
+    shard_dir.mkdir()
+    (shard_dir / "0000.json").write_text(json.dumps({"status": "ok", "extraction": {}}))
+
+    batch_map = {"batch_0000": {"files": ["a.md"], "chunks": [{"file": "a.md", "chunk_idx": 1}]}}
+    existing = _load_existing_raw_batches(batch_map, tmp_path)
+    assert existing == {}
+
+
+def test_load_existing_raw_batches_skips_shard_with_no_current_batch(tmp_path):
+    """A shard whose batch_index no longer exists in the freshly-rebuilt
+    batch_map (e.g. the corpus shrank) is skipped rather than reused."""
+    shard_dir = tmp_path / "pass2_raw_batches"
+    shard_dir.mkdir()
+    (shard_dir / "0005.json").write_text(
+        json.dumps(
+            {
+                "batch_index": 5,
+                "status": "ok",
+                "chunk_count": 1,
+                "source_files": ["a.md"],
+                "extraction": {"nodes": [], "edges": []},
+            }
+        )
+    )
+
+    # batch_map only has batch_0000 — index 5 has no current counterpart.
+    batch_map = {"batch_0000": {"files": ["a.md"], "chunks": [{"file": "a.md", "chunk_idx": 1}]}}
+    existing = _load_existing_raw_batches(batch_map, tmp_path)
+    assert existing == {}
