@@ -635,6 +635,22 @@ def _print_next_steps(
     "locked base, so --base-schema must not be passed.",
 )
 @click.option(
+    "--pass1-schema-induction-only",
+    "pass1_only",
+    is_flag=True,
+    help="Run preprocess, ingest, Pass 1 schema induction, and schema_flatten "
+    "(every step before Pass 2), then stop. Produces a validated "
+    "schema.json/schema.ttl without running Pass 2 or anything downstream.",
+)
+@click.option(
+    "--pass2-kg-extraction-only",
+    "pass2_only",
+    is_flag=True,
+    help="Skip Pass 1 schema induction (requires an existing schema.json in "
+    "the target session) and run Pass 2 through validate_graph over the "
+    "full corpus. Unlike --append, not restricted to new/modified files.",
+)
+@click.option(
     "--session",
     default=None,
     help="Session name under mykg_sessions/ to resume or append; omit to auto-create",
@@ -666,6 +682,8 @@ def extract_graph(
     confidence_agg,
     append,
     grow_schema,
+    pass1_only,
+    pass2_only,
     session,
     obsidian_vault,
     neo4j_csv,
@@ -692,6 +710,22 @@ def extract_graph(
             raise click.ClickException(
                 "--freeze-schema and --append are mutually exclusive."
             )
+
+    if pass1_only and pass2_only:
+        raise click.ClickException(
+            "--pass1-schema-induction-only and --pass2-kg-extraction-only "
+            "are mutually exclusive (they select opposite halves of the pipeline)."
+        )
+    if pass1_only and (append or grow_schema or freeze_schema or from_step):
+        raise click.ClickException(
+            "--pass1-schema-induction-only cannot be combined with --append, "
+            "--append-with-grow-schema, --freeze-schema, or --from-step."
+        )
+    if pass2_only and (append or grow_schema or freeze_schema):
+        raise click.ClickException(
+            "--pass2-kg-extraction-only cannot be combined with --append, "
+            "--append-with-grow-schema, or --freeze-schema."
+        )
 
     original_input_dir = str(input_dir.resolve())
     sessions_root = _sessions_root()
@@ -828,6 +862,8 @@ def extract_graph(
         freeze_schema=freeze_schema,
         orphan_incremental=orphan_incremental,
         pass1_merge_only=pass1_merge_only,
+        stop_after="schema_flatten" if pass1_only else None,
+        pass2_only=pass2_only,
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     intermediate_dir.mkdir(parents=True, exist_ok=True)

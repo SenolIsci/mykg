@@ -109,6 +109,19 @@ MyKG builds trustworthy knowledge graphs through a self-evolving ontology that c
 
 ## Command line
 
+### All Commands
+
+| Command | Purpose |
+|---|---|
+| [`mykg init`](#configuration) | Interactive setup wizard — writes `mykg_config.yaml` and `.env.mykg` |
+| [`mykg extract-graph`](#extract-pipeline) | Run the two-pass extraction pipeline over a directory |
+| `mykg approve-schema` | Write `schema_approved.flag` to unblock the `human_review` gate after editing `schema.json` (used with `--review`, see [Human Review Gate](#human-review-gate---review)) |
+| [`mykg walkthrough`](#walkthrough-report) | Regenerate `walkthrough.md` for an existing session |
+| [`mykg merge-graphs`](#merging-sessions) | Merge two independently-produced sessions into one unified graph |
+| [`mykg parse-docs`](#standalone-document-conversion-mykg-parse-docs) | Standalone MinerU/markdownify document-to-Markdown conversion |
+| [`mykg fetch-web`](#website--repo-fetching-mykg-fetch-web) | Crawl a website or clone a GitHub repo into an `extract-graph`-ready folder |
+| [`mykg mcp-serve`](#mcp-model-context-protocol-server) | Start the MCP server exposing read-only graph query tools |
+
 ```
 mykg extract-graph my_notes/        # any directory: .md, .txt, .pdf, .docx, .html, images
 ```
@@ -294,6 +307,8 @@ Everything else (`.py`, `.json`, `.yaml`, lock files, etc.) is ignored. Hidden d
 | `--review` | Pause after Pass 1 for manual schema review |
 | `--append` | Skip Pass 1; re-run only on new/modified files |
 | `--append-with-grow-schema` | Like `--append`, but runs a locked Pass 1 over changed files to expand the schema |
+| `--pass1-schema-induction-only` | Run every step before Pass 2 (through `schema_flatten`), then stop — inspect/edit the schema before extracting |
+| `--pass2-kg-extraction-only` | Skip schema induction (requires an existing schema) and extract the full corpus through `validate_graph` |
 | `--workers N` | Parallel workers for Pass 2 |
 | `--confidence-agg mean\|max` | Confidence aggregation when deduplicating |
 | `--base-schema PATH` | Locked TBox TTL file (locked classes/properties cannot be changed by the LLM) |
@@ -324,6 +339,11 @@ mykg extract-graph my_notes/ --session 2026-05-17T18-31-07 --from-step assemble
 
 # Lock a base ontology so the LLM won't rename its classes
 mykg extract-graph my_notes/ --base-schema ontology/core.ttl
+
+# Induce and inspect the schema first, extract in a second invocation
+mykg extract-graph my_notes/ --pass1-schema-induction-only
+# → review/edit mykg_sessions/<name>/intermediate/schema.json
+mykg extract-graph my_notes/ --session <name> --pass2-kg-extraction-only
 ```
 
 ### Sessions

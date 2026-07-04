@@ -75,6 +75,136 @@ def test_extract_append_and_from_step_mutually_exclusive(tmp_path, input_dir, mo
     assert "mutually exclusive" in out.lower() or "--append" in out or "--from-step" in out
 
 
+def test_extract_pass1_only_and_pass2_only_mutually_exclusive(tmp_path, input_dir, monkeypatch):
+    import mykg.cli as cli_mod
+    import mykg.config as cfg_mod
+
+    monkeypatch.setattr(cfg_mod, "SESSIONS_DIR", str(tmp_path / "sessions"))
+    monkeypatch.setattr("mykg.llm.config.load_adapter", lambda **kw: MagicMock())
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli_mod.cli,
+        [
+            "extract-graph",
+            str(input_dir),
+            "--pass1-schema-induction-only",
+            "--pass2-kg-extraction-only",
+        ],
+    )
+
+    assert result.exit_code != 0
+    out = _output(result)
+    assert "mutually exclusive" in out.lower()
+
+
+def test_extract_pass1_only_and_append_mutually_exclusive(tmp_path, input_dir, monkeypatch):
+    import mykg.cli as cli_mod
+    import mykg.config as cfg_mod
+
+    monkeypatch.setattr(cfg_mod, "SESSIONS_DIR", str(tmp_path / "sessions"))
+    monkeypatch.setattr("mykg.llm.config.load_adapter", lambda **kw: MagicMock())
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli_mod.cli,
+        [
+            "extract-graph",
+            str(input_dir),
+            "--pass1-schema-induction-only",
+            "--append",
+        ],
+    )
+
+    assert result.exit_code != 0
+    out = _output(result)
+    assert "mutually exclusive" in out.lower() or "cannot be combined" in out.lower()
+
+
+def test_extract_pass2_only_and_freeze_schema_mutually_exclusive(
+    tmp_path, input_dir, monkeypatch
+):
+    import mykg.cli as cli_mod
+    import mykg.config as cfg_mod
+
+    monkeypatch.setattr(cfg_mod, "SESSIONS_DIR", str(tmp_path / "sessions"))
+    monkeypatch.setattr("mykg.llm.config.load_adapter", lambda **kw: MagicMock())
+
+    ttl_path = tmp_path / "base.ttl"
+    ttl_path.write_text("")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli_mod.cli,
+        [
+            "extract-graph",
+            str(input_dir),
+            "--pass2-kg-extraction-only",
+            "--freeze-schema",
+            "--base-schema",
+            str(ttl_path),
+        ],
+    )
+
+    assert result.exit_code != 0
+    out = _output(result)
+    assert "mutually exclusive" in out.lower() or "cannot be combined" in out.lower()
+
+
+def test_extract_pass1_only_sets_stop_after_on_context(tmp_path, input_dir, monkeypatch):
+    """--pass1-schema-induction-only wires ctx.stop_after='schema_flatten'."""
+    import mykg.cli as cli_mod
+    import mykg.config as cfg_mod
+
+    monkeypatch.setattr(cfg_mod, "SESSIONS_DIR", str(tmp_path / "sessions"))
+    monkeypatch.setattr("mykg.llm.config.load_adapter", lambda **kw: MagicMock())
+
+    captured = {}
+
+    def fake_run(steps, ctx):
+        captured["stop_after"] = ctx.stop_after
+        captured["pass2_only"] = ctx.pass2_only
+
+    monkeypatch.setattr("mykg.orchestrator.run", fake_run)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli_mod.cli,
+        ["extract-graph", str(input_dir), "--pass1-schema-induction-only"],
+    )
+
+    assert result.exit_code == 0, _output(result)
+    assert captured["stop_after"] == "schema_flatten"
+    assert captured["pass2_only"] is False
+
+
+def test_extract_pass2_only_sets_flag_on_context(tmp_path, input_dir, monkeypatch):
+    """--pass2-kg-extraction-only wires ctx.pass2_only=True, stop_after=None."""
+    import mykg.cli as cli_mod
+    import mykg.config as cfg_mod
+
+    monkeypatch.setattr(cfg_mod, "SESSIONS_DIR", str(tmp_path / "sessions"))
+    monkeypatch.setattr("mykg.llm.config.load_adapter", lambda **kw: MagicMock())
+
+    captured = {}
+
+    def fake_run(steps, ctx):
+        captured["stop_after"] = ctx.stop_after
+        captured["pass2_only"] = ctx.pass2_only
+
+    monkeypatch.setattr("mykg.orchestrator.run", fake_run)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli_mod.cli,
+        ["extract-graph", str(input_dir), "--pass2-kg-extraction-only"],
+    )
+
+    assert result.exit_code == 0, _output(result)
+    assert captured["stop_after"] is None
+    assert captured["pass2_only"] is True
+
+
 def _make_project(tmp_path):
     """Create a project folder (the dir holding mykg_config.yaml) and return it."""
     project = tmp_path / "proj"
