@@ -600,6 +600,15 @@ def run_pass2_batched(
     for fname, content in files.items():
         all_chunks.extend(chunk_file(fname, content))
 
+    # Exact target for "every chunk of this file has now appeared in a
+    # completed batch" — lets us finalize+flush a file's shard as soon as its
+    # last chunk resolves, rather than waiting for the entire corpus (#see
+    # incremental-shard-flush fix: a file's chunks can be scattered across
+    # many non-adjacent batches, so this is the only reliable completion signal).
+    total_chunks_per_file: dict[str, int] = {}
+    for c in all_chunks:
+        total_chunks_per_file[c.source_file] = total_chunks_per_file.get(c.source_file, 0) + 1
+
     batches = build_pass2_batches(all_chunks, batch_token_target, per_file=per_file)
     batch_map = make_batch_map(batches)
 
@@ -780,10 +789,42 @@ def run_pass2_batched(
             completed = [retry_by_idx.get(orig[0], orig) for orig in completed]
             completed.sort(key=lambda t: t[0])
 
+        # Tracks how many of each file's chunks have been merged so far, so a
+        # file can be finalized and flushed the moment its last chunk resolves
+        # — without waiting for every other file/batch in the corpus.
+        chunks_seen_per_file: dict[str, int] = {}
+        results: dict[str, dict] = {}
+
+        def _finalize_file(fname: str) -> None:
+            nodes = _dedup_within_file(file_nodes[fname])
+            surviving_ids = {n["id"] for n in nodes}
+            edges = [
+                e
+                for e in file_edges[fname]
+                if e.get("from") in surviving_ids and e.get("to") in surviving_ids
+            ]
+            log.info("  %s — total: %d node(s), %d edge(s)", fname, len(nodes), len(edges))
+            results[fname] = {"nodes": nodes, "edges": edges}
+            if on_file_done is not None:
+                on_file_done(fname, results[fname], chunk_node_index[fname])
+            # Drop the accumulator so the trailing fallback loop below doesn't
+            # re-finalize (and re-call on_file_done for) an already-flushed file.
+            del file_nodes[fname]
+            del file_edges[fname]
+
         for batch_idx, extraction, batch in completed:
             if extraction is None:
                 for chunk in batch:
                     failed_log.record(chunk.source_file, chunk.chunk_index + 1, "blank_response")
+                    chunks_seen_per_file[chunk.source_file] = (
+                        chunks_seen_per_file.get(chunk.source_file, 0) + 1
+                    )
+                for fname in {c.source_file for c in batch}:
+                    if (
+                        fname in file_nodes
+                        and chunks_seen_per_file.get(fname, 0) >= total_chunks_per_file[fname]
+                    ):
+                        _finalize_file(fname)
                 continue
 
             clean = _strip_nulls(extraction)
@@ -801,6 +842,7 @@ def run_pass2_batched(
                 chunk_node_index[fname][str(chunk_idx_1based)] = [
                     _name_slug(n) for n in batch_nodes
                 ]
+                chunks_seen_per_file[fname] = chunks_seen_per_file.get(fname, 0) + 1
 
             for fname in {c.source_file for c in batch}:
                 file_nodes[fname].extend(batch_nodes)
@@ -809,20 +851,24 @@ def run_pass2_batched(
                 if stateful:
                     prior_nodes_by_file[fname] = _dedup_within_file(file_nodes[fname])
 
-    # Finalize per-file results: dedup nodes and drop dangling edges.
-    results: dict[str, dict] = {}
-    for fname in files:
-        nodes = _dedup_within_file(file_nodes[fname])
-        surviving_ids = {n["id"] for n in nodes}
-        edges = [
-            e
-            for e in file_edges[fname]
-            if e.get("from") in surviving_ids and e.get("to") in surviving_ids
-        ]
-        log.info("  %s — total: %d node(s), %d edge(s)", fname, len(nodes), len(edges))
-        results[fname] = {"nodes": nodes, "edges": edges}
-        if on_file_done is not None:
-            on_file_done(fname, results[fname], chunk_node_index[fname])
+            # Every chunk this file has has now been accounted for — finalize
+            # and flush its shard immediately rather than waiting for the rest
+            # of the corpus (this is what makes cancel/resume possible: a
+            # crash after this point only loses batches still in flight).
+            for fname in {c.source_file for c in batch}:
+                if chunks_seen_per_file.get(fname, 0) >= total_chunks_per_file[fname]:
+                    _finalize_file(fname)
+
+    # Defensive fallback: finalize any file the incremental path above somehow
+    # missed (e.g. a file with zero chunks). Should never fire in practice —
+    # every file's chunk count is exact and every chunk is accounted for in
+    # the loop above, success or exhausted-retry-failure alike.
+    for fname in list(file_nodes):
+        log.warning(
+            "Pass 2 batched — %s was not finalized incrementally; finalizing as fallback",
+            fname,
+        )
+        _finalize_file(fname)
 
     failed_entries = failed_log.entries()
     return results, chunk_node_index, failed_entries, batch_map
