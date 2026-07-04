@@ -308,7 +308,7 @@ Everything else (`.py`, `.json`, `.yaml`, lock files, etc.) is ignored. Hidden d
 | `--append` | Skip Pass 1; re-run only on new/modified files |
 | `--append-with-grow-schema` | Like `--append`, but runs a locked Pass 1 over changed files to expand the schema |
 | `--pass1-schema-induction-only` | Run every step before Pass 2 (through `schema_flatten`), then stop — inspect/edit the schema before extracting |
-| `--pass2-kg-extraction-only` | Skip schema induction (requires an existing schema) and extract the full corpus through `validate_graph` |
+| `--pass2-kg-extraction-only` | Skip schema induction (requires an existing schema) and extract the full corpus through `validate_graph`. Unlike `--from-step pass2`, always re-derives `flattened_schema.json` first, so a hand-edited schema is picked up |
 | `--workers N` | Parallel workers for Pass 2 |
 | `--confidence-agg mean\|max` | Confidence aggregation when deduplicating |
 | `--base-schema PATH` | Locked TBox TTL file (locked classes/properties cannot be changed by the LLM) |
