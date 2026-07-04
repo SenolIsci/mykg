@@ -88,6 +88,13 @@ class PipelineContext(BaseModel):
     # reconstruct proposals from intermediate/pass1_batch_proposals/ shards,
     # jumping straight to merge/harmonize/quality-review.
     pass1_merge_only: bool = False
+    # Set by --pass1-schema-induction-only: halt the run right after this step
+    # completes successfully. None = run to completion (default).
+    stop_after: str | None = None
+    # Set by --pass2-kg-extraction-only: skip pass1/schema_validate/human_review
+    # (schema must already exist); unlike --append, NOT restricted to
+    # new/modified files — extracts the full corpus normally.
+    pass2_only: bool = False
 
 
 class Step(BaseModel):
@@ -262,6 +269,13 @@ _APPEND_PRESERVE_OUTPUTS = {"raw_extractions.json", "chunk_node_index.json", "ra
 
 APPEND_SKIP_STEPS: frozenset[str] = frozenset({"pass1", "schema_validate", "human_review"})
 
+# --pass2-kg-extraction-only: same steps skipped as --append, but the run is
+# NOT restricted to changed files — full corpus re-extraction. schema_flatten
+# is deliberately excluded from this set so it always re-runs (cheap, no LLM)
+# and picks up any manual edits made to schema.json between a prior
+# --pass1-schema-induction-only run and this one.
+PASS2_ONLY_SKIP_STEPS: frozenset[str] = frozenset({"pass1", "schema_validate", "human_review"})
+
 
 def _invalidate_append_downstream(
     steps: list[Step], ctx: PipelineContext, state: "PipelineState"
@@ -301,6 +315,12 @@ def run(steps: list[Step], ctx: PipelineContext) -> None:
             f"No existing pipeline found in {ctx.intermediate_dir}. Run without --append first."
         )
 
+    if ctx.pass2_only and not (ctx.intermediate_dir / "schema.json").exists():
+        raise RuntimeError(
+            f"No existing schema found in {ctx.intermediate_dir}. "
+            "Run with --pass1-schema-induction-only (or a normal run) first."
+        )
+
     step_names = [s.name for s in steps]
     state = PipelineState.load(ctx.intermediate_dir, step_names)
 
@@ -323,6 +343,10 @@ def run(steps: list[Step], ctx: PipelineContext) -> None:
         for step in steps:
             if ctx.append and step.name in append_skip:
                 log.info("SKIP %s — append mode", step.name)
+                continue
+
+            if ctx.pass2_only and step.name in PASS2_ONLY_SKIP_STEPS:
+                log.info("SKIP %s — --pass2-kg-extraction-only", step.name)
                 continue
 
             # In append mode, preprocess and ingest must always run, and pass2
@@ -517,6 +541,12 @@ def run(steps: list[Step], ctx: PipelineContext) -> None:
             state.mark_done(step.name)
             state.save(ctx.intermediate_dir)
             log.info("DONE %s", step.name)
+
+            if ctx.stop_after and step.name == ctx.stop_after:
+                log.info(
+                    "STOP — halted after step '%s' (--pass1-schema-induction-only)", step.name
+                )
+                return
 
         if not schema_restart_triggered:
             break  # all steps completed (or we returned early); exit the while loop
