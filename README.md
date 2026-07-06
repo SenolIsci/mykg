@@ -259,7 +259,7 @@ If you see repeated `429` errors during `pass1`, `pass2`, or the orphan-connecti
 - `pass2.max_workers` — concurrent per-file extraction calls
 - `orphan_pass.max_workers` — concurrent orphan-connection calls
 
-Lower these (e.g. from `8` down to `2`–`4`) in the active profile to reduce concurrent requests. This is especially likely on `openrouter-free` (free-tier models have very low per-minute caps) and on lower-tier `anthropic-claude`/`openai` accounts. `llm.retry_429_max` / `llm.retry_429_base_delay` control automatic backoff on a 429, but per Invariant 13 a persistent 429 is a signal to reduce `max_workers`, not just retry harder. `claude-cli` and `agent-claude-code` are unaffected — both are serial by design (`max_workers: 1`).
+Lower these (e.g. from `8` down to `2`–`4`) in the active profile to reduce concurrent requests. This is especially likely on `openrouter-free` (free-tier models have very low per-minute caps) and on lower-tier `anthropic-claude`/`openai` accounts. `llm.retry_429_max` / `llm.retry_429_base_delay` control automatic backoff on a 429, but a persistent 429 is a signal to reduce `max_workers`, not just retry harder. `claude-cli` is unaffected — it is serial by design (`max_workers: 1`); it doesn't hit API rate limits since there's no API call. `agent-claude-code` is not API rate-limited either (no API key involved), but it is not serial — its default profile sets `pass1`/`pass2`/`orphan_pass` `max_workers` > 1 (configurable, like any other profile), since the skill dispatches multiple subagents per wave.
 
 ### API Keys
 
