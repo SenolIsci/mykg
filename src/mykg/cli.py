@@ -83,21 +83,21 @@ def _copy_input_files(input_dir: Path, session_root: Path, copy_config: bool = T
 
 _PROFILE_META = {
     "openrouter-free": {
-        "label": "OpenRouter (default — many free models, one API key)",
+        "label": "OpenRouter",
         "key_var": "OPENROUTER_API_KEY",
         "key_hint": "sk-or-...",
         "key_url": "https://openrouter.ai/keys",
         "default_model": "openrouter/free",
     },
     "anthropic-claude": {
-        "label": "Anthropic Claude (highest quality)",
+        "label": "Anthropic Claude",
         "key_var": "ANTHROPIC_API_KEY",
         "key_hint": "sk-ant-...",
         "key_url": "https://console.anthropic.com/account/keys",
         "default_model": "claude-sonnet-4-5",
     },
     "openai": {
-        "label": "OpenAI (GPT-4o and friends)",
+        "label": "OpenAI",
         "key_var": "OPENAI_API_KEY",
         "key_hint": "sk-...",
         "key_url": "https://platform.openai.com/api-keys",
