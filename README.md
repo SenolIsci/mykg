@@ -843,14 +843,20 @@ mykg mcp-serve --transport streamable_http --port 3100
 mykg mcp-serve --session 2026-06-25T19-16-18 --transport streamable_http --port 3100
 ```
 
-**Claude Desktop (stdio)** — the client launches mykg as a subprocess, no manual server start needed. Add to `claude_desktop_config.json`:
+**Claude Desktop (stdio)** — the client launches mykg as a subprocess, no manual server start needed. Add to `claude_desktop_config.json`. Replace `/path/to/your/project` with the absolute path to your project folder:
 
 ```json
 {
   "mcpServers": {
     "mykg": {
-      "command": "mykg",
-      "args": ["mcp-serve"]
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/your/project",
+        "run",
+        "mykg",
+        "mcp-serve"
+      ]
     }
   }
 }
@@ -862,8 +868,16 @@ To serve a specific session:
 {
   "mcpServers": {
     "mykg": {
-      "command": "mykg",
-      "args": ["mcp-serve", "--session", "2026-06-25T19-16-18"]
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/your/project",
+        "run",
+        "mykg",
+        "mcp-serve",
+        "--session",
+        "2026-06-25T19-16-18"
+      ]
     }
   }
 }
@@ -875,8 +889,14 @@ To serve a specific session:
 {
   "mcpServers": {
     "mykg": {
-      "command": "mykg",
-      "args": ["mcp-serve"]
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/your/project",
+        "run",
+        "mykg",
+        "mcp-serve"
+      ]
     }
   }
 }
@@ -888,8 +908,16 @@ To serve a specific session:
 {
   "mcpServers": {
     "mykg": {
-      "command": "mykg",
-      "args": ["mcp-serve", "--session", "2026-06-25T19-16-18"]
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/your/project",
+        "run",
+        "mykg",
+        "mcp-serve",
+        "--session",
+        "2026-06-25T19-16-18"
+      ]
     }
   }
 }
