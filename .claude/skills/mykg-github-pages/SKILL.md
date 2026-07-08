@@ -62,6 +62,10 @@ ls pages/ 2>&1
   instead of a PAT secret. See Step 4a and the matching Troubleshooting
   entry — this is a different bug from the `build_type` one above and looks
   identical from the outside.
+- The "Deploy to gh-pages" Actions step itself fails with `remote:
+  Permission ... denied` / `403` on `git push origin gh-pages` → the PAT in
+  the secret is fine-grained, not classic, or lacks the `repo` scope. See
+  Step 4a — this repo's setup only worked with a classic PAT.
 
 ## Step 1 — Scaffold `pages/` and the landing page
 
@@ -194,7 +198,7 @@ full rationale on each):
   PAT secret (`secrets.PAGES_DEPLOY_TOKEN` in the template), **not**
   `secrets.GITHUB_TOKEN` — see Step 4a, this is not optional.
 
-## Step 4a — Required: a PAT for the deploy step (not `GITHUB_TOKEN`)
+## Step 4a — Required: a classic PAT with `repo` scope for the deploy step (not `GITHUB_TOKEN`, not a fine-grained PAT)
 
 GitHub does not run a Pages build for commits pushed using the default
 `GITHUB_TOKEN` — this is documented, deliberate anti-recursion behavior, not
@@ -206,16 +210,26 @@ the initial mykg Pages setup and cost a long trial-and-error before the
 actual cause (not a `build_type` misconfiguration, despite looking exactly
 like one) was found by cross-checking GitHub's own Actions docs.
 
-The fix: the `peaceiris/actions-gh-pages` step needs a Personal Access Token
-in place of `secrets.GITHUB_TOKEN`, stored as its own repo secret. Creating
-a PAT is a credential-creation action — **do not generate or store one on
-the user's behalf**; ask the user to create it themselves and hand back the
-secret name:
+**Use a classic PAT, not a fine-grained one.** A fine-grained PAT scoped to
+just this repo with "Contents: Read and write" was tried first on the mykg
+setup and still failed — `git push origin gh-pages` returned `remote:
+Permission to <owner>/<repo>.git denied to <owner>` / `403`, even though the
+token's stated scope looked correct. Switching to a **classic** PAT with the
+`repo` scope (full control of private repositories, which also covers
+public ones) resolved the push immediately. Don't spend time re-diagnosing
+a fine-grained PAT's exact permission checkboxes if the push 403s — just
+have the user create a classic token instead.
 
-1. Tell the user to create a fine-grained PAT at
-   `https://github.com/settings/tokens?type=beta` scoped to just this repo
-   (`SenolIsci/mykg`), with **Contents: Read and write** permission and
-   whatever expiration they're comfortable with.
+The fix: the `peaceiris/actions-gh-pages` step needs this PAT in place of
+`secrets.GITHUB_TOKEN`, stored as its own repo secret. Creating a PAT is a
+credential-creation action — **do not generate or store one on the user's
+behalf**; ask the user to create it themselves and hand back the secret
+name:
+
+1. Tell the user to create a **classic** PAT at
+   `https://github.com/settings/tokens` (not the fine-grained
+   `?type=beta` flow) with the **`repo`** scope checked, and whatever
+   expiration they're comfortable with.
 2. Tell the user to add it as a repository secret at
    `https://github.com/SenolIsci/mykg/settings/secrets/actions` (any name —
    the bundled template assumes `PAGES_DEPLOY_TOKEN`).
@@ -223,6 +237,11 @@ secret name:
    `github_token: ${{ secrets.<THEIR_SECRET_NAME> }}` in
    `.github/workflows/pages.yml`'s deploy step (update the name if it
    differs from `PAGES_DEPLOY_TOKEN`).
+4. If a fine-grained PAT was already tried and the deploy step 403s
+   (`gh run view <id> --log-failed` shows `Permission ... denied` /
+   `403` on the `git push origin gh-pages` line), tell the user to replace
+   it with a classic `repo`-scope token instead — update the same secret's
+   value, no workflow change needed since the secret name doesn't change.
 
 If `pages/` and the workflow already exist and this step was skipped when
 they were first created, this is a live-fixable gap — no need to redo Steps
@@ -357,6 +376,19 @@ GitHub's own Actions token docs. Check
 a PAT + repo secret, you update the workflow to reference it, then
 `gh workflow run pages.yml --ref main` to get the first PAT-authored push
 through.
+
+**The "Deploy to gh-pages" step itself fails** (not green — a real Actions
+failure, distinct from the two silent-404 cases above) **with `remote:
+Permission to <owner>/<repo>.git denied to <owner>` and exit code 128/403 on
+`git push origin gh-pages`** — the PAT in the secret doesn't have write
+access to the repo. `permissions: contents: write` in the workflow YAML
+only grants the *default* `GITHUB_TOKEN` extra scope — it has no effect on
+a PAT supplied via a secret, so don't waste time re-checking that block.
+On the mykg setup, a fine-grained PAT scoped to the repo with "Contents:
+Read and write" checked still produced this exact 403; switching the same
+secret's value to a **classic** PAT with the `repo` scope fixed it
+immediately with no other change. If the user reports they used a
+fine-grained token, ask them to replace it with a classic one per Step 4a.
 
 ## What NOT to do
 

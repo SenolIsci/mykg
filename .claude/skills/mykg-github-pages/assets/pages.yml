@@ -32,9 +32,12 @@ jobs:
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
-          # Must be a PAT, not secrets.GITHUB_TOKEN — GitHub does not run the
-          # Pages build for pushes made with the default token. See SKILL.md
-          # Step 4a / Troubleshooting for why and how to create this secret.
+          # Must be a classic PAT with the `repo` scope, not secrets.GITHUB_TOKEN
+          # and not a fine-grained PAT — GitHub does not run the Pages build for
+          # pushes made with the default token, and a fine-grained PAT with
+          # "Contents: Read and write" still 403'd on this push in practice.
+          # See SKILL.md Step 4a / Troubleshooting for why and how to create
+          # this secret.
           github_token: ${{ secrets.PAGES_DEPLOY_TOKEN }}
           publish_dir: ./_site
           publish_branch: gh-pages

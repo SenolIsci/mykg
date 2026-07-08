@@ -151,10 +151,21 @@ follow-up. Don't treat a lingering `null` as a sign the fix didn't work —
 verify with `curl -I` against the live `html_url` instead; a `200` there is
 the real signal, not the `status` field.
 
-Required auth: a token with `repo` scope (classic PAT) or the fine-grained
-"Pages: write" permission; repo admin/maintainer role. `gh api` reuses
-whatever `gh auth status` already has — check that first if a call 403s
-unexpectedly (`gh auth status`, confirm `repo` is in the token scopes).
+Required auth for the **Pages API itself** (`gh api repos/.../pages`, what
+this section is about): a token with `repo` scope (classic PAT) or the
+fine-grained "Pages: write" permission; repo admin/maintainer role. `gh api`
+reuses whatever `gh auth status` already has — check that first if a call
+403s unexpectedly (`gh auth status`, confirm `repo` is in the token scopes).
+
+This is a **separate credential** from the PAT the `peaceiris/actions-gh-pages`
+workflow step uses to `git push` to `gh-pages` (Step 4a in SKILL.md) — don't
+conflate the two. For that push-auth PAT specifically, only a **classic**
+token with the `repo` scope was confirmed to work on the mykg setup; a
+fine-grained PAT scoped to the repo with "Contents: Read and write" checked
+still returned `403`/`Permission ... denied` on the `git push`. If you see
+that exact failure in the "Deploy to gh-pages" step's logs, it's this PAT
+being fine-grained, not a `gh api` auth problem — no relation to the
+paragraph above.
 
 ## Build logs when the Actions build itself is fine but Pages shows errored
 
