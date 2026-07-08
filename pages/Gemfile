@@ -1,7 +1,7 @@
 source "https://rubygems.org"
 
 # Swap for whatever theme was chosen in pages/_config.yml's `theme:` key.
-gem "jekyll-theme-minimal"
+gem "jekyll-theme-cayman"
 
 gem "jekyll", "~> 4.3"
 

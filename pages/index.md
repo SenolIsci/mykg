@@ -1,19 +1,12 @@
 ---
 layout: default
-title: Home
 ---
-
-<p align="center">
-  <img src="assets/mykg-logo-text.svg" width="360" alt="myKG">
-</p>
-
-# Turn your documents into a knowledge graph
 
 **myKG** automatically generates a confidence-scored knowledge graph from a set of mixed documents — Markdown, plain text, PDF, Word, PowerPoint, Excel, HTML, images, and websites — grounded in an induced RDFS/OWL ontology.
 
 It runs as a two-pass LLM pipeline: **Pass 1** induces a global schema (concept types and relationship properties) from your document corpus; **Pass 2** extracts typed entities and relationships per file against that schema. Every attribute, node, and edge carries a confidence score, so you always know how much to trust what was extracted.
 
-[View on GitHub](https://github.com/SenolIsci/mykg) · [PyPI](https://pypi.org/project/mykg/) · [Blog]({{ '/blog.html' | relative_url }})
+[View on GitHub](https://github.com/SenolIsci/mykg){: .btn} [PyPI](https://pypi.org/project/mykg/){: .btn} [Blog]({{ '/blog.html' | relative_url }}){: .btn}
 
 ## Why myKG
 
