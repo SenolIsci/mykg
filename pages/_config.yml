@@ -1,0 +1,4 @@
+title: myKG
+description: AI workflow that turns documents into a confidence-scored knowledge graph with an induced RDFS/OWL ontology
+theme: jekyll-theme-minimal
+show_downloads: false

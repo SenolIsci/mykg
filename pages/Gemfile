@@ -1,0 +1,9 @@
+source "https://rubygems.org"
+
+# Swap for whatever theme was chosen in pages/_config.yml's `theme:` key.
+gem "jekyll-theme-minimal"
+
+gem "jekyll", "~> 4.3"
+
+# Needed for Ruby 3.3+ / newer Jekyll — webrick was removed from stdlib.
+gem "webrick", "~> 1.8"
