@@ -66,6 +66,12 @@ ls pages/ 2>&1
   Permission ... denied` / `403` on `git push origin gh-pages` → the PAT in
   the secret is fine-grained, not classic, or lacks the `repo` scope. See
   Step 4a — this repo's setup only worked with a classic PAT.
+- The live URL returns `200` and loads real HTML, but the page has no
+  styling at all (default browser serif font, no colors, no layout — looks
+  like the theme never applied) → check `pages/_config.yml` for
+  `baseurl: "/mykg"`. See Step 3 — missing `baseurl` on a project Pages site
+  makes the CSS `<link>` resolve to the domain root instead of `/mykg/...`
+  and 404 silently; nothing in the Actions build or Pages config flags this.
 
 ## Step 1 — Scaffold `pages/` and the landing page
 
@@ -139,6 +145,7 @@ title: myKG
 description: AI workflow that turns documents into a confidence-scored knowledge graph with an induced RDFS/OWL ontology
 theme: jekyll-theme-minimal
 show_downloads: false
+baseurl: "/mykg"
 ```
 
 - `theme:` — show the user 2-3 named options
@@ -147,6 +154,25 @@ show_downloads: false
   Actions build (not GitHub's native Jekyll runner), any theme on
   rubygems.org works — but stick to a GitHub-supported theme unless asked
   for something specific, since it needs no extra Gemfile entries.
+- `baseurl:` — **required, not optional**, and must equal `/<repo-name>`.
+  This is a *project* Pages site (`<owner>.github.io/<repo>/`), not a
+  user/org root site (`<owner>.github.io/`), so every `relative_url`/
+  `absolute_url` Liquid filter — used throughout any theme's own layout for
+  its CSS `<link>`, and in this skill's own `blog.md`/`index.md` nav links —
+  needs `baseurl` to know what to prepend. Omitting it doesn't error
+  anywhere in the build: Jekyll builds fine, the Actions run is green, the
+  live `index.html` loads (curl returns `200`) — but the CSS `<link
+  href="/assets/css/style.css">` resolves to the domain root instead of
+  `/<repo>/assets/css/style.css`, 404s, and the page renders as fully
+  unstyled default-browser HTML. This was hit live on the mykg setup after a
+  theme switch and looked like a "did the theme even apply?" question before
+  the real cause (missing `baseurl`) was found by comparing the `<link
+  href>` in the served HTML against where the CSS file actually lives.
+  Confirm the fix by diffing `curl -sI https://<owner>.github.io/assets/css/style.css`
+  (expect 404) against `curl -sI https://<owner>.github.io/<repo>/assets/css/style.css`
+  (expect 200) — if the CSS truly loads at the project path but a live
+  browser still looks unstyled, that's browser caching of the earlier 404,
+  not a config problem; a hard refresh or incognito window resolves it.
 - Reuse the title/description strings already in `pyproject.toml`/
   `README.md` rather than inventing new copy.
 - No `exclude:` list needed by default — `pages/` only ever contains what
@@ -324,6 +350,18 @@ link needed.
 in the repo (see "Sourcing artifacts from the repo" above), copy it into
 `pages/diagrams/`, and link it from wherever it's relevant.
 
+**Switching the theme** — three files change together, not just
+`_config.yml`: the `theme:` key, the matching `gem "jekyll-theme-..."` line
+in `pages/Gemfile`, and possibly `pages/index.md`'s body if the new theme's
+own layout renders things (a title/tagline hero, a "View on GitHub" button)
+that the old theme didn't — check the new theme's
+`_layouts/default.html` before assuming the page body is unaffected.
+`baseurl` (Step 3) is independent of theme choice and does not need to
+change when switching themes. See "Switching themes" and "`baseurl`" in
+`references/jekyll-and-pages.md` for the full mechanics and the exact
+failure mode (page loads but shows completely unstyled) if a step here is
+missed.
+
 **Custom domain** — only act on this if the user explicitly asks; it
 touches DNS outside the repo. Needs a `pages/CNAME` file (survives the
 Jekyll build since Jekyll copies non-`_`-prefixed files verbatim) plus a DNS
@@ -389,6 +427,25 @@ Read and write" checked still produced this exact 403; switching the same
 secret's value to a **classic** PAT with the `repo` scope fixed it
 immediately with no other change. If the user reports they used a
 fine-grained token, ask them to replace it with a classic one per Step 4a.
+
+**The live URL returns `200`, the raw HTML looks correct in `curl`, but a
+real browser shows plain unstyled text** (no color hero band, default
+serif font, no `.btn` buttons, no layout at all) — check the CSS `<link>`
+path: `curl -s https://<owner>.github.io/<repo>/ | grep stylesheet`. If it
+shows `href="/assets/css/style.css?v="` (missing the `/<repo>` prefix)
+instead of `href="/<repo>/assets/css/style.css?v="`, `pages/_config.yml` is
+missing `baseurl: "/<repo>"` — see Step 3. Confirm by comparing
+`curl -sI https://<owner>.github.io/assets/css/style.css` (should 404 — the
+CSS doesn't live at the domain root) against
+`curl -sI https://<owner>.github.io/<repo>/assets/css/style.css` (should be
+`200` — this is where Jekyll actually wrote it). This is a *project* Pages
+site — `baseurl` isn't optional here, only skippable for a user/org root
+site (`<owner>.github.io` with no repo segment). Nothing in the Actions
+build or `gh api .../pages` output flags this; it only shows up as a
+visually broken page. If the CSS genuinely 200s at the `/<repo>/` path but
+the browser still looks unstyled, that's a cached 404 response from before
+the fix — hard refresh or an incognito window resolves it, no further
+config change needed.
 
 ## What NOT to do
 

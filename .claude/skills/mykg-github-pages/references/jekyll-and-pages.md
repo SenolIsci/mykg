@@ -211,6 +211,84 @@ Since mykg uses the Actions build, any theme gem works — this list matters
 only if switching back to the native build flow (see above), or if the user
 wants to stick to a "no surprises, definitely works" theme choice anyway.
 
+## Switching themes: three files must move together
+
+Changing `theme:` in `_config.yml` is not sufficient by itself. Three files
+change in lockstep:
+
+1. `pages/_config.yml` — the `theme:` key.
+2. `pages/Gemfile` — the `gem "jekyll-theme-..."` line must name the *same*
+   theme, or `bundle install` pulls in a gem that doesn't match what
+   `_config.yml` asks Jekyll to load (Jekyll silently falls back to no
+   theme / a Jekyll error depending on version, rather than a clear "these
+   don't match" message).
+3. `pages/index.md` (and any other page using `layout: default`) — themes
+   differ in what their own layout already renders. mykg's switch from
+   `jekyll-theme-minimal` to `jekyll-theme-cayman` required removing a
+   manually-added logo `<img>` + `# H1` from `index.md`'s body, because
+   Cayman's `default.html` layout already renders `site.title`/
+   `site.description` as a styled hero band — keeping the old H1 would have
+   produced a duplicate, mismatched-looking title. Different themes make
+   different assumptions about what the layout owns vs. what page content
+   owns; re-read the new theme's own `_layouts/default.html` (fetchable at
+   `raw.githubusercontent.com/pages-themes/<name>/master/_layouts/default.html`)
+   before assuming the old page body still makes sense.
+
+**Themes that read `site.github.*` degrade gracefully without it.** Cayman's
+layout has `{% if site.github.is_project_page %}` guards around its own
+"View on GitHub" button and footer attribution line. `site.github.*` is
+populated by GitHub's *native* Pages builder (via the `jekyll-github-metadata`
+gem, which reads repo info from the GitHub API at build time) — it is
+**not** populated by a plain `bundle exec jekyll build` in a custom Actions
+workflow, which is what this skill uses. The practical effect: those
+`{% if %}` blocks are simply false and render nothing — no error, just a
+missing button/footer line. Don't add `jekyll-github-metadata` to work
+around this; it needs API/token access at build time, which adds a new
+failure surface to a workflow that already took real effort to stabilize
+(see the `GITHUB_TOKEN`/PAT sections above). Instead, add the "View on
+GitHub" link manually in the page body, styled with the theme's own button
+class via kramdown IAL syntax: `[View on GitHub](url){: .btn}`.
+
+## `baseurl` — required for every project Pages site, regardless of theme
+
+A GitHub Pages site is either a **user/org site** (`<owner>.github.io`,
+served at the domain root) or a **project site** (`<owner>.github.io/<repo>/`,
+served under a path segment). mykg is a project site. `pages/_config.yml`
+must set `baseurl: "/<repo>"` (e.g. `"/mykg"`) for a project site; user/org
+sites correctly omit it (`baseurl: ""` or absent).
+
+**Why this matters and how it fails:** every theme's own layout, and this
+skill's own `index.md`/`blog.md`, reference internal paths through Jekyll's
+`relative_url`/`absolute_url` Liquid filters — e.g. Cayman's
+`<link rel="stylesheet" href="{{ '/assets/css/style.css?v=...' | relative_url }}">`
+or this skill's `[Blog]({{ '/blog.html' | relative_url }})`. These filters
+prepend `site.baseurl` to whatever path they're given. With `baseurl` unset,
+they prepend nothing, so `/assets/css/style.css` resolves to the *domain
+root* (`https://<owner>.github.io/assets/css/style.css`) instead of the
+*project path* (`https://<owner>.github.io/<repo>/assets/css/style.css`) —
+and only the second one is where Jekyll actually wrote the file.
+
+**Nothing in the pipeline flags this.** `bundle exec jekyll build` succeeds
+— it doesn't know or care what URL the site will eventually be served at.
+The Actions workflow run is green. `gh api .../pages` shows a perfectly
+valid config. `curl -I` against the page URL itself returns `200` with real
+HTML. The only symptom is a **visually broken page**: the CSS `<link>` 404s,
+so the browser renders the raw unstyled HTML — default serif font, no
+color, no layout, no buttons. This was hit live on the mykg setup
+immediately after a theme switch, and initially looked like "did the new
+theme actually get picked up?" rather than a routing problem, because the
+build and deploy both reported success.
+
+**Diagnosis:** `curl -s https://<owner>.github.io/<repo>/ | grep stylesheet`
+— if the `href` is missing the `/<repo>` prefix, that's the bug. Confirm by
+checking both URLs directly: the domain-root CSS path 404s, the project-path
+CSS path 200s with real content. **Fix:** add `baseurl: "/<repo>"` to
+`_config.yml`, push, done — no other file needs to change, since every
+`relative_url` call site picks it up automatically. If a user reports the
+site still looks unstyled after this fix, ask them to hard-refresh or use
+an incognito window before investigating further — the earlier 404 response
+for the CSS file is a very cacheable response and browsers hold onto it.
+
 ## Custom domain (CNAME)
 
 Two halves, both required, neither sufficient alone:
@@ -228,6 +306,14 @@ Two halves, both required, neither sufficient alone:
 
 GitHub re-verifies domain ownership periodically; `protected_domain_state` in
 the GET response reflects this (`verified`, `pending`, `unverified`).
+
+**Interaction with `baseurl`:** a custom domain serves the site at its own
+root (`example.com/`), not under `/<repo>/` — so `baseurl` must be cleared
+(`baseurl: ""` or the key removed) when a `pages/CNAME` file is added, and
+restored to `/<repo>` if the custom domain is ever removed again. Leaving
+`baseurl: "/<repo>"` set after adding a custom domain reintroduces the exact
+same broken-CSS symptom described above, just for the opposite reason (now
+prepending a path segment that doesn't exist under the custom domain).
 
 ## `workflow_dispatch` for manual reruns
 
