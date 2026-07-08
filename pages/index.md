@@ -9,7 +9,7 @@ title: Home
 
 # Turn your documents into a knowledge graph
 
-**myKG** automatically generates a confidence-scored knowledge graph from a set of mixed documents — Markdown, plain text, PDF, Word, PowerPoint, Excel, HTML, and images — grounded in an induced RDFS/OWL ontology.
+**myKG** automatically generates a confidence-scored knowledge graph from a set of mixed documents — Markdown, plain text, PDF, Word, PowerPoint, Excel, HTML, images, and websites — grounded in an induced RDFS/OWL ontology.
 
 It runs as a two-pass LLM pipeline: **Pass 1** induces a global schema (concept types and relationship properties) from your document corpus; **Pass 2** extracts typed entities and relationships per file against that schema. Every attribute, node, and edge carries a confidence score, so you always know how much to trust what was extracted.
 
