@@ -13,7 +13,7 @@ title: Home
 
 It runs as a two-pass LLM pipeline: **Pass 1** induces a global schema (concept types and relationship properties) from your document corpus; **Pass 2** extracts typed entities and relationships per file against that schema. Every attribute, node, and edge carries a confidence score, so you always know how much to trust what was extracted.
 
-[View on GitHub](https://github.com/SenolIsci/mykg) · [PyPI](https://pypi.org/project/mykg/) · [Blog](blog.html)
+[View on GitHub](https://github.com/SenolIsci/mykg) · [PyPI](https://pypi.org/project/mykg/) · [Blog]({{ '/blog.html' | relative_url }})
 
 ## Why myKG
 
@@ -37,4 +37,4 @@ See the [README](https://github.com/SenolIsci/mykg#readme) for the full command 
 
 ## Learn more
 
-Read walkthroughs and case studies on the [blog](blog.html), or dig into the [source on GitHub](https://github.com/SenolIsci/mykg).
+Read walkthroughs and case studies on the [blog]({{ '/blog.html' | relative_url }}), or dig into the [source on GitHub](https://github.com/SenolIsci/mykg).
