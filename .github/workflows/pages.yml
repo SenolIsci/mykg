@@ -32,6 +32,9 @@ jobs:
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # PAT, not secrets.GITHUB_TOKEN — GitHub does not run the Pages
+          # build for pushes made with the default token. See SKILL.md
+          # Step 4a / Troubleshooting for why.
+          github_token: ${{ secrets.PAGES_TOKEN }}
           publish_dir: ./_site
           publish_branch: gh-pages
