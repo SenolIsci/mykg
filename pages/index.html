@@ -1,0 +1,196 @@
+---
+layout: default
+---
+
+<style>
+  .lead {
+    font-size: 1.15rem;
+    color: #4a4a4a;
+    max-width: 46rem;
+  }
+  .cta-row {
+    margin: 1.5rem 0 2.5rem;
+  }
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1.25rem;
+    margin: 1.5rem 0 2.5rem;
+  }
+  .card {
+    border: 1px solid #e1e4e8;
+    border-radius: 8px;
+    padding: 1.1rem 1.25rem;
+    background: #fafbfc;
+  }
+  .card h3 {
+    margin: 0 0 0.4rem;
+    font-size: 1.05rem;
+    color: #159957;
+  }
+  .card p {
+    margin: 0;
+    font-size: 0.95rem;
+    color: #4a4a4a;
+  }
+  .pipeline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: stretch;
+    margin: 1.5rem 0 2.5rem;
+  }
+  .pipeline .step {
+    flex: 1 1 240px;
+    border-radius: 8px;
+    padding: 1.1rem 1.25rem;
+    background: linear-gradient(120deg, #155799, #159957);
+    color: #fff;
+  }
+  .pipeline .step h3 {
+    margin: 0 0 0.4rem;
+    font-size: 1rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+  .pipeline .step p {
+    margin: 0;
+    font-size: 0.95rem;
+  }
+  .pipeline .arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    color: #999;
+  }
+  .feature-image {
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    display: block;
+    margin: 1.5rem 0 2.5rem;
+  }
+  .format-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin: 1rem 0 2.5rem;
+  }
+  .format-row span {
+    background: #eef7f1;
+    color: #135c3a;
+    border-radius: 999px;
+    padding: 0.35rem 0.9rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .provider-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin: 1rem 0 2.5rem;
+  }
+  .provider-row span {
+    border: 1px solid #d7dce1;
+    border-radius: 6px;
+    padding: 0.3rem 0.8rem;
+    font-size: 0.85rem;
+    color: #333;
+  }
+  @media (max-width: 640px) {
+    .pipeline .arrow { display: none; }
+  }
+</style>
+
+<p class="lead"><strong>myKG</strong> automatically generates a confidence-scored knowledge graph from a set of mixed documents — Markdown, plain text, PDF, Word, PowerPoint, Excel, HTML, images, and websites — grounded in an induced RDFS/OWL ontology.</p>
+
+<div class="cta-row">
+  <a href="https://github.com/SenolIsci/mykg" class="btn">View on GitHub</a>
+  <a href="https://pypi.org/project/mykg/" class="btn">PyPI</a>
+  <a href="{{ '/blog.html' | relative_url }}" class="btn">Blog</a>
+</div>
+
+<img class="feature-image" src="{{ '/assets/mykg_logo_panel.png' | relative_url }}" alt="myKG feature overview">
+
+<h2>How it works</h2>
+
+<div class="pipeline">
+  <div class="step">
+    <h3>Pass 1 — Schema Induction</h3>
+    <p>The LLM reads your document corpus and proposes concept types and relationship properties, producing a global RDFS/OWL schema you can review before extraction begins.</p>
+  </div>
+  <div class="arrow">&rarr;</div>
+  <div class="step">
+    <h3>Pass 2 — Instance Extraction</h3>
+    <p>Individuals and relationships are extracted per file against that schema. Every attribute, node, and edge carries a confidence score, so you always know how much to trust it.</p>
+  </div>
+</div>
+
+<img class="feature-image" src="{{ '/assets/architecture-sketch.png' | relative_url }}" alt="myKG architecture sketch">
+
+<h2>Why myKG</h2>
+
+<div class="card-grid">
+  <div class="card">
+    <h3>Schema-guided extraction</h3>
+    <p>The graph is always grounded in a formal, inspectable RDFS/OWL schema before any entity is extracted — not a black box.</p>
+  </div>
+  <div class="card">
+    <h3>Bring your own ontology</h3>
+    <p>Lock in classes and properties from an existing formal ontology and let the LLM extend it, or freeze it entirely.</p>
+  </div>
+  <div class="card">
+    <h3>Second brain for AI coding assistants</h3>
+    <p>Point Claude Code, Cursor, or Copilot at the generated Obsidian vault (or the MCP server) and get answers grounded in your own documents.</p>
+  </div>
+  <div class="card">
+    <h3>Resumable &amp; incremental</h3>
+    <p>Every stage persists intermediate state. Append new documents later without re-processing everything.</p>
+  </div>
+  <div class="card">
+    <h3>Confidence scoring</h3>
+    <p>Every extracted attribute, node, and edge carries a 0.0&ndash;1.0 confidence score, so quality is always inspectable.</p>
+  </div>
+  <div class="card">
+    <h3>Provider-agnostic</h3>
+    <p>Works with Anthropic, OpenAI, Ollama, OpenRouter, or the <code>claude</code> CLI &mdash; swap backends without changing your pipeline.</p>
+  </div>
+</div>
+
+<h2>Five output formats, one extraction</h2>
+
+<div class="format-row">
+  <span>JSONL (Neo4j / NetworkX / RAG)</span>
+  <span>Turtle RDF (OWL toolchains)</span>
+  <span>NetworkX multi-format</span>
+  <span>Obsidian vault</span>
+  <span>Neo4j LOAD CSV bundle</span>
+</div>
+
+<h2>Works with your LLM provider</h2>
+
+<div class="provider-row">
+  <span>Anthropic (Claude)</span>
+  <span>OpenAI</span>
+  <span>Ollama (local)</span>
+  <span>OpenRouter</span>
+  <span><code>claude</code> CLI</span>
+</div>
+
+<h2>Quick start</h2>
+
+<pre><code class="language-bash">pip install mykg
+mykg init
+mykg extract-graph my_notes/
+</code></pre>
+
+<p>Open <code>mykg_sessions/&lt;timestamp&gt;/output/knowledge_graph.html</code> in your browser to explore the result.</p>
+
+<p>See the <a href="https://github.com/SenolIsci/mykg#readme">README</a> for the full command reference, configuration options, and pipeline internals.</p>
+
+<h2>Learn more</h2>
+
+<p>Read walkthroughs and case studies on the <a href="{{ '/blog.html' | relative_url }}">blog</a>, or dig into the <a href="https://github.com/SenolIsci/mykg">source on GitHub</a>.</p>
