@@ -14,6 +14,7 @@ about Pages behavior with suspicion. Relevant subsections:
 - REST API reference: https://docs.github.com/en/rest/pages/pages
 - Configuring a publishing source: https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site
 - Troubleshooting Jekyll build errors: https://docs.github.com/en/pages/setting-up-a-github-pages-site-with-jekyll/troubleshooting-jekyll-build-errors-for-github-pages-sites
+- Adding a theme: https://docs.github.com/en/pages/setting-up-a-github-pages-site-with-jekyll/adding-a-theme-to-your-github-pages-site-using-jekyll
 - Custom domains: https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site
 
 ## Why `gh-pages` + Actions instead of GitHub's native Jekyll build
@@ -233,6 +234,20 @@ change in lockstep:
    owns; re-read the new theme's own `_layouts/default.html` (fetchable at
    `raw.githubusercontent.com/pages-themes/<name>/master/_layouts/default.html`)
    before assuming the old page body still makes sense.
+
+**Themes outside the 12 GitHub-supported names** (per GitHub's own "Adding a
+theme" doc: https://docs.github.com/en/pages/setting-up-a-github-pages-site-with-jekyll/adding-a-theme-to-your-github-pages-site-using-jekyll)
+can be loaded two ways. This skill's Gemfile approach (a `gem
+"jekyll-theme-..."` line + matching `theme:` key) works for *any* theme
+published as a gem on rubygems.org, not just GitHub's 12 — that's the whole
+point of using a real Actions `bundle install` instead of GitHub's native
+sandboxed builder (see "Why `gh-pages` + Actions" above). GitHub's docs also
+describe a second mechanism, `remote_theme: OWNER/REPO` via the
+`jekyll-remote-theme` plugin, for themes hosted on GitHub but not published
+as a gem at all — relevant only if a desired theme has no rubygems.org
+package; add `gem "jekyll-remote-theme"` to the Gemfile and `plugins:
+[jekyll-remote-theme]` to `_config.yml` if that path is ever needed. Not
+currently used by this skill's bundled themes, all of which are real gems.
 
 **Themes that read `site.github.*` degrade gracefully without it.** Cayman's
 layout has `{% if site.github.is_project_page %}` guards around its own
