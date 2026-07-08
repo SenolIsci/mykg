@@ -1,6 +1,6 @@
 ---
 name: mykg-github-pages
-description: Set up and maintain the GitHub Pages site for the mykg repo (SenolIsci/mykg) — a purpose-built pages/ folder (landing page adapted from README.md, blog posts, diagrams), built by a GitHub Actions workflow that runs Jekyll and deploys the result to a gh-pages branch. Use whenever the user wants to publish project documentation or blog articles as a website, create a landing page, turn the project into a public site, enable/configure/troubleshoot GitHub Pages or the gh-pages branch, add a new page/blog post/diagram to the published site, fix a broken/failing Pages build, or asks things like "can we get a docs site for mykg", "I want a landing page based on README", "publish this blog article", "is Pages enabled yet", "the pages workflow failed", or "add this new doc to the site". Also trigger on custom domain / CNAME requests for the project site. Scoped to the mykg repo's own pages/ folder and its gh-pages publishing pipeline — not for unrelated new project sites, and never touches docs/ (that folder is internal/reference material, kept off the published site by design).
+description: Set up and maintain the GitHub Pages site for the mykg repo (SenolIsci/mykg) — a purpose-built pages/ folder (landing page adapted from README.md, blog posts, diagrams), built by a GitHub Actions workflow that runs Jekyll and deploys the result to a gh-pages branch. Use whenever the user wants to publish project documentation or blog articles as a website, create a landing page, turn the project into a public site, enable/configure/troubleshoot GitHub Pages or the gh-pages branch, add a new page/blog post/diagram to the published site, fix a broken/failing Pages build, or asks things like "can we get a docs site for mykg", "I want a landing page based on README", "publish this blog article", "is Pages enabled yet", "the pages workflow failed", or "add this new doc to the site". Also trigger on custom domain / CNAME requests for the project site. Scoped to the mykg repo's own pages/ folder and its gh-pages publishing pipeline — not for unrelated new project sites.
 ---
 
 # mykg GitHub Pages
@@ -13,11 +13,8 @@ what GitHub Pages actually serves.
 ```
 main branch                        gh-pages branch
 ├── src/       ← software          ├── index.html   ← built site
-├── docs/      ← internal/         ├── blog/...
-│                 reference only,  └── ...  (generated — never hand-edit)
-│                 NEVER published
-├── pages/     ← Pages source
-│   ├── _config.yml
+├── pages/     ← Pages source      ├── blog/...
+│   ├── _config.yml                └── ...  (generated — never hand-edit)
 │   ├── _posts/          (blog articles)
 │   ├── index.md         (landing page, adapted from README.md)
 │   └── diagrams/
@@ -28,25 +25,16 @@ pages.yml: on push to main (pages/** changes) → jekyll build pages/ → _site/
 Settings > Pages: source = gh-pages branch
 ```
 
-## Why `pages/`, not `docs/`
+## Why a dedicated `pages/` folder
 
-`docs/` already holds a mix of design/architecture material and example
-session dumps (full pipeline runs with raw intermediate JSON, logs —
-debugging artifacts, not reader-facing content) accumulated over the
-project's life. Retrofitting that folder for public consumption means an
-ongoing exclusion list that has to be re-checked every time something new
-lands in `docs/` — a maintenance burden that grows with the project instead
-of shrinking.
-
-A dedicated `pages/` folder sidesteps this entirely: it holds *only* content
-written for the public site, so there's never anything to accidentally
-publish. `docs/` stays exactly what it already is — internal/reference
-material — and this skill never reads from it as a content source, only as
-occasional inspiration when adapting something (e.g. pulling the project
-description from `README.md` into `pages/index.md`). If a future user of
-this skill wants to instead publish `docs/` directly, that's a materially
-different setup (see `references/jekyll-and-pages.md` for the tradeoffs) —
-don't default to it.
+A dedicated `pages/` folder holds *only* content written for the public
+site, so there's never anything to accidentally publish. This skill's
+default and only source for initial content is `README.md` (see Step 1) —
+it never assumes any other folder in the repo is publishable. Any other
+repo artifact (a diagram, a logo, a screenshot, an existing doc) is fair
+game to feature on the site, but only when the user explicitly points at it
+— see "Sourcing artifacts from the repo" below. Don't scan the repo looking
+for content to publish; ask instead.
 
 ## Check state before doing anything
 
@@ -83,10 +71,12 @@ deciding whether the project is relevant to them at all. Concretely:
   a stranger sees first, worth a second pair of eyes rather than shipping
   silently.
 
-Bring over the logo assets referenced from the README
-(`docs/mykg-logo-*.{png,svg}`) into `pages/assets/` — copy, don't move;
-`docs/` keeps its own copies since other things may still reference them
-there.
+The README typically references logo/image assets by path or URL. Confirm
+with the user which asset(s) to feature and where those files live in the
+repo, then copy (don't move) them into `pages/assets/` — the source folder
+keeps its own copies since other things may still reference them there. See
+"Sourcing artifacts from the repo" below for the general pattern this
+follows for any asset, not just the logo.
 
 ## Step 2 — Blog articles
 
@@ -151,11 +141,21 @@ show_downloads: false
 **Gemfile** — bundle `references/Gemfile.template` as `pages/Gemfile`,
 adjusting the theme gem to match whatever was chosen above.
 
-**Diagrams** — create `pages/diagrams/` and copy over (don't move) whichever
-`docs/diagrams/*.png` / `*.html` the user wants featured on the site, linked
-from `index.md` or the relevant post. Not every diagram in `docs/diagrams/`
-needs to be public — ask which ones are relevant rather than copying the
-whole folder by default, same reasoning as the docs/ vs pages/ split above.
+**Diagrams** — create `pages/diagrams/`. See "Sourcing artifacts from the
+repo" below for how to decide what goes in it.
+
+## Sourcing artifacts from the repo
+
+Beyond the README (the one default, always-in-scope source for the landing
+page's initial copy), this skill does not assume any folder in the repo is
+publishable. When a diagram, screenshot, logo variant, or existing doc might
+belong on the site: ask the user which specific file(s) to feature and
+confirm the path, rather than scanning the repo or defaulting to a folder
+that "looks like" documentation. Once confirmed, copy (never move) the file
+into the relevant `pages/` subfolder (`pages/assets/`, `pages/diagrams/`,
+etc.) — the original stays where it is since other parts of the repo may
+still reference it. This keeps the publish surface exactly as big as the
+user intends, with no ongoing exclusion list to maintain as the repo grows.
 
 ## Step 4 — Write the Actions workflow
 
@@ -237,9 +237,9 @@ reachable by direct URL, but is invisible to a visitor browsing the site.
 `pages/blog.md`'s `site.posts` loop picks it up automatically, no manual
 link needed.
 
-**Adding a diagram** — copy the source file from `docs/diagrams/` into
-`pages/diagrams/` (never point the site at `docs/` directly — see "Why
-pages/, not docs/" above) and link it from wherever it's relevant.
+**Adding a diagram** — confirm with the user which file and where it lives
+in the repo (see "Sourcing artifacts from the repo" above), copy it into
+`pages/diagrams/`, and link it from wherever it's relevant.
 
 **Custom domain** — only act on this if the user explicitly asks; it
 touches DNS outside the repo. Needs a `pages/CNAME` file (survives the
@@ -271,10 +271,9 @@ Common causes, roughly in order of likelihood:
   silently overwritten on the next build.
 - Don't touch `.github/workflows/ci.yml` or `release.yml` — Pages is
   independent of CI/release and shouldn't be threaded into those pipelines.
-- Don't point the Pages workflow at `docs/`, copy its example/session dumps
-  into `pages/`, or otherwise treat `docs/` as a content source beyond
-  occasional copy-and-adapt (like the README → landing page, or a specific
-  named diagram). `docs/` holds internal reference material and pipeline
-  session dumps that were explicitly decided against publishing — see "Why
-  pages/, not docs/" above.
+- Don't scan the repo for content to publish or assume any folder besides
+  `pages/` itself is publishable. `README.md` is the only default source;
+  anything else (diagrams, screenshots, other docs) is featured only when
+  the user explicitly names it — see "Sourcing artifacts from the repo"
+  above.
 - Don't invent blog article content — the user supplies it.

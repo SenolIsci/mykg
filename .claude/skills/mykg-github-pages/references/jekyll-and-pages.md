@@ -27,18 +27,17 @@ native build instead, the difference is:
   mode; the Actions build can use any theme gem from rubygems.org since it's
   a real `bundle install` + `jekyll build`.
 
-## Why the site source is `pages/`, not `docs/`
+## Why the site source is a dedicated `pages/` folder
 
-mykg's `docs/` folder predates this skill and already holds internal
-architecture material plus full pipeline example dumps (raw intermediate
-JSON, run logs — debugging artifacts). Publishing straight from `docs/` would
-mean maintaining an ever-growing `exclude:` list in `_config.yml` as new
-internal content lands there. A dedicated `pages/` folder means the
-publish surface is exactly what was deliberately written for the site — see
-SKILL.md's "Why pages/, not docs/" section for the full reasoning. This is a
-project-specific decision (baked in during setup), not a general Jekyll
-constraint — nothing stops a source folder from being named `docs/` on
-another project.
+Publishing straight from a general-purpose folder (whatever it's named)
+means maintaining an ever-growing `exclude:` list in `_config.yml` as
+unrelated content lands there over time. A dedicated `pages/` folder means
+the publish surface is exactly what was deliberately written for the site —
+see SKILL.md's "Why a dedicated pages/ folder" section for the full
+reasoning. Other repo artifacts (diagrams, screenshots, logo variants) are
+still fair game to feature on the site — they're copied into `pages/` only
+when the user names them explicitly (see "Sourcing artifacts from the repo"
+in SKILL.md), not pulled in wholesale from wherever they happen to live.
 
 ## REST API shape for `/repos/{owner}/{repo}/pages`
 
