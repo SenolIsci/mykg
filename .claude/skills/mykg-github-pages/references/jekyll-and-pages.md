@@ -4,6 +4,18 @@ Background for the choices baked into SKILL.md. Read this when troubleshooting,
 or when the user wants to deviate from the defaults (different theme, custom
 domain, different trigger paths).
 
+**Official docs**: https://docs.github.com/en/pages — the authoritative
+source for anything not covered here or in SKILL.md, especially when
+GitHub's Pages behavior changes or a new failure mode shows up that isn't
+already documented in this file. Check here before guessing at API shapes
+or config semantics; this file's `build_type` guidance below was itself
+wrong until corrected against these docs, so treat undocumented assumptions
+about Pages behavior with suspicion. Relevant subsections:
+- REST API reference: https://docs.github.com/en/rest/pages/pages
+- Configuring a publishing source: https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site
+- Troubleshooting Jekyll build errors: https://docs.github.com/en/pages/setting-up-a-github-pages-site-with-jekyll/troubleshooting-jekyll-build-errors-for-github-pages-sites
+- Custom domains: https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site
+
 ## Why `gh-pages` + Actions instead of GitHub's native Jekyll build
 
 GitHub Pages can build Jekyll for you automatically ("classic" / `legacy`
@@ -22,10 +34,30 @@ native build instead, the difference is:
   honors it too.
 - `gh api -X POST repos/{owner}/{repo}/pages -f "source[branch]=main" -f
   "source[path]=/pages" -f "build_type=legacy"` instead of pointing at
-  `gh-pages` with `build_type=workflow`.
+  `gh-pages`.
 - Theme choice is constrained to GitHub's supported-themes list in native
   mode; the Actions build can use any theme gem from rubygems.org since it's
   a real `bundle install` + `jekyll build`.
+
+**Important:** despite this skill using a custom Actions workflow to *build*
+the site, the Pages API `build_type` for it is still `"legacy"`, not
+`"workflow"`. GitHub's own docs draw the line at *how the branch gets its
+content*, not at whether a workflow was involved in producing it:
+- `build_type: "legacy"` = "Deploy from a branch" — Pages watches a branch
+  (here, `gh-pages`) and serves whatever's pushed to it, however it got
+  there. `peaceiris/actions-gh-pages` pushes a plain git commit to
+  `gh-pages`, so from Pages' point of view this is indistinguishable from a
+  human running `git push` by hand — hence `legacy`.
+- `build_type: "workflow"` = "GitHub Actions" as the *Pages source itself* —
+  this expects the workflow to upload a build artifact via
+  `actions/upload-pages-artifact` and hand it to Pages via
+  `actions/deploy-pages`. There is no branch involved at all in this mode;
+  `source.branch` is meaningless and gets ignored/reset.
+Setting `build_type: "workflow"` while deploying via a branch push (this
+skill's actual setup) doesn't error — the API call succeeds — but Pages
+silently does not serve the `gh-pages` content, and a follow-up `GET` shows
+`source.branch` reverted away from `gh-pages`. The only symptom is the live
+URL 404ing. See "Build logs" below for how to confirm the fix.
 
 ## Why the site source is a dedicated `pages/` folder
 
@@ -48,34 +80,44 @@ PUT    /repos/{owner}/{repo}/pages         → update existing config
 DELETE /repos/{owner}/{repo}/pages         → turn Pages off entirely
 ```
 
-Request body (POST/PUT), gh-pages-branch shape:
+Request body (POST/PUT), gh-pages-branch shape — note `build_type: "legacy"`
+even though a workflow builds it (see the callout above):
 
 ```json
 {
   "source": { "branch": "gh-pages", "path": "/" },
-  "build_type": "workflow"
+  "build_type": "legacy"
 }
 ```
 
-Response body shape (GET/POST):
+Response body shape (GET/POST) once correctly configured:
 
 ```json
 {
   "url": "https://api.github.com/repos/OWNER/REPO/pages",
-  "status": "built",
+  "status": null,
   "cname": null,
   "custom_404": false,
   "html_url": "https://OWNER.github.io/REPO/",
-  "build_type": "workflow",
+  "build_type": "legacy",
   "source": { "branch": "gh-pages", "path": "/" },
   "public": true,
   "https_enforced": true
 }
 ```
 
-`status` values seen in practice: `null` (never built), `"queued"`,
-`"building"`, `"built"`, `"errored"`. Only `"errored"` needs follow-up —
-`null`/`"queued"`/`"building"` just means "give it a few more minutes."
+If a `GET` instead shows `build_type: "workflow"` and/or `source.branch`
+pointing at `main` (or anything other than `gh-pages`) after you tried to set
+it to `gh-pages`, that's the `build_type` mismatch described above — redo
+the `PUT` with `build_type=legacy`.
+
+`status` values per GitHub's API docs: `null` (no build recorded — this is
+normal and can persist even on a working legacy-branch site, since branch
+deploys don't always populate this field the way the native builder does),
+`"queued"`, `"building"`, `"built"`, `"errored"`. Only `"errored"` needs
+follow-up. Don't treat a lingering `null` as a sign the fix didn't work —
+verify with `curl -I` against the live `html_url` instead; a `200` there is
+the real signal, not the `status` field.
 
 Required auth: a token with `repo` scope (classic PAT) or the fine-grained
 "Pages: write" permission; repo admin/maintainer role. `gh api` reuses
@@ -88,12 +130,19 @@ Two different failure surfaces exist and it's easy to check the wrong one:
 
 - **The Actions workflow run** (`gh run list --workflow=pages.yml`, `gh run
   view <id> --log-failed`) — covers the Jekyll build step and the
-  `actions-gh-pages` push step. Most real failures show up here.
+  `actions-gh-pages` push step. Most real build failures show up here. A
+  green run here only proves the `gh-pages` branch got updated — it says
+  nothing about whether Pages is actually configured to serve it (see the
+  `build_type` mismatch above).
 - **The Pages build record** (`gh api repos/{owner}/{repo}/pages/builds/latest`)
-  — this only exists in the classic/native build flow. In `build_type:
-  workflow` mode (what this skill uses), Pages itself doesn't run a build at
-  all — it just serves whatever's on `gh-pages` — so this endpoint is mostly
-  irrelevant here. Go straight to the Actions run logs.
+  — relevant in `build_type: legacy` mode (what this skill uses, per the
+  correction above): Pages detects the push to `gh-pages` and does its own
+  lightweight "deploy the static files" pass, recorded here. If the Actions
+  run is green but this endpoint 404s or errors, or the live site still
+  404s, re-check `gh api repos/{owner}/{repo}/pages --jq '{source,
+  build_type}'` first — a `build_type: "workflow"` misconfiguration (Pages
+  never even looking at `gh-pages`) is a more common cause than an actual
+  deploy failure.
 
 ## Jekyll front-matter gotcha
 

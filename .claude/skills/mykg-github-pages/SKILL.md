@@ -50,6 +50,11 @@ ls pages/ 2>&1
 - `pages/` and the workflow already exist → maintenance request (add a page,
   add a blog post, fix a failing build). Skip to the relevant section below.
 - Workflow exists but the last run failed → go straight to Troubleshooting.
+- Pages config exists but `build_type` is `"workflow"` while this repo
+  deploys via a branch push (i.e. `source.branch` isn't reliably
+  `gh-pages`, or the live URL 404s despite green Actions runs) → the
+  misconfiguration described in Step 5/6 and Troubleshooting; fix with a
+  `PUT` setting `build_type=legacy` before doing anything else.
 
 ## Step 1 — Scaffold `pages/` and the landing page
 
@@ -206,24 +211,38 @@ Once `gh-pages` exists, point Pages at it:
 gh api -X POST repos/SenolIsci/mykg/pages \
   -f "source[branch]=gh-pages" \
   -f "source[path]=/" \
-  -f "build_type=workflow"
+  -f "build_type=legacy"
 ```
 
 If this 409s ("already exists"), Pages is already configured — use `PUT`
-with the same body instead. `build_type=workflow` is correct here (as
-opposed to `legacy`) because the actual Jekyll build already happened in
-Actions; Pages is just serving the pre-built `gh-pages` branch as static
-files, not building anything itself.
+with the same body instead. **Use `build_type=legacy` here, not
+`workflow`** — despite the Actions workflow being the thing that builds the
+site, `peaceiris/actions-gh-pages` publishes by pushing a plain commit to
+`gh-pages` ("Deploy from a branch" in GitHub's own terms), which is exactly
+what `build_type=legacy` + `source.branch=gh-pages` means to the Pages API.
+`build_type=workflow` is reserved for the *native* Pages Actions flow
+(`actions/upload-pages-artifact` + `actions/deploy-pages`), which this
+skill's workflow does not use. Setting `build_type=workflow` here doesn't
+error — it just silently ignores `source.branch` (GET afterwards shows it
+reset to `main`/default) and the site never actually deploys, so this is
+easy to get wrong without noticing until you check the live URL and find a
+404. See `references/jekyll-and-pages.md` for the API details and how to
+tell the two modes apart if you inherit a misconfigured site.
 
 ## Step 6 — Verify
 
 ```bash
-gh api repos/SenolIsci/mykg/pages --jq '{status, html_url, source}'
+gh api repos/SenolIsci/mykg/pages --jq '{status, html_url, source, build_type}'
 ```
 
-Tell the user the expected URL (`https://senolisci.github.io/mykg/`) and
-that the very first build can take a few minutes. Don't poll in a sleep
-loop — check once now, and again only if the user asks later.
+Confirm `build_type` is `"legacy"` and `source.branch` is `"gh-pages"` — if
+`build_type` came back `"workflow"` and `source.branch` shows anything other
+than `gh-pages` (e.g. it reset to `main`), the POST/PUT silently didn't take
+per the note in Step 5; redo it with `build_type=legacy`. Only once that
+shape is confirmed, tell the user the expected URL
+(`https://senolisci.github.io/mykg/`) and that the very first build can take
+a few minutes. Don't poll in a sleep loop — check once now, and again only
+if the user asks later.
 
 ## Maintenance tasks (pages/ + workflow + gh-pages already set up)
 
@@ -263,6 +282,20 @@ Common causes, roughly in order of likelihood:
   templating chokes on.
 - `permissions: contents: write` missing from the workflow (the
   `actions-gh-pages` push fails with a 403).
+
+If none of the above explains it, or the failure is on the Pages-serving
+side rather than the Jekyll-build side, check the official docs before
+guessing further: https://docs.github.com/en/pages (see
+`references/jekyll-and-pages.md` for the specific subsections most relevant
+to this skill's setup).
+
+**Actions run is green but the site 404s** — this is a Pages *configuration*
+problem, not a build problem, and won't show up in `gh run view --log-failed`
+at all. Check `gh api repos/SenolIsci/mykg/pages --jq '{source, build_type}'`:
+if `build_type` is `"workflow"` instead of `"legacy"`, that's the bug —
+see the note in Step 5/6. Fix with the `PUT` call there (`build_type=legacy`,
+`source.branch=gh-pages`), no rebuild needed since `gh-pages` already has the
+content — Pages just wasn't configured to serve it.
 
 ## What NOT to do
 
