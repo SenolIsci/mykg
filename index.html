@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en-US">
+  <head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!-- Begin Jekyll SEO tag v2.9.0 -->
+<title>Home | myKG</title>
+<meta name="generator" content="Jekyll v4.4.1" />
+<meta property="og:title" content="Home" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="AI workflow that turns documents into a confidence-scored knowledge graph with an induced RDFS/OWL ontology" />
+<meta name="twitter:description" property="og:description" content="AI workflow that turns documents into a confidence-scored knowledge graph with an induced RDFS/OWL ontology" />
+<meta property="og:site_name" content="myKG" />
+<meta property="og:type" content="website" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content="Home" />
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebSite","description":"AI workflow that turns documents into a confidence-scored knowledge graph with an induced RDFS/OWL ontology","headline":"Home","name":"myKG","url":"/"}</script>
+<!-- End Jekyll SEO tag -->
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <!--[if lt IE 9]>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv.min.js"></script>
+    <![endif]-->
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <h1><a href="/">myKG</a></h1>
+
+        
+
+        <p>AI workflow that turns documents into a confidence-scored knowledge graph with an induced RDFS/OWL ontology</p>
+
+        
+
+        
+
+        
+      </header>
+      <section>
+
+      <p align="center">
+  <img src="assets/mykg-logo-text.svg" width="360" alt="myKG" />
+</p>
+
+<h1 id="turn-your-documents-into-a-knowledge-graph">Turn your documents into a knowledge graph</h1>
+
+<p><strong>myKG</strong> automatically generates a confidence-scored knowledge graph from a set of mixed documents — Markdown, plain text, PDF, Word, PowerPoint, Excel, HTML, and images — grounded in an induced RDFS/OWL ontology.</p>
+
+<p>It runs as a two-pass LLM pipeline: <strong>Pass 1</strong> induces a global schema (concept types and relationship properties) from your document corpus; <strong>Pass 2</strong> extracts typed entities and relationships per file against that schema. Every attribute, node, and edge carries a confidence score, so you always know how much to trust what was extracted.</p>
+
+<p><a href="https://github.com/SenolIsci/mykg">View on GitHub</a> · <a href="https://pypi.org/project/mykg/">PyPI</a> · <a href="/blog.html">Blog</a></p>
+
+<h2 id="why-mykg">Why myKG</h2>
+
+<ul>
+  <li><strong>Schema-guided extraction</strong> — the graph is always grounded in a formal, inspectable RDFS/OWL schema before any entity is extracted, not a black box</li>
+  <li><strong>Bring your own ontology</strong> — lock in classes and properties from an existing formal ontology and let the LLM extend it, or freeze it entirely</li>
+  <li><strong>Five output formats</strong> — JSONL for Neo4j/NetworkX/RAG, Turtle RDF for OWL toolchains, NetworkX multi-format exports, an Obsidian vault of wikilinked notes, and a Neo4j LOAD CSV bundle</li>
+  <li><strong>Second brain for AI coding assistants</strong> — point Claude Code, Cursor, or Copilot at the generated Obsidian vault (or the MCP server) and get answers grounded in your own documents</li>
+  <li><strong>Resumable, incremental, provider-agnostic</strong> — every stage persists intermediate state; append new documents without re-processing everything; works with Anthropic, OpenAI, Ollama, OpenRouter, or the <code class="language-plaintext highlighter-rouge">claude</code> CLI</li>
+</ul>
+
+<h2 id="quick-start">Quick start</h2>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>pip <span class="nb">install </span>mykg
+mykg init
+mykg extract-graph my_notes/
+</code></pre></div></div>
+
+<p>Open <code class="language-plaintext highlighter-rouge">mykg_sessions/&lt;timestamp&gt;/output/knowledge_graph.html</code> in your browser to explore the result.</p>
+
+<p>See the <a href="https://github.com/SenolIsci/mykg#readme">README</a> for the full command reference, configuration options, and pipeline internals.</p>
+
+<h2 id="learn-more">Learn more</h2>
+
+<p>Read walkthroughs and case studies on the <a href="/blog.html">blog</a>, or dig into the <a href="https://github.com/SenolIsci/mykg">source on GitHub</a>.</p>
+
+
+      </section>
+      <footer>
+        
+        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
+      </footer>
+    </div>
+    <script src="/assets/js/scale.fix.js"></script>
+  </body>
+</html>
