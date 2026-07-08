@@ -93,7 +93,7 @@ _PROFILE_META = {
         "label": "Anthropic Claude",
         "key_var": "ANTHROPIC_API_KEY",
         "key_hint": "sk-ant-...",
-        "key_url": "https://console.anthropic.com/account/keys",
+        "key_url": "https://platform.claude.com/settings/keys",
         "default_model": "claude-sonnet-4-5",
     },
     "openai": {
