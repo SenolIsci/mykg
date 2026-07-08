@@ -55,6 +55,13 @@ ls pages/ 2>&1
   `gh-pages`, or the live URL 404s despite green Actions runs) → the
   misconfiguration described in Step 5/6 and Troubleshooting; fix with a
   `PUT` setting `build_type=legacy` before doing anything else.
+- `build_type`/`source` look correct, Actions runs are green, `gh-pages` has
+  real content, but the live URL still 404s and
+  `gh api .../pages --jq .status` is `null` → check whether
+  `.github/workflows/pages.yml`'s deploy step uses `secrets.GITHUB_TOKEN`
+  instead of a PAT secret. See Step 4a and the matching Troubleshooting
+  entry — this is a different bug from the `build_type` one above and looks
+  identical from the outside.
 
 ## Step 1 — Scaffold `pages/` and the landing page
 
@@ -183,6 +190,44 @@ full rationale on each):
   this explicitly to the user before the first push, since it's a workflow
   gaining write access to the repo, worth a second look even in a repo they
   own.
+- The `github_token` input to `peaceiris/actions-gh-pages` must reference a
+  PAT secret (`secrets.PAGES_DEPLOY_TOKEN` in the template), **not**
+  `secrets.GITHUB_TOKEN` — see Step 4a, this is not optional.
+
+## Step 4a — Required: a PAT for the deploy step (not `GITHUB_TOKEN`)
+
+GitHub does not run a Pages build for commits pushed using the default
+`GITHUB_TOKEN` — this is documented, deliberate anti-recursion behavior, not
+a bug, but it's easy to miss because nothing errors. The workflow run stays
+green, `gh-pages` gets real, valid content, `gh api .../pages` shows the
+correct `source.branch`/`build_type`, and the live URL just 404s forever
+with the Pages API's `status` field stuck at `null`. This was hit live on
+the initial mykg Pages setup and cost a long trial-and-error before the
+actual cause (not a `build_type` misconfiguration, despite looking exactly
+like one) was found by cross-checking GitHub's own Actions docs.
+
+The fix: the `peaceiris/actions-gh-pages` step needs a Personal Access Token
+in place of `secrets.GITHUB_TOKEN`, stored as its own repo secret. Creating
+a PAT is a credential-creation action — **do not generate or store one on
+the user's behalf**; ask the user to create it themselves and hand back the
+secret name:
+
+1. Tell the user to create a fine-grained PAT at
+   `https://github.com/settings/tokens?type=beta` scoped to just this repo
+   (`SenolIsci/mykg`), with **Contents: Read and write** permission and
+   whatever expiration they're comfortable with.
+2. Tell the user to add it as a repository secret at
+   `https://github.com/SenolIsci/mykg/settings/secrets/actions` (any name —
+   the bundled template assumes `PAGES_DEPLOY_TOKEN`).
+3. Once they confirm the secret exists, set
+   `github_token: ${{ secrets.<THEIR_SECRET_NAME> }}` in
+   `.github/workflows/pages.yml`'s deploy step (update the name if it
+   differs from `PAGES_DEPLOY_TOKEN`).
+
+If `pages/` and the workflow already exist and this step was skipped when
+they were first created, this is a live-fixable gap — no need to redo Steps
+1–4, just add the secret and the one-line workflow change, then re-run
+(`gh workflow run pages.yml --ref main`) to get the first PAT-authored push.
 
 ## Step 5 — First push and enabling Pages
 
@@ -296,6 +341,22 @@ if `build_type` is `"workflow"` instead of `"legacy"`, that's the bug —
 see the note in Step 5/6. Fix with the `PUT` call there (`build_type=legacy`,
 `source.branch=gh-pages`), no rebuild needed since `gh-pages` already has the
 content — Pages just wasn't configured to serve it.
+
+**`build_type`/`source` are already correct, Actions is green, `gh-pages`
+genuinely has `index.html` and real assets (confirm with `git ls-tree -r
+--name-only origin/gh-pages`), but the URL still 404s and `status` stays
+`null` no matter how many times you re-run the workflow** — this is the
+`GITHUB_TOKEN` issue from Step 4a, not the `build_type` one above; the two
+produce an identical symptom (green build, valid branch, dead site) but have
+different causes and different fixes, so don't assume it's the `build_type`
+bug just because the symptom matches. GitHub does not trigger a Pages build
+for a commit pushed with the default `GITHUB_TOKEN` — confirmed against
+GitHub's own Actions token docs. Check
+`grep github_token .github/workflows/pages.yml`; if it says
+`secrets.GITHUB_TOKEN`, that's the cause. Fix per Step 4a: the user creates
+a PAT + repo secret, you update the workflow to reference it, then
+`gh workflow run pages.yml --ref main` to get the first PAT-authored push
+through.
 
 ## What NOT to do
 

@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -32,6 +32,9 @@ jobs:
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Must be a PAT, not secrets.GITHUB_TOKEN — GitHub does not run the
+          # Pages build for pushes made with the default token. See SKILL.md
+          # Step 4a / Troubleshooting for why and how to create this secret.
+          github_token: ${{ secrets.PAGES_DEPLOY_TOKEN }}
           publish_dir: ./_site
           publish_branch: gh-pages

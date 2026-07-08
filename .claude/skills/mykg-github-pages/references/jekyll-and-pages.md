@@ -59,6 +59,38 @@ silently does not serve the `gh-pages` content, and a follow-up `GET` shows
 `source.branch` reverted away from `gh-pages`. The only symptom is the live
 URL 404ing. See "Build logs" below for how to confirm the fix.
 
+## `GITHUB_TOKEN` pushes don't trigger a Pages build (second cause of the same symptom)
+
+A separate, unrelated bug produces the exact same visible symptom as the
+`build_type` mismatch above (green Actions run, valid `gh-pages` content,
+correct `source`/`build_type`, live URL 404s, `status` stuck `null`
+indefinitely) — so don't assume a 404 is always the `build_type` issue.
+
+GitHub's documented behavior: **commits pushed by a GitHub Actions workflow
+using the default `secrets.GITHUB_TOKEN` do not trigger downstream GitHub
+automation**, including a Pages build watching the target branch. This is a
+deliberate anti-recursion safeguard (from GitHub's Actions security docs),
+not a bug in this skill's workflow — but it's easy to miss because the
+`peaceiris/actions-gh-pages` step itself succeeds and genuinely does push
+real content to `gh-pages`. Pages just never notices the push happened.
+
+**Fix**: the deploy step's `github_token` input must reference a Personal
+Access Token stored as a repo secret, not `secrets.GITHUB_TOKEN`. The
+bundled `assets/pages.yml` template uses `secrets.PAGES_DEPLOY_TOKEN` — see
+SKILL.md Step 4a for the full flow (the user creates the PAT and adds the
+secret; do not generate credentials on their behalf).
+
+**How to tell the two causes apart**, since the symptom is identical:
+- `gh api repos/{owner}/{repo}/pages --jq '{source, build_type}'` — if
+  `build_type` is `"workflow"` or `source.branch` isn't `gh-pages`, it's the
+  `build_type` bug (previous section).
+- If that already looks correct, `grep github_token
+  .github/workflows/pages.yml` — if it says `secrets.GITHUB_TOKEN`, it's
+  this bug.
+- Both can theoretically be true at once on a sufficiently mangled setup;
+  fix `build_type` first (cheap, no new credential needed), re-check, then
+  address the token if the site still 404s.
+
 ## Why the site source is a dedicated `pages/` folder
 
 Publishing straight from a general-purpose folder (whatever it's named)
@@ -142,7 +174,11 @@ Two different failure surfaces exist and it's easy to check the wrong one:
   404s, re-check `gh api repos/{owner}/{repo}/pages --jq '{source,
   build_type}'` first — a `build_type: "workflow"` misconfiguration (Pages
   never even looking at `gh-pages`) is a more common cause than an actual
-  deploy failure.
+  deploy failure. If that's already correct, check whether the deploy step
+  uses `secrets.GITHUB_TOKEN` instead of a PAT — see the dedicated section
+  above; an empty `builds` array (`gh api .../pages/builds --jq '.'` returns
+  `[]`) even after multiple successful Actions runs is the fingerprint of
+  this case, since Pages never even queued a build off any of those pushes.
 
 ## Jekyll front-matter gotcha
 
