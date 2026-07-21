@@ -105,6 +105,12 @@ def activate_profile(profile_name: str, model: str | None = None) -> None:
     rebuilt from the selected profile — exactly as if ``profile: <name>`` were set
     in mykg_config.yaml. It never writes to disk.
 
+    Process-global and single-threaded by design: it mutates ``os.environ`` and
+    reloads this module, so it must not be called concurrently from multiple
+    threads with different profiles (they would race on the env vars and the
+    reload, yielding constants mixed across profiles). It is intended for the
+    one-shot CLI flow, where a single call precedes all config reads.
+
     Raises ``ValueError`` if the profile is not declared in ``profiles:``.
     """
     profiles = _load().get("profiles", {})
