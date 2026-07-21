@@ -11,9 +11,25 @@ when it constructs LLM adapters.
 
 from __future__ import annotations
 
+import importlib
+import os
+import sys
 from pathlib import Path
 
 import yaml
+
+# ---------------------------------------------------------------------------
+# Run-only profile/model overrides (set by the CLI --profile / --model flags).
+#
+# These live in os.environ rather than module globals because activate_profile()
+# re-resolves the whole module via importlib.reload(), which re-executes the
+# module body and would reset any plain module global back to its default. The
+# environment survives the reload, so _apply_profile() can read the override on
+# the reloaded copy. They are never written to mykg_config.yaml — the on-disk
+# config is untouched.
+# ---------------------------------------------------------------------------
+_PROFILE_OVERRIDE_ENV = "MYKG_PROFILE_OVERRIDE"
+_MODEL_OVERRIDE_ENV = "MYKG_MODEL_OVERRIDE"
 
 # ---------------------------------------------------------------------------
 # Locate and load mykg_config.yaml
@@ -45,7 +61,8 @@ def _apply_profile(raw: dict) -> dict:
     `pipeline` block. The active profile replaces the top-level values entirely;
     there is no merging with a base pipeline section.
     """
-    profile_name = raw.get("profile")
+    # A run-only --profile override (set by the CLI) wins over the YAML profile:.
+    profile_name = os.environ.get(_PROFILE_OVERRIDE_ENV) or raw.get("profile")
     if not profile_name:
         return raw
     profiles = raw.get("profiles", {})
@@ -70,7 +87,52 @@ def _apply_profile(raw: dict) -> dict:
         result["agent"] = profile["agent"]
     if "mcp" in profile:
         result["mcp"] = profile["mcp"]
+
+    # A run-only --model override replaces just the model inside the resolved llm block.
+    model_override = os.environ.get(_MODEL_OVERRIDE_ENV)
+    if model_override and "llm" in result:
+        result["llm"] = {**result["llm"], "model": model_override}
+
     return result
+
+
+def activate_profile(profile_name: str, model: str | None = None) -> None:
+    """Re-resolve every config constant against ``profile_name`` for this run only.
+
+    This is the backing implementation of ``extract-graph --profile/--model``. It
+    records the override in the environment, then reloads this module so the whole
+    flat block of constants (RAW, PASS2_MAX_WORKERS, chunking, timeouts, …) is
+    rebuilt from the selected profile — exactly as if ``profile: <name>`` were set
+    in mykg_config.yaml. It never writes to disk.
+
+    Process-global and single-threaded by design: it mutates ``os.environ`` and
+    reloads this module, so it must not be called concurrently from multiple
+    threads with different profiles (they would race on the env vars and the
+    reload, yielding constants mixed across profiles). It is intended for the
+    one-shot CLI flow, where a single call precedes all config reads.
+
+    Raises ``ValueError`` if the profile is not declared in ``profiles:``.
+    """
+    profiles = _load().get("profiles", {})
+    if profile_name not in profiles:
+        raise ValueError(
+            f"Profile '{profile_name}' not found in mykg_config.yaml. "
+            f"Available profiles: {list(profiles.keys())}"
+        )
+    os.environ[_PROFILE_OVERRIDE_ENV] = profile_name
+    if model:
+        os.environ[_MODEL_OVERRIDE_ENV] = model
+    else:
+        os.environ.pop(_MODEL_OVERRIDE_ENV, None)
+    try:
+        importlib.reload(sys.modules[__name__])
+    finally:
+        # The reloaded module has already baked the override into its constants,
+        # so the env vars have done their job. Clear them so an unrelated later
+        # reload (e.g. an embedded second run in the same process) falls back to
+        # the YAML-default profile instead of silently re-applying this override.
+        os.environ.pop(_PROFILE_OVERRIDE_ENV, None)
+        os.environ.pop(_MODEL_OVERRIDE_ENV, None)
 
 
 CONFIG_PATH: Path = _find_config()
