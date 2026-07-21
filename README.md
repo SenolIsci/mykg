@@ -31,6 +31,11 @@
 - [Command line](#command-line)
 - [Articles & Tutorials](#articles--tutorials)
 - [Configuration](#configuration)
+- [Troubleshooting](#troubleshooting)
+  - [Token Budgets](#token-budgets)
+  - [Diagnosing Truncated/Rejected LLM Calls](#diagnosing-truncatedrejected-llm-calls)
+  - [Pass 2 Prep Mode](#pass-2-prep-mode-pass2prep_mode)
+  - [Hitting API Rate Limits (HTTP 429)](#hitting-api-rate-limits-http-429)
 - [Extract Pipeline](#extract-pipeline)
   - [Running](#running)
   - [Sessions](#sessions)
@@ -212,6 +217,27 @@ The wizard walks you through three prompts:
 
 Switch provider by setting `profile:` at the top of [`mykg_config.yaml`](mykg_config.yaml).
 
+### API Keys
+
+myKG reads API keys from environment variables. Set them by exporting directly or by creating a `.env.mykg` file in your project directory (loaded automatically on startup).
+
+**Option A — export in your shell:**
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+**Option B — create a `.env.mykg` file:**
+
+```bash
+# .env.mykg
+ANTHROPIC_API_KEY=sk-ant-...
+```
+For source installs you can also copy [`sample.env.mykg`](sample.env.mykg) to `.env.mykg` as a starting template.
+
+
+## Troubleshooting
+
 ### Token Budgets
 
 Each profile's `llm:` and `pipeline:` blocks carry a chain of token-budget values sized for that model's context window:
@@ -254,7 +280,13 @@ See [docs/architecture.md](docs/architecture.md#choosing-a-prep-mode) for the fu
 
 ### Hitting API Rate Limits (HTTP 429)
 
-If you see repeated `429` errors during `pass1`, `pass2`, or the orphan-connection pass, your account's requests-per-minute limit is lower than the number of concurrent calls mykg is making. Each profile sets these independently under `pipeline:`:
+A `429` surfaces in the log as a retry warning like:
+
+```
+[WARNING] mykg.llm.retry — OpenAI 429 rate-limit (attempt 1/5) — retrying in 2.0s
+```
+
+`429` is a "Too Many Requests" error. If you see repeated `429` errors during `pass1`, `pass2`, or the orphan-connection pass, your account's requests-per-minute limit is lower than the number of concurrent calls mykg is making. Each profile sets these independently under `pipeline:`:
 
 - `pass1.max_workers` — concurrent schema-induction batch calls
 - `pass2.max_workers` — concurrent per-file extraction calls
@@ -262,23 +294,7 @@ If you see repeated `429` errors during `pass1`, `pass2`, or the orphan-connecti
 
 Lower these (e.g. from `8` down to `2`–`4`) in the active profile to reduce concurrent requests. This is especially likely on `openrouter-free` (free-tier models have very low per-minute caps) and on lower-tier `anthropic-claude`/`openai` accounts. `llm.retry_429_max` / `llm.retry_429_base_delay` control automatic backoff on a 429, but a persistent 429 is a signal to reduce `max_workers`, not just retry harder. `claude-cli` is unaffected — it is serial by design (`max_workers: 1`); it doesn't hit API rate limits since there's no API call. `agent-claude-code` is not API rate-limited either (no API key involved), but it is not serial — its default profile sets `pass1`/`pass2`/`orphan_pass` `max_workers` > 1 (configurable, like any other profile), since the skill dispatches multiple subagents per wave.
 
-### API Keys
-
-myKG reads API keys from environment variables. Set them by exporting directly or by creating a `.env.mykg` file in your project directory (loaded automatically on startup).
-
-**Option A — export in your shell:**
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-```
-
-**Option B — create a `.env.mykg` file:**
-
-```bash
-# .env.mykg
-ANTHROPIC_API_KEY=sk-ant-...
-```
-For source installs you can also copy [`sample.env.mykg`](sample.env.mykg) to `.env.mykg` as a starting template.
+**Also check your quota/credits.** Some providers return `429` when your account has exhausted its token quota or spending balance, not only for request cadence. If lowering `max_workers` doesn't help and the 429s persist from the very first call, **check that your account still has available tokens/credits** (e.g. the OpenAI/Anthropic billing dashboard, or your OpenRouter balance). No `max_workers` value will clear a 429 caused by a depleted balance — top up or switch to a profile with quota (e.g. `ollama-local` for local inference, or `claude-cli` which bills via your Claude Pro/Max plan instead of the API).
 
 
 ## Extract Pipeline
