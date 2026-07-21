@@ -9,6 +9,8 @@ profile: openai
 # ---------------------------------------------------------------------------
 # Profiles — each is fully self-contained: provider, credentials, and pipeline.
 # Set `profile:` above to activate one.
+# Or override per run without editing this file:
+#   mykg extract-graph <dir> --profile <name> [--model <model>]
 # ---------------------------------------------------------------------------
 profiles:
 
@@ -105,7 +107,7 @@ profiles:
         batch_token_target: 32000  # MUST stay ≤ context_window − max_output_tokens
         max_workers: 8
         per_file_batching: false  # set true for Option B: one batch per source file
-        max_schema_proposals: 50  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
+        max_schema_proposals: 25  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
         random_seed: 0  # fixed seed for deterministic batch sampling when batches exceed max_schema_proposals; scoped per-call, not shared across repeated Pass 1 invocations
       # --- Pass 2: instance extraction ----------------------------------------
       pass2:
@@ -127,7 +129,7 @@ profiles:
         top_k_per_orphan: 5     # max candidate connected nodes considered per orphan in Stage 1 scoring
         confidence_base: 0.5    # starting confidence for an inferred orphan edge before weighting
         confidence_weight: 0.5  # multiplier applied to co-occurrence frequency when computing final orphan edge confidence
-        max_workers: 8
+        max_workers: 4
         schema_max_restarts: 0  # max times the pipeline may restart Pass 2 after orphan_connect proposes new schema properties
         excerpt_window: 4000     # character window around an orphan mention used as LLM context in Stage 2
         excerpt_context: 1500    # characters of surrounding context added before/after the excerpt_window
@@ -278,13 +280,13 @@ profiles:
       # --- Pass 1: schema induction -------------------------------------------
       pass1:
         batch_token_target: 32000  # conservative; MUST stay ≤ context_window − max_output_tokens
-        max_workers: 8
+        max_workers: 4
         per_file_batching: false
-        max_schema_proposals: 50  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
+        max_schema_proposals: 25  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
         random_seed: 0  # fixed seed for deterministic batch sampling when batches exceed max_schema_proposals; scoped per-call, not shared across repeated Pass 1 invocations
       # --- Pass 2: instance extraction ----------------------------------------
       pass2:
-        max_workers: 8
+        max_workers: 4
         stateful_chunks: true
         prep_mode: batch_chunks                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
         concat_batch_token_target: 32000  # target token budget per virtual batch; used when prep_mode=concat
@@ -302,7 +304,7 @@ profiles:
         top_k_per_orphan: 5
         confidence_base: 0.5
         confidence_weight: 0.5
-        max_workers: 8
+        max_workers: 4
         schema_max_restarts: 0
         excerpt_window: 4000
         excerpt_context: 1500
@@ -454,7 +456,7 @@ profiles:
         batch_token_target: 32000  # conservative; MUST stay ≤ context_window − max_output_tokens
         max_workers: 1          # claude-cli is serial — 1 worker only
         per_file_batching: false  # set true for Option B: one batch per source file
-        max_schema_proposals: 50  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
+        max_schema_proposals: 25  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
         random_seed: 0  # fixed seed for deterministic batch sampling when batches exceed max_schema_proposals; scoped per-call, not shared across repeated Pass 1 invocations
       # --- Pass 2: instance extraction ----------------------------------------
       pass2:
@@ -633,13 +635,13 @@ profiles:
       # --- Pass 1: schema induction -------------------------------------------
       pass1:
         batch_token_target: 32000  # conservative; MUST stay ≤ context_window − max_output_tokens
-        max_workers: 8
+        max_workers: 4
         per_file_batching: false
-        max_schema_proposals: 50  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
+        max_schema_proposals: 25  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
         random_seed: 0  # fixed seed for deterministic batch sampling when batches exceed max_schema_proposals; scoped per-call, not shared across repeated Pass 1 invocations
       # --- Pass 2: instance extraction ----------------------------------------
       pass2:
-        max_workers: 8
+        max_workers: 4
         stateful_chunks: true
         prep_mode: batch_chunks             # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
         concat_batch_token_target: 32000  # target token budget per virtual batch; used when prep_mode=concat
@@ -657,7 +659,7 @@ profiles:
         top_k_per_orphan: 5
         confidence_base: 0.5
         confidence_weight: 0.5
-        max_workers: 8
+        max_workers: 4
         schema_max_restarts: 0
         excerpt_window: 4000
         excerpt_context: 1500
@@ -810,7 +812,7 @@ profiles:
         batch_token_target: 16000  # doubled; MUST stay ≤ context_window − max_output_tokens
         max_workers: 1              # local GPU can usually handle a small degree of parallelism
         per_file_batching: false
-        max_schema_proposals: 50  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
+        max_schema_proposals: 25  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
         random_seed: 0  # fixed seed for deterministic batch sampling when batches exceed max_schema_proposals; scoped per-call, not shared across repeated Pass 1 invocations
       # --- Pass 2: instance extraction ----------------------------------------
       pass2:
@@ -832,7 +834,7 @@ profiles:
         top_k_per_orphan: 5
         confidence_base: 0.5
         confidence_weight: 0.5
-        max_workers: 8
+        max_workers: 4
         schema_max_restarts: 0
         excerpt_window: 2000
         excerpt_context: 500
@@ -982,7 +984,7 @@ profiles:
         batch_token_target: 15000
         max_workers: 2                # the skill dispatches up to this many subagents per wave
         per_file_batching: false
-        max_schema_proposals: 50  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
+        max_schema_proposals: 25  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
         random_seed: 0  # fixed seed for deterministic batch sampling when batches exceed max_schema_proposals; scoped per-call, not shared across repeated Pass 1 invocations
       pass2:
         max_workers: 2

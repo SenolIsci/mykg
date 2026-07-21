@@ -607,18 +607,30 @@ def _print_next_steps(
     "shards (plain 'pass1' wipes those shards for a full re-dispatch instead).",
 )
 @click.option(
+    "--profile",
+    default=None,
+    help="LLM profile from mykg_config.yaml to use for THIS run only "
+    "(the config file is not modified). Re-resolves all profile params "
+    "— provider, model, workers, timeouts — from the selected profile.",
+)
+@click.option(
+    "--model",
+    default=None,
+    help="Model name to use for this run only. Requires --profile.",
+)
+@click.option(
     "--workers",
-    default=lambda: _cfg().PASS2_MAX_WORKERS,
+    default=None,
     type=int,
-    show_default=True,
-    help="Number of parallel workers for Pass 2",
+    help="Number of parallel workers for Pass 2 "
+    "(default: pass2.max_workers from the active/selected profile)",
 )
 @click.option(
     "--confidence-agg",
-    default=lambda: _cfg().ASSEMBLY_CONFIDENCE_AGG,
+    default=None,
     type=click.Choice(["mean", "max"]),
-    show_default=True,
-    help="How to aggregate confidence scores when deduplicating",
+    help="How to aggregate confidence scores when deduplicating "
+    "(default: assembly.confidence_agg from the active/selected profile)",
 )
 @click.option(
     "--append",
@@ -678,6 +690,8 @@ def extract_graph(
     thesaurus,
     review,
     from_step,
+    profile,
+    model,
     workers,
     confidence_agg,
     append,
@@ -696,6 +710,26 @@ def extract_graph(
 
     if grow_schema:
         append = True
+
+    # Run-only --profile / --model override. Must run before any _cfg() read,
+    # load_adapter(), or the workers default below, so the whole config module
+    # is re-resolved against the selected profile first. Never touches the YAML.
+    if model and not profile:
+        raise click.ClickException("--model requires --profile.")
+    if profile:
+        from mykg import config as _config_mod
+
+        try:
+            _config_mod.activate_profile(profile, model)
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+
+    # Default workers / confidence-agg to the (possibly overridden) profile's
+    # values; an explicit --workers N / --confidence-agg still wins.
+    if workers is None:
+        workers = _cfg().PASS2_MAX_WORKERS
+    if confidence_agg is None:
+        confidence_agg = _cfg().ASSEMBLY_CONFIDENCE_AGG
 
     if freeze_schema:
         if not base_schema:

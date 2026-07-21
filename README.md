@@ -27,8 +27,8 @@
 ## Contents
 
 - [Features](#features)
-- [Command line](#command-line)
 - [Quick Start](#quick-start)
+- [Command line](#command-line)
 - [Articles & Tutorials](#articles--tutorials)
 - [Configuration](#configuration)
 - [Extract Pipeline](#extract-pipeline)
@@ -63,16 +63,17 @@
 MyKG builds trustworthy knowledge graphs through a self-evolving ontology that continuously adapts, maintains consistency, and assigns confidence scores to knowledge, keeping information grounded and reliable as it grows.
 
 ### Ontology-Guided Extraction
-
 - **Schema-guided knowledge graph generation** — the extracted graph is always grounded in a formal RDFS/OWL schema: concept types, property names, domain/range constraints, and the is-a hierarchy are explicit and inspectable before any entity is extracted
+
+- **AI coding assistant friendly** — designed for smooth use alongside AI coding assistants such as [Claude Code](https://claude.ai/code); run extractions, inspect outputs, and iterate on your knowledge graph without leaving your coding environment; see [Using mykg with Claude Code](#using-mykg-with-claude-code)
+- **Second brain for AI coding assistants** — the Obsidian vault output turns your extracted knowledge graph into a directory of wikilinked Markdown notes that any AI coding assistant can read as project context; point Claude Code, Cursor, or Copilot at `output/obsidian_vault/` and ask questions, trace relationships, and get answers grounded in your own documents
+- **MCP server for desktop AI apps** — run `mykg mcp-serve` to expose your knowledge graph via the [Model Context Protocol](https://modelcontextprotocol.io/); integrates with [Claude Desktop](https://claude.ai/download), [Cherry Studio](https://cherry-ai.com), and any MCP-compatible client — 13 query tools let LLMs search entities, explore relationships, find paths, traverse the graph, and read wiki notes directly from your extracted knowledge; see [MCP Server](#mcp-model-context-protocol-server)
+- **Incremental updates** — append new files to an existing session, extracting only what changed. Optionally grow the schema from new documents while preserving existing concepts and properties
 - **Bring your own ontology** — supply a `--base-schema` TTL file (RDFS or OWL) to lock in classes and properties from an existing formal ontology; the LLM expands it with domain-specific concepts but will not rename, remove, or contradict your authoritative vocabulary.Please note that this mechanism is contolled by the LLM, and may not be strictly enforced. Add `--freeze-schema` to skip LLM schema induction entirely and extract from the documents strictly against your ontology verbatim — no surprise types, no invented properties
 - **SKOS thesaurus support** — pass `--thesaurus` to load a SKOS vocabulary; `skos:exactMatch` terms are collapsed silently, `skos:closeMatch` terms trigger a warning — giving the schema merger richer synonym awareness than string matching alone
 - **Verifiable TTL ontology** — after Pass 1, the induced schema is exported as a valid RDFS/OWL Turtle file (`intermediate/schema.ttl`) that can be opened directly in ontology editors such as [Protégé](https://protege.stanford.edu/). The TTL is validated by rdflib (syntax + semantic checks: domain/range refer to declared classes, no conflicting ranges) before any extraction begins
 - **Human-in-the-loop ontology design** — pause after schema induction with `--review`, edit the schema, and resume extraction. Edit `schema.json` directly or refine `schema.ttl` in Protégé and feed it back with `--freeze-schema`
-- **Incremental updates** — append new files to an existing session, extracting only what changed. Optionally grow the schema from new documents while preserving existing concepts and properties
-- **AI coding assistant friendly** — designed for smooth use alongside AI coding assistants such as [Claude Code](https://claude.ai/code); run extractions, inspect outputs, and iterate on your knowledge graph without leaving your coding environment; see [Using mykg with Claude Code](#using-mykg-with-claude-code)
-- **Second brain for AI coding assistants** — the Obsidian vault output turns your extracted knowledge graph into a directory of wikilinked Markdown notes that any AI coding assistant can read as project context; point Claude Code, Cursor, or Copilot at `output/obsidian_vault/` and ask questions, trace relationships, and get answers grounded in your own documents
-- **MCP server for desktop AI apps** — run `mykg mcp-serve` to expose your knowledge graph via the [Model Context Protocol](https://modelcontextprotocol.io/); integrates with [Claude Desktop](https://claude.ai/download), [Cherry Studio](https://cherry-ai.com), and any MCP-compatible client — 13 query tools let LLMs search entities, explore relationships, find paths, traverse the graph, and read wiki notes directly from your extracted knowledge; see [MCP Server](#mcp-model-context-protocol-server)
+
 <p align="center">
   <img src="https://gcore.jsdelivr.net/gh/SenolIsci/mykg@main/docs/diagrams/architecture-sketch.png" width="95%" style="vertical-align:middle;">
 </p>
@@ -106,27 +107,6 @@ MyKG builds trustworthy knowledge graphs through a self-evolving ontology that c
 - **Resumable pipeline** — every stage persists intermediate state; re-enter at any step after a crash or edit
 - **Session isolation** — each run is fully self-contained; inputs, intermediate state, outputs, and logs co-located
 - **Query knowledge graph** — natural-language queries directly against the extracted graph via AI coding assistants such as [Claude Code](https://claude.ai/code).
-
-## Command line
-
-### All Commands
-
-| Command | Purpose |
-|---|---|
-| [`mykg init`](#configuration) | Interactive setup wizard — writes `mykg_config.yaml` and `.env.mykg` |
-| [`mykg extract-graph`](#extract-pipeline) | Run the two-pass extraction pipeline over a directory |
-| `mykg approve-schema` | Write `schema_approved.flag` to unblock the `human_review` gate after editing `schema.json` (used with `--review`, see [Human Review Gate](#human-review-gate---review)) |
-| [`mykg walkthrough`](#walkthrough-report) | Regenerate `walkthrough.md` for an existing session |
-| [`mykg merge-graphs`](#merging-sessions) | Merge two independently-produced sessions into one unified graph |
-| [`mykg parse-docs`](#standalone-document-conversion-mykg-parse-docs) | Standalone MinerU/markdownify document-to-Markdown conversion |
-| [`mykg fetch-web`](#website--repo-fetching-mykg-fetch-web) | Crawl a website or clone a GitHub repo into an `extract-graph`-ready folder |
-| [`mykg mcp-serve`](#mcp-model-context-protocol-server) | Start the MCP server exposing read-only graph query tools |
-
-```
-mykg extract-graph my_notes/        # any directory: .md, .txt, .pdf, .docx, .html, images
-```
-It uses a **two-pass LLM pipeline**: Pass 1 induces a global RDFS/OWL schema from your document corpus; Pass 2 extracts typed entity and relationship instances per file against that schema. Non-Markdown inputs (`.txt .pdf .docx .doc .pptx .xlsx .png .jpg .jpeg .html .htm`) are converted to Markdown automatically before extraction. The result is exported to multiple formats: JSONL for property-graph consumers such as Neo4j, Turtle RDF for OWL toolchains, seven NetworkX formats for graph analysis and visualization, an Obsidian vault — a second brain of wikilinked Markdown notes your AI coding assistant (Claude Code, Cursor, Copilot) can read and reason over directly — and optionally a Neo4j LOAD CSV bundle with a paste-and-run Cypher script for one-step import into Neo4j Browser or `cypher-shell`.
-
 
 ## Quick Start
 
@@ -171,6 +151,27 @@ ollama pull llama3.3
 mykg init
 mykg extract-graph my_notes/
 ```
+
+## Command line
+
+### All Commands
+
+| Command | Purpose |
+|---|---|
+| [`mykg init`](#configuration) | Interactive setup wizard — writes `mykg_config.yaml` and `.env.mykg` |
+| [`mykg extract-graph`](#extract-pipeline) | Run the two-pass extraction pipeline over a directory |
+| `mykg approve-schema` | Write `schema_approved.flag` to unblock the `human_review` gate after editing `schema.json` (used with `--review`, see [Human Review Gate](#human-review-gate---review)) |
+| [`mykg walkthrough`](#walkthrough-report) | Regenerate `walkthrough.md` for an existing session |
+| [`mykg merge-graphs`](#merging-sessions) | Merge two independently-produced sessions into one unified graph |
+| [`mykg parse-docs`](#standalone-document-conversion-mykg-parse-docs) | Standalone MinerU/markdownify document-to-Markdown conversion |
+| [`mykg fetch-web`](#website--repo-fetching-mykg-fetch-web) | Crawl a website or clone a GitHub repo into an `extract-graph`-ready folder |
+| [`mykg mcp-serve`](#mcp-model-context-protocol-server) | Start the MCP server exposing read-only graph query tools |
+
+```
+mykg extract-graph my_notes/        # any directory: .md, .txt, .pdf, .docx, .html, images
+```
+It uses a **two-pass LLM pipeline**: Pass 1 induces a global RDFS/OWL schema from your document corpus; Pass 2 extracts typed entity and relationship instances per file against that schema. Non-Markdown inputs (`.txt .pdf .docx .doc .pptx .xlsx .png .jpg .jpeg .html .htm`) are converted to Markdown automatically before extraction. The result is exported to multiple formats: JSONL for property-graph consumers such as Neo4j, Turtle RDF for OWL toolchains, seven NetworkX formats for graph analysis and visualization, an Obsidian vault — a second brain of wikilinked Markdown notes your AI coding assistant (Claude Code, Cursor, Copilot) can read and reason over directly — and optionally a Neo4j LOAD CSV bundle with a paste-and-run Cypher script for one-step import into Neo4j Browser or `cypher-shell`.
+
 
 ## Articles & Tutorials
 
@@ -309,7 +310,9 @@ Everything else (`.py`, `.json`, `.yaml`, lock files, etc.) is ignored. Hidden d
 | `--append-with-grow-schema` | Like `--append`, but runs a locked Pass 1 over changed files to expand the schema |
 | `--pass1-schema-induction-only` | Run every step before Pass 2 (through `schema_flatten`), then stop — inspect/edit the schema before extracting |
 | `--pass2-kg-extraction-only` | Skip schema induction (requires an existing schema) and extract the full corpus through `validate_graph`. Unlike `--from-step pass2`, always re-derives `flattened_schema.json` first, so a hand-edited schema is picked up |
-| `--workers N` | Parallel workers for Pass 2 |
+| `--profile NAME` | Use a different LLM profile from `mykg_config.yaml` for THIS run only (config file untouched; re-resolves provider/model/workers/timeouts from that profile) |
+| `--model NAME` | Override the model for this run. Requires `--profile` |
+| `--workers N` | Parallel workers for Pass 2 (default: `pass2.max_workers` from the active/selected profile) |
 | `--confidence-agg mean\|max` | Confidence aggregation when deduplicating |
 | `--base-schema PATH` | Locked TBox TTL file (locked classes/properties cannot be changed by the LLM) |
 | `--freeze-schema` | Use `--base-schema` verbatim: skip Pass 1 LLM induction entirely |
@@ -328,6 +331,9 @@ mykg extract-graph my_notes/
 # Resume a session with 4 parallel Pass 2 workers
 mykg extract-graph my_notes/ --session 2026-05-17T18-31-07 --workers 4
 
+# Run once against a different profile/model without editing mykg_config.yaml
+mykg extract-graph my_notes/ --profile openrouter-free --model google/llama-4-maverick
+
 # Pause for schema review after Pass 1
 mykg extract-graph my_notes/ --review
 # → edit mykg_sessions/<name>/intermediate/schema.json
@@ -344,7 +350,18 @@ mykg extract-graph my_notes/ --base-schema ontology/core.ttl
 mykg extract-graph my_notes/ --pass1-schema-induction-only
 # → review/edit mykg_sessions/<name>/intermediate/schema.json
 mykg extract-graph my_notes/ --session <name> --pass2-kg-extraction-only
+
+# Mix models across phases: a strong model for schema induction,
+# a smaller/cheaper one for the laborious Pass 2 extraction
+mykg extract-graph my_notes/ --profile openrouter-free --model google/gemma-4-26b-a4b-it:free --pass1-schema-induction-only
 ```
+
+**Per-run `--profile` / `--model` for phase-specific model selection.** Because
+`--profile` and `--model` override the run without touching `mykg_config.yaml`, you
+can pick a different model for each phase of a two-phase extraction. Schema induction
+(Pass 1) benefits from a strong reasoning model, while the laborious per-file Pass 2
+extraction can run on a smaller, cheaper model — just change `--profile`/`--model`
+between the `--pass1-schema-induction-only` and `--pass2-kg-extraction-only` runs.
 
 ### Sessions
 
