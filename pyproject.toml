@@ -1,6 +1,6 @@
 [project]
 name = "mykg"
-version = "0.3.25"
+version = "0.3.26"
 description = "AI workflow that turns documents into a confidence-scored knowledge graph with an induced RDFS/OWL ontology"
 readme = "README.md"
 license = { text = "MIT" }
