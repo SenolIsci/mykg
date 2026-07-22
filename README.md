@@ -74,6 +74,9 @@ MyKG builds trustworthy knowledge graphs through a self-evolving ontology that c
 - **Second brain for AI coding assistants** — the Obsidian vault output turns your extracted knowledge graph into a directory of wikilinked Markdown notes that any AI coding assistant can read as project context; point Claude Code, Cursor, or Copilot at `output/obsidian_vault/` and ask questions, trace relationships, and get answers grounded in your own documents
 - **MCP server for desktop AI apps** — run `mykg mcp-serve` to expose your knowledge graph via the [Model Context Protocol](https://modelcontextprotocol.io/); integrates with [Claude Desktop](https://claude.ai/download), [Cherry Studio](https://cherry-ai.com), and any MCP-compatible client — 13 query tools let LLMs search entities, explore relationships, find paths, traverse the graph, and read wiki notes directly from your extracted knowledge; see [MCP Server](#mcp-model-context-protocol-server)
 - **Incremental updates** — append new files to an existing session, extracting only what changed. Optionally grow the schema from new documents while preserving existing concepts and properties
+- **Resumable pipeline** — every stage persists intermediate state; re-enter at any step after a crash or edit
+- **Session isolation** — each run is fully self-contained; inputs, intermediate state, outputs, and logs co-located
+- **Cross-session merge** — combine two independently-produced graphs into one unified knowledge graph
 - **Bring your own ontology** — supply a `--base-schema` TTL file (RDFS or OWL) to lock in classes and properties from an existing formal ontology; the LLM expands it with domain-specific concepts but will not rename, remove, or contradict your authoritative vocabulary. Please note that this mechanism is controlled by the LLM, and may not be strictly enforced. Add `--freeze-schema` to skip LLM schema induction entirely and extract from the documents strictly against your ontology verbatim — no surprise types, no invented properties
 - **SKOS thesaurus support** — pass `--thesaurus` to load a SKOS vocabulary; `skos:exactMatch` terms are collapsed silently, `skos:closeMatch` terms trigger a warning — giving the schema merger richer synonym awareness than string matching alone
 - **Verifiable TTL ontology** — after Pass 1, the induced schema is exported as a valid RDFS/OWL Turtle file (`intermediate/schema.ttl`) that can be opened directly in ontology editors such as [Protégé](https://protege.stanford.edu/). The TTL is validated by rdflib (syntax + semantic checks: domain/range refer to declared classes, no conflicting ranges) before any extraction begins
@@ -106,12 +109,6 @@ MyKG builds trustworthy knowledge graphs through a self-evolving ontology that c
 - **Obsidian vault — second brain for AI coding assistants** — every extracted entity becomes a wikilinked Markdown note in `output/obsidian_vault/`; open it in [Obsidian](https://obsidian.md) to navigate the graph with backlinks and Graph View, or point your AI coding assistant (Claude Code, Cursor, Copilot) at the vault folder so it can answer questions, trace relationships, and reason over your knowledge base in natural language
 - **Interactive HTML graph** — node/edge filtering, search, hover popups; opens directly in a browser
 - **Confidence scoring** — every extracted attribute, node, and edge carries a `0.0–1.0` confidence score
-- **Name normalization** — surface-form variants ("Acme Corp", "ACME", "Acme Corporation") resolved to a single canonical node with aliases
-- **Orphan-connection pass** — reconnects isolated nodes via co-occurrence heuristic + LLM confirmation
-- **Cross-session merge** — combine two independently-produced graphs into one unified knowledge graph
-- **Resumable pipeline** — every stage persists intermediate state; re-enter at any step after a crash or edit
-- **Session isolation** — each run is fully self-contained; inputs, intermediate state, outputs, and logs co-located
-- **Query knowledge graph** — natural-language queries directly against the extracted graph via AI coding assistants such as [Claude Code](https://claude.ai/code).
 
 ## Quick Start
 
