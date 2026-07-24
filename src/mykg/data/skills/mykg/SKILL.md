@@ -1,11 +1,11 @@
 ---
 name: mykg
-description: Run mykg knowledge-graph commands inside Claude Code from one slash command `/mykg`. The user describes intent in natural language (extract, append, resume, approve, walkthrough, parse-docs, fetch-web, query); the skill parses intent, builds the right `mykg` CLI command from the live `--help` output, confirms, runs it, and drives the inbox/outbox watch loop for LLM-bearing commands (extract-graph). For read-only queries, prefers MCP tools when the mykg MCP server is online, falling back to reading session files directly. Ensures `.mcp.json` is configured (with user approval). Excludes `mykg init` (interactive shell command) and `mykg merge-graphs` (follow-up planning).
+description: Run mykg knowledge-graph commands inside Claude Code from one slash command `/mykg`. The user describes intent in natural language (extract, append, resume, approve, walkthrough, parse-docs, fetch-web, query); the skill parses intent, builds the right `mykg` CLI command from the live `--help` output, confirms, runs it, and drives the inbox/outbox watch loop for LLM-bearing commands (extract-graph). For read-only queries, prefers MCP tools when the mykg MCP server is online, falling back to reading session files directly, with the `mykg query` CLI as a last-resort fallback. Ensures `.mcp.json` is configured (with user approval). Excludes `mykg init` (interactive shell command) and `mykg merge-graphs` (follow-up planning).
 ---
 
 # mykg — single slash command, intent-driven CLI dispatcher
 
-This skill is the agent-mode driver for **mykg**. The user types `/mykg <free text>` describing what they want; the skill parses the intent, assembles the matching `mykg` CLI command (with live `--help` as ground truth for flags), confirms expensive actions, and executes. For LLM-bearing subcommands (`extract-graph`), it then drives the inbox/outbox watch loop. For synchronous subcommands (`walkthrough`, `approve-schema`, `parse-docs`), it shells out and reports. For the read-only `query` verb, it prefers MCP tools when the mykg MCP server is online, falling back to reading session files directly when MCP is unavailable.
+This skill is the agent-mode driver for **mykg**. The user types `/mykg <free text>` describing what they want; the skill parses the intent, assembles the matching `mykg` CLI command (with live `--help` as ground truth for flags), confirms expensive actions, and executes. For LLM-bearing subcommands (`extract-graph`), it then drives the inbox/outbox watch loop. For synchronous subcommands (`walkthrough`, `approve-schema`, `parse-docs`), it shells out and reports. For the read-only `query` verb, it prefers MCP tools when the mykg MCP server is online, falling back to reading session files directly when MCP is unavailable, with the `mykg query` CLI as a last-resort fallback.
 
 The pipeline code, the orchestrator, all prompts, all 12 pipeline steps, and the inbox/outbox contract are **unchanged**. This skill only changes how `mykg` is invoked from inside Claude Code.
 
@@ -566,11 +566,13 @@ Concrete rules:
 
 **This rule is non-negotiable.** It is better to give a short, accurate, graph-only answer than a rich answer contaminated with ungrounded training-data assertions.
 
-**Routing priority: MCP first, file-read fallback.**
+**Routing priority: MCP first, then file-read, then the `mykg query` CLI as a last resort.**
 
 If `mcp__mykg__*` tools are available in the current session (configured via `.mcp.json`), use them to answer the query. The MCP tools are indexed, return structured JSON, and support graph algorithms (shortest path, hub analysis, traversal, subgraph filtering) that manual file reading cannot do. Pick whichever MCP tool fits the question — the tool names and descriptions are self-documenting.
 
 If MCP tools are not available or the call fails, fall back to reading session files directly as described below.
+
+There is also a terminal command `mykg query "<question>" [--session NAME] [--mode bfs|dfs] [--depth N] [--token-budget N]` that mirrors the MCP `mykg_query_graph` tool: it finds seed nodes matching the question, traverses the graph, and prints a bounded text context of nodes plus relationships. Treat it as a **last-resort fallback** — reach for it only when MCP tools are unavailable *and* the raw session files are too large to read comfortably (e.g. a >50k-edge graph where the jsonl-path guidance below already suggests dropping into Python). It runs on the latest completed session unless `--session` is passed. Because its output is a pre-bundled summary rather than the raw node/edge records, it is **weaker for citation**: when you answer from it, still cite the specific node IDs and edge records it names (they appear in the text block as `(node-id)` and `from-id --[type]--> to-id`), and never let its summarization substitute for the source-attribution discipline above. Prefer MCP or raw file-reads whenever feasible.
 
 **File-read fallback — vault vs. jsonl**
 
