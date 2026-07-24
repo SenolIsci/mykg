@@ -164,6 +164,7 @@ mykg extract-graph my_notes/
 | [`mykg parse-docs`](#standalone-document-conversion-mykg-parse-docs) | Standalone MinerU/markdownify document-to-Markdown conversion |
 | [`mykg fetch-web`](#website--repo-fetching-mykg-fetch-web) | Crawl a website or clone a GitHub repo into an `extract-graph`-ready folder |
 | [`mykg mcp-serve`](#mcp-model-context-protocol-server) | Start the MCP server exposing read-only graph query tools |
+| [`mykg query "<question>"`](#terminal-query-mykg-query) | Query the knowledge graph from the terminal — BFS/DFS traversal from seed nodes matching your question; mirrors the MCP query tool |
 
 ```
 mykg extract-graph my_notes/        # any directory: .md, .txt, .pdf, .docx, .html, images
@@ -980,6 +981,38 @@ The MCP server exposes 14 tools: `mykg_search_nodes`, `mykg_get_node`, `mykg_get
 ```
 
 To default to streamable HTTP, change `transport: streamable_http` in your active profile. CLI flags (`--transport`, `--host`, `--port`) override the config.
+
+### Terminal query (`mykg query`)
+
+```
+mykg query "<question>" [--session NAME] [--mode bfs|dfs] [--depth N] [--token-budget N]
+```
+
+Query the knowledge graph directly from the shell — no MCP server required. `mykg query` finds up to 3 seed nodes matching your question by name, alias, or attribute value, traverses outward through the graph to a bounded depth, and prints a text context window of the visited nodes and the relationships between them. It is the terminal-callable equivalent of the MCP `mykg_query_graph` tool, and it is read-only: it operates on the latest completed session unless `--session` is passed.
+
+- `question` (positional, required) — the free-text query.
+- `--session NAME` — session under `mykg_sessions/`; defaults to the latest completed session (newest dir with `output/nodes.jsonl`).
+- `--mode bfs|dfs` — traversal strategy (default `bfs`).
+- `--depth N` — traversal depth limit (default `2`).
+- `--token-budget N` — approximate token budget bounding the returned context (default `2000`).
+
+```bash
+mykg query "who is Alice" --depth 2
+```
+
+```
+# Knowledge Graph Context: who is Alice
+Seeds: <ids> | Mode: bfs | Depth: 2
+Nodes visited: N | Edges found: M
+
+## Nodes
+- [Type] Name (node-id) conf=0.95 (attr=val, ...)
+
+## Relationships
+- from-id --[edge_type]--> to-id (conf=0.90)
+```
+
+If nothing matches, it prints `No nodes found matching '<question>'. Try mykg_search_nodes for more flexible search.` and exits 0.
 
 ---
 
