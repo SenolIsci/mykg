@@ -1909,6 +1909,46 @@ def _mcp_pid_path() -> Path:
     return d / "mcp-serve.pid"
 
 
+def _resolve_session_root(session: str | None) -> Path:
+    """Resolve a session root from --session (named dir) or the newest completed session.
+
+    Raises click.ClickException with a specific message when no sessions dir,
+    no completed sessions, or the chosen session lacks output/nodes.jsonl.
+    """
+    sessions_root = _sessions_root()
+
+    if session:
+        session_root = sessions_root / session
+    else:
+        if not sessions_root.exists():
+            raise click.ClickException(
+                f"No sessions directory at {sessions_root}. "
+                "Run 'mykg extract-graph <dir>' first."
+            )
+        entries = sorted(
+            [
+                d for d in sessions_root.iterdir()
+                if d.is_dir() and (d / "output" / "nodes.jsonl").exists()
+            ],
+            key=lambda d: d.name,
+        )
+        if not entries:
+            raise click.ClickException(
+                f"No completed sessions found under {sessions_root}. "
+                "Run 'mykg extract-graph <dir>' first."
+            )
+        session_root = entries[-1]
+
+    nodes_path = session_root / "output" / "nodes.jsonl"
+    if not nodes_path.exists():
+        raise click.ClickException(
+            f"Session '{session_root.name}' has no output/nodes.jsonl. "
+            "Is the extraction complete?"
+        )
+
+    return session_root
+
+
 @cli.command("mcp-serve")
 @click.option("--session", default=None, help="Session name under mykg_sessions/; defaults to latest.")
 @click.option(
@@ -1953,36 +1993,7 @@ def mcp_serve(session, transport, host, port, stop):
             "under your active profile, then re-run."
         )
 
-    sessions_root = _sessions_root()
-
-    if session:
-        session_root = sessions_root / session
-    else:
-        if not sessions_root.exists():
-            raise click.ClickException(
-                f"No sessions directory at {sessions_root}. "
-                "Run 'mykg extract-graph <dir>' first."
-            )
-        entries = sorted(
-            [
-                d for d in sessions_root.iterdir()
-                if d.is_dir() and (d / "output" / "nodes.jsonl").exists()
-            ],
-            key=lambda d: d.name,
-        )
-        if not entries:
-            raise click.ClickException(
-                f"No completed sessions found under {sessions_root}. "
-                "Run 'mykg extract-graph <dir>' first."
-            )
-        session_root = entries[-1]
-
-    nodes_path = session_root / "output" / "nodes.jsonl"
-    if not nodes_path.exists():
-        raise click.ClickException(
-            f"Session '{session_root.name}' has no output/nodes.jsonl. "
-            "Is the extraction complete?"
-        )
+    session_root = _resolve_session_root(session)
 
     transport = transport or getattr(cfg, "MCP_TRANSPORT", "stdio")
     host = host or getattr(cfg, "MCP_HOST", "localhost")
@@ -2002,6 +2013,20 @@ def mcp_serve(session, transport, host, port, stop):
         run_server(session_root, transport=transport, host=host, port=port)
     finally:
         pid_path.unlink(missing_ok=True)
+
+
+@cli.command("query")
+@click.argument("question")
+@click.option("--session", default=None, help="Session name under mykg_sessions/; defaults to latest.")
+@click.option("--mode", type=click.Choice(["bfs", "dfs"]), default="bfs", help="Traversal mode.")
+@click.option("--depth", default=2, type=int, help="Traversal depth limit.")
+@click.option("--token-budget", "token_budget", default=2000, type=int, help="Approx token budget for the returned context.")
+def query(question, session, mode, depth, token_budget):
+    """Query the knowledge graph from the terminal (mirrors the MCP query tool)."""
+    session_root = _resolve_session_root(session)
+    from mykg.query import build_query_graph, query_graph
+    qg = build_query_graph(session_root)
+    click.echo(query_graph(qg, question, mode=mode, depth=depth, token_budget=token_budget))
 
 
 def main():
