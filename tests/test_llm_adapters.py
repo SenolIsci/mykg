@@ -1910,3 +1910,107 @@ def test_ollama_context_overflow_url_error_warns_on_standard_logger(caplog):
             adapter.complete("sys", "user")
 
     assert any("context length exceeded" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# AnthropicAdapter — prompt caching
+# ---------------------------------------------------------------------------
+
+
+class _Usage:
+    """Minimal usage object with only the attributes the response carries.
+
+    Using a plain class (not MagicMock) lets a test omit the cache attributes
+    entirely so the adapter's getattr(..., 0) default path is exercised.
+    """
+
+    def __init__(self, input_tokens=10, output_tokens=5, **extra):
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        for k, v in extra.items():
+            setattr(self, k, v)
+
+
+def _anthropic_response(text="{}", usage=None):
+    block = MagicMock()
+    block.text = text
+    resp = MagicMock()
+    resp.content = [block]
+    resp.stop_reason = "end_turn"
+    resp.usage = usage if usage is not None else _Usage()
+    return resp
+
+
+def test_anthropic_adapter_sends_cache_control():
+    """complete() passes top-level cache_control={'type': 'ephemeral'} to messages.create."""
+    with (
+        patch("anthropic.Anthropic") as mock_cls,
+        patch("mykg.llm.anthropic_adapter.record_llm_call"),
+    ):
+        mock_client = MagicMock()
+        mock_cls.return_value = mock_client
+        mock_client.messages.create.return_value = _anthropic_response()
+
+        from mykg.llm.anthropic_adapter import AnthropicAdapter
+
+        adapter = AnthropicAdapter(
+            model="claude-sonnet-4-6", max_tokens=10, timeout=10, api_key="test-key"
+        )
+        adapter.complete("system prompt", "user prompt")
+
+    kwargs = mock_client.messages.create.call_args.kwargs
+    assert kwargs.get("cache_control") == {"type": "ephemeral"}
+    # system stays a plain string — top-level cache_control auto-caches it.
+    assert kwargs.get("system") == "system prompt"
+
+
+def test_anthropic_adapter_reports_cache_usage():
+    """Cache read/creation token counts from usage reach record_llm_call."""
+    usage = _Usage(
+        input_tokens=42,
+        output_tokens=7,
+        cache_read_input_tokens=1234,
+        cache_creation_input_tokens=56,
+    )
+
+    with (
+        patch("anthropic.Anthropic") as mock_cls,
+        patch("mykg.llm.anthropic_adapter.record_llm_call") as mock_record,
+    ):
+        mock_client = MagicMock()
+        mock_cls.return_value = mock_client
+        mock_client.messages.create.return_value = _anthropic_response(usage=usage)
+
+        from mykg.llm.anthropic_adapter import AnthropicAdapter
+
+        adapter = AnthropicAdapter(
+            model="claude-sonnet-4-6", max_tokens=10, timeout=10, api_key="test-key"
+        )
+        adapter.complete("sys", "user")
+
+    kwargs = mock_record.call_args.kwargs
+    assert kwargs.get("cache_read_tokens") == 1234
+    assert kwargs.get("cache_creation_tokens") == 56
+
+
+def test_anthropic_adapter_cache_usage_defaults_to_zero():
+    """When usage lacks the cache attributes, record_llm_call gets 0 (no crash)."""
+    # _Usage() built without the cache attrs — the getattr default path.
+    with (
+        patch("anthropic.Anthropic") as mock_cls,
+        patch("mykg.llm.anthropic_adapter.record_llm_call") as mock_record,
+    ):
+        mock_client = MagicMock()
+        mock_cls.return_value = mock_client
+        mock_client.messages.create.return_value = _anthropic_response(usage=_Usage())
+
+        from mykg.llm.anthropic_adapter import AnthropicAdapter
+
+        adapter = AnthropicAdapter(
+            model="claude-sonnet-4-6", max_tokens=10, timeout=10, api_key="test-key"
+        )
+        adapter.complete("sys", "user")
+
+    kwargs = mock_record.call_args.kwargs
+    assert kwargs.get("cache_read_tokens") == 0
+    assert kwargs.get("cache_creation_tokens") == 0

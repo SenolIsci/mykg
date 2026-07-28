@@ -74,6 +74,10 @@ class AnthropicAdapter(LLMAdapter):
                     system=system,
                     messages=[{"role": "user", "content": user}],
                     timeout=effective_timeout,
+                    # Top-level auto-caching: caches the last cacheable block (the
+                    # run-stable system prompt) so repeated Pass-2 chunk calls in a
+                    # run pay ~0.1x cache reads instead of full-price re-processing.
+                    cache_control={"type": "ephemeral"},
                 )
             except anthropic.APIStatusError as exc:
                 if looks_like_context_exceeded(exc):
@@ -101,13 +105,18 @@ class AnthropicAdapter(LLMAdapter):
             finish_reason = "max_tokens" if message.stop_reason == "max_tokens" else None
             if finish_reason is not None:
                 log_truncated_output("anthropic", self._model, context_label, finish_reason)
+            usage = message.usage
+            cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+            cache_create = getattr(usage, "cache_creation_input_tokens", 0) or 0
             record_llm_call(
                 provider="anthropic",
                 model=self._model,
                 context_label=context_label,
-                input_tokens=message.usage.input_tokens,
-                output_tokens=message.usage.output_tokens,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
                 duration_s=time.monotonic() - t0,
+                cache_read_tokens=cache_read,
+                cache_creation_tokens=cache_create,
                 raw_response=raw,
                 system_prompt=system,
                 user_prompt=user,
