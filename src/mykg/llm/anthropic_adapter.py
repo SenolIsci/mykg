@@ -105,15 +105,20 @@ class AnthropicAdapter(LLMAdapter):
             finish_reason = "max_tokens" if message.stop_reason == "max_tokens" else None
             if finish_reason is not None:
                 log_truncated_output("anthropic", self._model, context_label, finish_reason)
-            usage = message.usage
+            # usage is present on every successful response, but guard against a
+            # None/missing usage so a malformed response can't turn into an
+            # AttributeError here (all four counts fall back to 0).
+            usage = getattr(message, "usage", None)
+            input_tokens = getattr(usage, "input_tokens", 0) or 0
+            output_tokens = getattr(usage, "output_tokens", 0) or 0
             cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
             cache_create = getattr(usage, "cache_creation_input_tokens", 0) or 0
             record_llm_call(
                 provider="anthropic",
                 model=self._model,
                 context_label=context_label,
-                input_tokens=usage.input_tokens,
-                output_tokens=usage.output_tokens,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
                 duration_s=time.monotonic() - t0,
                 cache_read_tokens=cache_read,
                 cache_creation_tokens=cache_create,

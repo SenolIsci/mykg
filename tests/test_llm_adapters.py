@@ -2014,3 +2014,31 @@ def test_anthropic_adapter_cache_usage_defaults_to_zero():
     kwargs = mock_record.call_args.kwargs
     assert kwargs.get("cache_read_tokens") == 0
     assert kwargs.get("cache_creation_tokens") == 0
+
+
+def test_anthropic_adapter_missing_usage_defaults_all_to_zero():
+    """A response with usage=None does not raise; all four counts default to 0."""
+    resp = _anthropic_response()
+    resp.usage = None  # SDK omitted usage entirely
+
+    with (
+        patch("anthropic.Anthropic") as mock_cls,
+        patch("mykg.llm.anthropic_adapter.record_llm_call") as mock_record,
+    ):
+        mock_client = MagicMock()
+        mock_cls.return_value = mock_client
+        mock_client.messages.create.return_value = resp
+
+        from mykg.llm.anthropic_adapter import AnthropicAdapter
+
+        adapter = AnthropicAdapter(
+            model="claude-sonnet-4-6", max_tokens=10, timeout=10, api_key="test-key"
+        )
+        # Must not raise AttributeError even though usage is None.
+        adapter.complete("sys", "user")
+
+    kwargs = mock_record.call_args.kwargs
+    assert kwargs.get("input_tokens") == 0
+    assert kwargs.get("output_tokens") == 0
+    assert kwargs.get("cache_read_tokens") == 0
+    assert kwargs.get("cache_creation_tokens") == 0
