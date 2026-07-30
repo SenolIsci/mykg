@@ -352,14 +352,17 @@ def test_concat_append_detects_only_changed_file(tmp_path, monkeypatch):
 
 class TrackingAdapter(LLMAdapter):
     """MockAdapter that records every completion call so a test can assert
-    whether re-extraction actually happened."""
+    whether re-extraction actually happened, and — via the recorded user
+    prompt / context_label — which file's content was sent."""
 
     def __init__(self, response: str = '{"nodes": [], "edges": []}'):
         self._response = response
-        self.calls: list[str] = []
+        # Each call records both the user prompt (carries the source file's
+        # text in per_file mode) and the context_label (chunk-scoped in pass2).
+        self.calls: list[dict[str, str]] = []
 
     def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
-        self.calls.append(user)
+        self.calls.append({"user": user, "context_label": context_label})
         return self._response
 
     def endpoint_label(self) -> str:
@@ -421,6 +424,15 @@ def test_append_reextracts_modified_file_per_file(tmp_path, monkeypatch):
 
     # The adapter WAS invoked (re-extraction happened) — pre-fix this list is empty.
     assert adapter.calls, "modified file a.md was never re-extracted"
+
+    # Call routing: only the modified file's content (a.md → "Alice.") was sent
+    # to the LLM; the unchanged file's content (b.md → "Bob.") never was — so no
+    # needless LLM cost was incurred for b.md (Invariant 16). context_label in
+    # pass2 is chunk-scoped ("pass2 chunk N"), not filename-scoped, so we route
+    # on the file text carried in the user prompt.
+    prompts = " ".join(c["user"] for c in adapter.calls)
+    assert "Alice." in prompts, "a.md's content was not sent for re-extraction"
+    assert "Bob." not in prompts, "b.md (unchanged) was needlessly re-extracted"
 
     shard_dir = ctx.intermediate_dir / "raw_extractions_shards"
     a_shard = json.loads((shard_dir / "a.md.json").read_text())
@@ -510,6 +522,40 @@ def test_append_evicts_stale_batch_shard_for_changed_file(tmp_path, monkeypatch)
     a_ids = {n["id"] for n in a_shard["data"]["nodes"]}
     assert "fresh-a" in a_ids
     assert "stale-a" not in a_ids
+
+
+def test_append_batch_shard_eviction_tolerates_corrupt_shard(tmp_path, monkeypatch):
+    """A malformed pass2_raw_batches shard must not crash the eviction scan — it
+    is skipped (the except-branch guard) and the run proceeds normally."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS2_PREP_MODE", "batch_chunks")
+
+    ctx = _make_ctx(tmp_path)
+    _seed_two_file_session(ctx, a_node_id="stale-a", b_node_id="keep-b")
+
+    raw_batch_dir = ctx.intermediate_dir / "pass2_raw_batches"
+    raw_batch_dir.mkdir()
+    # Corrupt (non-JSON) shard — the eviction scan must swallow the parse error.
+    (raw_batch_dir / "0000.json").write_text("}{ not json at all")
+
+    fresh_node = {
+        "id": "fresh-a",
+        "type": "Person",
+        "attributes": {"name": {"value": "Fresh", "confidence": 1.0}},
+    }
+    ctx.adapter = TrackingAdapter(response=json.dumps({"nodes": [fresh_node], "edges": []}))
+    ctx.append = True
+    ctx.append_new_files = {"a.md"}
+
+    # Must not raise despite the unreadable shard.
+    run_pass2_step(ctx)
+
+    # a.md was still re-extracted (the corrupt shard didn't block the run).
+    a_shard = json.loads(
+        (ctx.intermediate_dir / "raw_extractions_shards" / "a.md.json").read_text()
+    )
+    assert "fresh-a" in {n["id"] for n in a_shard["data"]["nodes"]}
 
 
 def test_concat_legacy_virtual_shards_migrated(tmp_path, monkeypatch):
