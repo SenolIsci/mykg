@@ -421,12 +421,13 @@ This keeps the graph consistent — instances of a newly-added type appear in BO
 | Prep mode | Modified file re-extracted? | Old nodes fully removed on modify/blank? | Why |
 |---|---|---|---|
 | `per_file` | Yes — its own shard is evicted and re-run | Yes | Each file is its own LLM call and its own shard; no fan-out, so nothing is smeared into a sibling |
-| `batch_chunks` (default) | Yes — its own shard is evicted and re-run | **No (partial)** | The prior batch fanned the file's nodes into every batch sibling's shard; siblings are unchanged, so `--append` does not re-extract them and the node can survive via a sibling shard |
+| `batch_chunks` + `batch_per_file: true` | Yes — its own shard is evicted and re-run | Yes | A batch never mixes files, so there is no fan-out — the file's own shard is the only one carrying its nodes |
+| `batch_chunks` (default, `batch_per_file: false`) | Yes — its own shard is evicted and re-run | **No (partial)** | The prior mixed batch fanned the file's nodes into every batch sibling's shard; siblings are unchanged, so `--append` does not re-extract them and the node can survive via a sibling shard |
 | `concat` | Yes — its own shard is evicted and re-run | **No (partial)** | Same over-attribution as `batch_chunks`: a multi-file virtual batch fans its result to every member shard |
 
 **Deletion is clean in all modes:** removing a source file drops its nodes on the next `--append` — the file no longer contributes and no re-extraction is needed.
 
-To guarantee a modified file's old nodes are fully removed on `--append`, use `per_file` mode, or set `batch_per_file: true` under `batch_chunks` (which keeps a file's chunks from sharing a batch with others). Fully removing the smeared copies inside a mixed batch would require re-extracting the whole batch — deliberately out of scope for the shard-eviction fix. A subsequent full re-extract (`--from-step pass2`) also clears any survivals.
+To guarantee a modified file's old nodes are fully removed on `--append`, use `per_file` mode **or** set `batch_per_file: true` under `batch_chunks` — both keep a file's chunks out of any other file's batch, so there is nothing to smear. Only the mixed-batch modes (`batch_chunks` with `batch_per_file: false`, and `concat`) leave partial survivals; there, a subsequent full re-extract (`--from-step pass2`) clears them. Fully removing the smeared copies *without* re-extracting the whole batch would require re-attributing a mixed batch's result per file — deliberately out of scope for the shard-eviction fix.
 
 ### Assembly and Deduplication
 

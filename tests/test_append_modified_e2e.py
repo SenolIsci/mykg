@@ -191,3 +191,41 @@ def test_append_reextracts_modified_file_shard_batch_chunks(tmp_path, monkeypatc
     assert "person-alice" not in {n["id"] for n in a_after["data"]["nodes"]}, (
         "modified file's own shard was not re-extracted"
     )
+
+
+def test_append_blanked_file_removes_ghost_batch_chunks_per_file(tmp_path, monkeypatch):
+    """batch_chunks + batch_per_file=true: a batch never mixes files, so there is
+    no over-attribution to smear a file's nodes into a sibling's shard. The
+    shard-eviction fix therefore removes a blanked file's nodes from the FINAL
+    graph, exactly like per_file mode — closing the batch_chunks limitation for
+    users who set batch_per_file: true."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS2_PREP_MODE", "batch_chunks")
+    monkeypatch.setattr(cfg, "PASS2_BATCH_PER_FILE", True)
+    monkeypatch.setattr(cfg, "ORPHAN_PASS_ENABLED", False)
+
+    inp = tmp_path / "input"
+    inp.mkdir(parents=True, exist_ok=True)
+    (inp / "a.md").write_text("Alice is a person. ALICE_MARKER", encoding="utf-8")
+    (inp / "b.md").write_text("Bob is a person. BOB_MARKER", encoding="utf-8")
+
+    adapter = ScriptedAdapter()
+    ctx = _make_full_ctx(tmp_path, adapter, append=False)
+    run(STEPS, ctx)
+    ids = _node_ids(ctx.output_dir)
+    assert "person-alice" in ids
+    assert "person-bob" in ids
+
+    (inp / "a.md").write_text("", encoding="utf-8")
+    adapter.a_nodes = []
+
+    ctx2 = _make_full_ctx(tmp_path, adapter, append=True)
+    run(STEPS, ctx2)
+
+    ids_after = _node_ids(ctx2.output_dir)
+    assert "person-alice" not in ids_after, (
+        "ghost: with batch_per_file=true there is no sibling smear, so Alice's "
+        "node must be fully removed after a.md is blanked"
+    )
+    assert "person-bob" in ids_after, "Bob (unchanged file) must remain"
