@@ -369,7 +369,7 @@ After each LLM call, the pipeline validates the response: edges whose type is no
 
 **`concat`** merges small files into virtual batches up to `concat_batch_token_target`. Files below the target are concatenated together; a file that exceeds it stays its own batch. This cuts the number of LLM calls when you have many tiny files that would otherwise waste per-call overhead, and gives the model moderate cross-file context (related files, grouped by directory, in one prompt). Within each virtual batch, chunks still process sequentially when `stateful_chunks` is on. Because shards are real-file-keyed (post the de-virtualization fix), `--append` re-extracts only new/changed files like the other modes — the virtual batching is recomputed per run but unchanged files are skipped via their real-keyed shards.
 
-**`batch_chunks`** (the default) chunks every file first, then packs all chunks across the corpus into token-bounded batches sized to `batch_token_target`, ignoring file boundaries. Every batch is an independent LLM call, so workers stay saturated and a single large file never bottlenecks the run — its chunks simply distribute across batches alongside everyone else's. It also gives the densest extraction (the model sees a full token budget of material per call) and per-file incremental `--append` (only changed files re-extract). The trade-off is provenance: a mixed batch's result is attributed to every member file, so a node's `source_files` may over-list — the assembler's stable-ID/edge-hash dedup collapses the duplication at assembly time, but per-file citation is less precise than `per_file` or `concat`. Set `batch_per_file: true` to keep a file's chunks from sharing a batch with other files when precise provenance matters.
+**`batch_chunks`** (the default) chunks every file first, then packs all chunks across the corpus into token-bounded batches sized to `batch_token_target`, ignoring file boundaries. Every batch is an independent LLM call, so workers stay saturated and a single large file never bottlenecks the run — its chunks simply distribute across batches alongside everyone else's. It also gives the densest extraction (the model sees a full token budget of material per call) and per-file incremental `--append` (only changed files re-extract). The trade-off is provenance: a mixed batch's result is attributed to every member file, so a node's `source_files` may over-list — the assembler's stable-ID/edge-hash dedup collapses the duplication at assembly time, but per-file citation is less precise than `per_file` or `concat` (see *`--append` change-detection limits* below for how this over-attribution also affects re-extraction of modified files). Set `batch_per_file: true` to keep a file's chunks from sharing a batch with other files when precise provenance matters.
 
 As a rough sense of the call-count difference: a small test corpus of five files yields **5 calls** under `per_file`, **2 virtual batches** under `concat`, and **11 batches** under `batch_chunks` (more, smaller, evenly-sized calls that keep all workers busy).
 
@@ -413,6 +413,20 @@ This keeps the graph consistent — instances of a newly-added type appear in BO
 | **`--base-schema` compatible** | Yes | N/A | Yes | No (auto-loads session schema) | Yes |
 | **`--from-step` compatible** | Yes | Yes | Not in same command | Not in same command | N/A (automatic) |
 | **Empty delta behavior** | N/A | N/A | N/A | Collapses to plain `--append` | No restart if no new properties |
+
+### `--append` change-detection limits
+
+`--append` re-extracts new and content-modified files (detected by SHA-256 / content hash) against the frozen schema; unchanged files are skipped via their real-file-keyed shards. When a file's content changes, its own stale shard is evicted so it is re-extracted (rather than silently shadowed by the prior shard). But how completely re-extracting a *modified* file removes its previous nodes depends on the prep mode, because of Pass 2 over-attribution: a mixed batch's single LLM result is fanned out to **every** member file's shard, so a file's nodes also live in its batch siblings' shards.
+
+| Prep mode | Modified file re-extracted? | Old nodes fully removed on modify/blank? | Why |
+|---|---|---|---|
+| `per_file` | Yes — its own shard is evicted and re-run | Yes | Each file is its own LLM call and its own shard; no fan-out, so nothing is smeared into a sibling |
+| `batch_chunks` (default) | Yes — its own shard is evicted and re-run | **No (partial)** | The prior batch fanned the file's nodes into every batch sibling's shard; siblings are unchanged, so `--append` does not re-extract them and the node can survive via a sibling shard |
+| `concat` | Yes — its own shard is evicted and re-run | **No (partial)** | Same over-attribution as `batch_chunks`: a multi-file virtual batch fans its result to every member shard |
+
+**Deletion is clean in all modes:** removing a source file drops its nodes on the next `--append` — the file no longer contributes and no re-extraction is needed.
+
+To guarantee a modified file's old nodes are fully removed on `--append`, use `per_file` mode, or set `batch_per_file: true` under `batch_chunks` (which keeps a file's chunks from sharing a batch with others). Fully removing the smeared copies inside a mixed batch would require re-extracting the whole batch — deliberately out of scope for the shard-eviction fix. A subsequent full re-extract (`--from-step pass2`) also clears any survivals.
 
 ### Assembly and Deduplication
 

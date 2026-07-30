@@ -350,6 +350,168 @@ def test_concat_append_detects_only_changed_file(tmp_path, monkeypatch):
     assert not any(k.startswith("concat_batch_") for k in raw)
 
 
+class TrackingAdapter(LLMAdapter):
+    """MockAdapter that records every completion call so a test can assert
+    whether re-extraction actually happened."""
+
+    def __init__(self, response: str = '{"nodes": [], "edges": []}'):
+        self._response = response
+        self.calls: list[str] = []
+
+    def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        self.calls.append(user)
+        return self._response
+
+    def endpoint_label(self) -> str:
+        return "tracking"
+
+
+def _seed_two_file_session(ctx: PipelineContext, *, a_node_id: str, b_node_id: str) -> None:
+    """Write schema/flattened schema + two per-file shards (a.md, b.md) each
+    carrying a known node, plus a matching manifest. Models a completed prior run."""
+    _write_schema(ctx)
+    (ctx.intermediate_dir / "flattened_schema.json").write_text(
+        json.dumps({"Person": ["name"], "Organization": ["name"]})
+    )
+    (ctx.intermediate_dir / "file_manifest.json").write_text(
+        json.dumps({"a.md": "Alice.", "b.md": "Bob."})
+    )
+    shard_dir = ctx.intermediate_dir / "raw_extractions_shards"
+    chunk_shard_dir = ctx.intermediate_dir / "chunk_index_shards"
+    shard_dir.mkdir()
+    chunk_shard_dir.mkdir()
+    for fname, nid in (("a.md", a_node_id), ("b.md", b_node_id)):
+        (shard_dir / f"{fname}.json").write_text(
+            json.dumps(
+                {
+                    "_fname": fname,
+                    "data": {"nodes": [{"id": nid, "type": "Person"}], "edges": []},
+                }
+            )
+        )
+        (chunk_shard_dir / f"{fname}.json").write_text(
+            json.dumps({"_fname": fname, "data": {"1": [nid]}})
+        )
+
+
+def test_append_reextracts_modified_file_per_file(tmp_path, monkeypatch):
+    """A MODIFIED file (in append_new_files) must be re-extracted, not skipped.
+
+    Regression test: before the fix, the modified file's stale shard survived,
+    landed in `skip`, and the file was never re-sent to the LLM — its old
+    nodes/edges persisted as ghosts."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS2_PREP_MODE", "per_file")
+
+    ctx = _make_ctx(tmp_path)
+    _seed_two_file_session(ctx, a_node_id="stale-a", b_node_id="keep-b")
+    # a.md was modified (blanked); the adapter now returns a DIFFERENT node set.
+    fresh_node = {
+        "id": "fresh-a",
+        "type": "Person",
+        "attributes": {"name": {"value": "Fresh", "confidence": 1.0}},
+    }
+    adapter = TrackingAdapter(response=json.dumps({"nodes": [fresh_node], "edges": []}))
+    ctx.adapter = adapter
+    ctx.append = True
+    ctx.append_new_files = {"a.md"}
+
+    run_pass2_step(ctx)
+
+    # The adapter WAS invoked (re-extraction happened) — pre-fix this list is empty.
+    assert adapter.calls, "modified file a.md was never re-extracted"
+
+    shard_dir = ctx.intermediate_dir / "raw_extractions_shards"
+    a_shard = json.loads((shard_dir / "a.md.json").read_text())
+    a_ids = {n["id"] for n in a_shard["data"]["nodes"]}
+    # a.md's shard now reflects the fresh extraction, and the ghost is gone.
+    assert "fresh-a" in a_ids
+    assert "stale-a" not in a_ids
+
+    # b.md (unchanged, not in append_new_files) is untouched.
+    b_shard = json.loads((shard_dir / "b.md.json").read_text())
+    assert {n["id"] for n in b_shard["data"]["nodes"]} == {"keep-b"}
+
+
+def test_append_leaves_unchanged_file_shard_intact_per_file(tmp_path, monkeypatch):
+    """Only the changed file is re-extracted; an unchanged file's shard is
+    byte-for-byte preserved (no needless LLM cost, Invariant 16)."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS2_PREP_MODE", "per_file")
+
+    ctx = _make_ctx(tmp_path)
+    _seed_two_file_session(ctx, a_node_id="stale-a", b_node_id="keep-b")
+    shard_dir = ctx.intermediate_dir / "raw_extractions_shards"
+    b_before = (shard_dir / "b.md.json").read_bytes()
+
+    ctx.adapter = TrackingAdapter(
+        response=json.dumps({"nodes": [{"id": "fresh-a", "type": "Person"}], "edges": []})
+    )
+    ctx.append = True
+    ctx.append_new_files = {"a.md"}
+
+    run_pass2_step(ctx)
+
+    assert (shard_dir / "b.md.json").read_bytes() == b_before
+
+
+def test_append_evicts_stale_batch_shard_for_changed_file(tmp_path, monkeypatch):
+    """batch_chunks mode: a pass2_raw_batches shard whose source_files includes a
+    changed file must be evicted so _load_existing_raw_batches can't re-inject the
+    pre-change extraction (D57)."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS2_PREP_MODE", "batch_chunks")
+
+    ctx = _make_ctx(tmp_path)
+    _seed_two_file_session(ctx, a_node_id="stale-a", b_node_id="keep-b")
+
+    # Seed a stale batch-composition shard that references a.md.
+    raw_batch_dir = ctx.intermediate_dir / "pass2_raw_batches"
+    raw_batch_dir.mkdir()
+    stale_batch = raw_batch_dir / "0000.json"
+    stale_batch.write_text(
+        json.dumps(
+            {
+                "batch_index": 0,
+                "status": "ok",
+                "chunk_count": 1,
+                "source_files": ["a.md"],
+                "extraction": {"nodes": [{"id": "stale-a", "type": "Person"}], "edges": []},
+            }
+        )
+    )
+
+    fresh_node = {
+        "id": "fresh-a",
+        "type": "Person",
+        "attributes": {"name": {"value": "Fresh", "confidence": 1.0}},
+    }
+    ctx.adapter = TrackingAdapter(response=json.dumps({"nodes": [fresh_node], "edges": []}))
+    ctx.append = True
+    ctx.append_new_files = {"a.md"}
+
+    run_pass2_step(ctx)
+
+    # The pre-change batch shard must not have been reused to re-inject the stale
+    # extraction. (The batch is re-dispatched, so a fresh 0000.json may be written
+    # — the invariant is that its content is NOT the pre-change extraction.)
+    if stale_batch.exists():
+        rewritten = json.loads(stale_batch.read_text())
+        ids = {n.get("id") for n in rewritten.get("extraction", {}).get("nodes", [])}
+        assert "stale-a" not in ids, "pre-change batch extraction was re-injected"
+
+    # a.md was re-extracted afresh; its shard carries the new node, not the ghost.
+    a_shard = json.loads(
+        (ctx.intermediate_dir / "raw_extractions_shards" / "a.md.json").read_text()
+    )
+    a_ids = {n["id"] for n in a_shard["data"]["nodes"]}
+    assert "fresh-a" in a_ids
+    assert "stale-a" not in a_ids
+
+
 def test_concat_legacy_virtual_shards_migrated(tmp_path, monkeypatch):
     """A pre-existing concat_batch_* shard is cleared and the session rebuilds real-keyed."""
     ctx = _concat_ctx(tmp_path, monkeypatch, response='{"nodes": [], "edges": []}')
