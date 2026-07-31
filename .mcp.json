@@ -1,8 +1,14 @@
 {
   "mcpServers": {
     "mykg": {
-      "command": "mykg",
-      "args": ["mcp-serve"]
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/your/project",
+        "run",
+        "mykg",
+        "mcp-serve"
+      ]
     }
   }
 }
