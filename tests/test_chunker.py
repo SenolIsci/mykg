@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from mykg.chunker import chunk_file
+from mykg.chunker import chunk_file, count_tokens, truncate_to_tokens
 
 SIMPLE_MD = """\
 ---
@@ -69,3 +69,24 @@ def test_chunk_fields():
 def test_frontmatter_stripped_from_text():
     chunks = chunk_file("notes.md", SIMPLE_MD)
     assert "title: Test" not in chunks[0].text or "## Section" in chunks[0].text
+
+
+def test_truncate_to_tokens_noop_when_disabled():
+    text = "word " * 3000
+    assert truncate_to_tokens(text, 0) is text
+    assert truncate_to_tokens(text, -1) is text
+
+
+def test_truncate_to_tokens_noop_when_text_fits():
+    text = "Alice works at Acme."
+    # Cap far above the text's token count → returned unchanged.
+    assert truncate_to_tokens(text, 10_000) == text
+
+
+def test_truncate_to_tokens_truncates_when_over_cap():
+    text = "word " * 3000
+    original = count_tokens(text)
+    result = truncate_to_tokens(text, 500)
+    assert count_tokens(result) <= 500
+    assert count_tokens(result) < original
+    assert len(result) < len(text)

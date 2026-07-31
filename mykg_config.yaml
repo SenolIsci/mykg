@@ -114,6 +114,7 @@ profiles:
         max_workers: 8
         stateful_chunks: true   # pass prior-chunk nodes to next chunk so IDs stay stable across chunk boundaries
         prep_mode: batch_chunks                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
+        per_file_token_target: 32000   # token cap per file; used when prep_mode=per_file. Files over this are truncated to the first N tokens. 0 = no cap
         concat_batch_token_target: 32000  # target token budget per virtual batch; used when prep_mode=concat
         batch_token_target: 32000          # token budget per chunk batch; used when prep_mode=batch_chunks
         batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
@@ -289,6 +290,7 @@ profiles:
         max_workers: 4
         stateful_chunks: true
         prep_mode: batch_chunks                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
+        per_file_token_target: 32000   # token cap per file; used when prep_mode=per_file. Files over this are truncated to the first N tokens. 0 = no cap
         concat_batch_token_target: 32000  # target token budget per virtual batch; used when prep_mode=concat
         batch_token_target: 32000         # token budget per chunk batch; used when prep_mode=batch_chunks
         batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
@@ -463,6 +465,7 @@ profiles:
         max_workers: 1          # claude-cli is serial — 1 worker only
         stateful_chunks: true   # pass prior-chunk nodes to next chunk so IDs stay stable across chunk boundaries
         prep_mode: batch_chunks                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
+        per_file_token_target: 32000   # token cap per file; used when prep_mode=per_file. Files over this are truncated to the first N tokens. 0 = no cap
         concat_batch_token_target: 32000  # target token budget per virtual batch; used when prep_mode=concat
         batch_token_target: 32000         # token budget per chunk batch; used when prep_mode=batch_chunks
         batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
@@ -644,6 +647,7 @@ profiles:
         max_workers: 4
         stateful_chunks: true
         prep_mode: batch_chunks             # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
+        per_file_token_target: 32000   # token cap per file; used when prep_mode=per_file. Files over this are truncated to the first N tokens. 0 = no cap
         concat_batch_token_target: 32000  # target token budget per virtual batch; used when prep_mode=concat
         batch_token_target: 32000         # token budget per chunk batch; used when prep_mode=batch_chunks
         batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
@@ -819,6 +823,7 @@ profiles:
         max_workers: 1
         stateful_chunks: true
         prep_mode: batch_chunks                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
+        per_file_token_target: 16000   # token cap per file; used when prep_mode=per_file. Files over this are truncated to the first N tokens. 0 = no cap
         concat_batch_token_target: 16000  # target token budget per virtual batch; used when prep_mode=concat
         batch_token_target: 16000         # token budget per chunk batch; used when prep_mode=batch_chunks
         batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
@@ -990,6 +995,7 @@ profiles:
         max_workers: 2
         stateful_chunks: true
         prep_mode: batch_chunks
+        per_file_token_target: 15000   # token cap per file; used when prep_mode=per_file. Files over this are truncated to the first N tokens. 0 = no cap
         concat_batch_token_target: 15000
         batch_token_target: 15000
         batch_per_file: false

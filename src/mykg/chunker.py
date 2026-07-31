@@ -24,6 +24,22 @@ def count_tokens(text: str) -> int:
     return len(enc.encode(text))
 
 
+def truncate_to_tokens(text: str, max_tokens: int) -> str:
+    """Return text truncated to its first max_tokens tokens.
+
+    No-op when max_tokens <= 0 (cap disabled) or the text already fits. Uses the
+    same configured tiktoken encoding as count_tokens/chunk_file so the token
+    count is consistent across the pipeline.
+    """
+    if max_tokens <= 0:
+        return text
+    enc = tiktoken.get_encoding(_cfg.CHUNK_TIKTOKEN_ENCODING)
+    ids = enc.encode(text)
+    if len(ids) <= max_tokens:
+        return text
+    return enc.decode(ids[:max_tokens])
+
+
 def _strip_frontmatter(text: str) -> str:
     # Remove YAML (---) or TOML (+++) frontmatter blocks
     pattern = r"^(?:---|\+\+\+)\n.*?\n(?:---|\+\+\+)\n"
