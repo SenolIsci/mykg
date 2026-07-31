@@ -268,7 +268,7 @@ Controls how source files are packed into Pass 2 LLM calls (set per profile in `
 
 - **`batch_chunks`** *(default)* — packs chunks across files into token-bounded batches, ignoring file boundaries; best throughput and extraction density.
 - **`concat`** — merges whole small files into directory-grouped batches (one LLM call per window) for cross-file context.
-- **`per_file`** — one file per extraction unit; cleanest provenance (every entity traces to one source file).
+- **`per_file`** — one file per extraction unit; cleanest provenance (every entity traces to one source file). Fully updates a **modified** file on `--append` — its old nodes are cleanly replaced on re-extraction. (`batch_chunks` with `batch_per_file: true` gives the same guarantee; mixed-batch modes may retain stale copies — see [docs/architecture.md](docs/architecture.md#--append-change-detection-limits).)
 
 See [docs/architecture.md](docs/architecture.md#choosing-a-prep-mode) for the full comparison.
 

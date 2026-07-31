@@ -98,6 +98,34 @@ def _run(
         existing_raw = json.loads(raw_path.read_text(encoding="utf-8"))
         existing_chunk = json.loads(chunk_path.read_text(encoding="utf-8")) if chunk_path.exists() else {}
 
+    # --append change-detection: a MODIFIED file (present in append_new_files
+    # because its content hash changed) still has its stale pre-change shard on
+    # disk. Left in existing_raw it would land in `skip` below and never be
+    # re-extracted, so the old content's nodes/edges survive as ghosts. Evict
+    # the per-file shard + in-memory entry for every changed file so modified
+    # files fall back into `todo`. New files have no shard, so eviction is a
+    # harmless no-op for them; unchanged files are never in append_new_files.
+    if ctx.append and ctx.append_new_files:
+        for fname in ctx.append_new_files:
+            existing_raw.pop(fname, None)
+            existing_chunk.pop(fname, None)
+            slug = _fname_slug(fname)
+            (shard_dir / f"{slug}.json").unlink(missing_ok=True)
+            (chunk_shard_dir / f"{slug}.json").unlink(missing_ok=True)
+        # D57: also drop batch-composition shards that touch a changed file, so
+        # _load_existing_raw_batches (batch_chunks mode) can't re-inject the
+        # pre-change extraction for a batch whose (chunk_count, source_files)
+        # fingerprint still matches after the edit.
+        raw_batch_shard_dir = ctx.intermediate_dir / "pass2_raw_batches"
+        if raw_batch_shard_dir.exists():
+            for shard_file in raw_batch_shard_dir.glob("*.json"):
+                try:
+                    entry = json.loads(shard_file.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    continue
+                if set(entry.get("source_files", [])) & ctx.append_new_files:
+                    shard_file.unlink(missing_ok=True)
+
     if ctx.append and ctx.append_new_files is not None:
         todo = {f: _content_from_entry(manifest[f]) for f in ctx.append_new_files if f in manifest}
     else:
