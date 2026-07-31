@@ -328,6 +328,8 @@ def _run(
             on_file_done=_on_file_done,
             skip_files=skip,
             error_gate=ctx.error_gate,
+            intermediate_dir=ctx.intermediate_dir,
+            max_file_tokens=_cfg.PASS2_PER_FILE_TOKEN_TARGET,
         )
 
     if _cfg.PASS2_PREP_MODE != "concat":

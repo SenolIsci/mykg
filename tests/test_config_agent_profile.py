@@ -63,6 +63,27 @@ def test_agent_profile_structurally_matches_root_and_packaged():
     assert set(root["pipeline"].keys()) == set(packaged["pipeline"].keys())
 
 
+def test_all_profiles_pipeline_and_pass2_keys_match_across_yamls():
+    """Invariant 17 — generic guard: every profile's pipeline sub-blocks (and the nested
+    pass2 keys) must be identical between the runtime and packaged YAMLs. The existing
+    agent-only test checks top-level pipeline keys but never descends into pass2, so a key
+    like per_file_token_target added to one file but not the other, or to some profiles only,
+    would slip past it. This closes that gap."""
+    repo_root = Path(__file__).parent.parent
+    root = yaml.safe_load((repo_root / "mykg_config.yaml").read_text())["profiles"]
+    packaged = yaml.safe_load(
+        (repo_root / "src" / "mykg" / "data" / "mykg_config.yaml").read_text()
+    )["profiles"]
+    assert set(root) == set(packaged), "profile sets differ between the two YAML files"
+    for name in root:
+        rp = root[name]["pipeline"]
+        pp = packaged[name]["pipeline"]
+        assert set(rp) == set(pp), f"{name}: pipeline sub-block keys differ"
+        assert set(rp["pass2"]) == set(pp["pass2"]), f"{name}: pass2 keys differ"
+        # The cap key must be present in every profile (both files).
+        assert "per_file_token_target" in rp["pass2"], f"{name}: per_file_token_target missing"
+
+
 def test_agent_constants_exposed_in_config_module():
     assert hasattr(_cfg, "AGENT_INBOX_DIR")
     assert hasattr(_cfg, "AGENT_OUTBOX_DIR")

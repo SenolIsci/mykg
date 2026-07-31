@@ -8,7 +8,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from mykg import config as _cfg
-from mykg.chunker import Chunk, chunk_file
+from mykg.chunker import Chunk, chunk_file, count_tokens, truncate_to_tokens
 from mykg.ids import stable_id as _ids_stable_id
 from mykg.llm.adapter import LLMAdapter
 from mykg.llm.error_gate import ErrorGate, noop_gate
@@ -427,6 +427,7 @@ def run_pass2(
     prior_extractions: dict[str, dict] | None = None,
     prior_chunk_index: dict[str, dict[str, list[str]]] | None = None,
     intermediate_dir: pathlib.Path | None = None,
+    max_file_tokens: int = 0,
 ) -> tuple[dict, dict, list[dict]]:
     """Return (raw_extractions, chunk_node_index, failed_chunks).
 
@@ -440,6 +441,11 @@ def run_pass2(
     failed_chunks: list of {filename, chunk_idx, reason} dicts for chunks skipped due
     to blank/unparseable LLM responses; also written to intermediate_dir/failed_chunks.json
     when intermediate_dir is provided.
+    max_file_tokens: per-file token cap (prep_mode=per_file only). When > 0, a file whose
+    token count exceeds it is truncated to its first max_file_tokens tokens before chunking
+    (tail dropped); the truncation is logged at WARNING and recorded in
+    intermediate_dir/oversized_files.json. 0 (the default) disables the cap — this keeps the
+    concat and surgical schema-gap callers, which never pass it, unaffected.
     """
     if max_workers is None:
         max_workers = _cfg.PASS2_MAX_WORKERS
@@ -449,8 +455,29 @@ def run_pass2(
     results: dict[str, dict] = {}
     chunk_index: dict[str, dict[str, list[str]]] = {}
     failed_log = FailedChunkLog()
+    truncation_lock = threading.Lock()
+    truncated_files: list[dict] = []
 
     def _process_file(filename: str, content: str) -> tuple[str, dict, dict[str, list[str]]]:
+        if max_file_tokens > 0:
+            original_tokens = count_tokens(content)
+            if original_tokens > max_file_tokens:
+                content = truncate_to_tokens(content, max_file_tokens)
+                log.warning(
+                    "  %s — %d tokens exceeds per_file_token_target %d; truncated to first %d tokens",
+                    filename,
+                    original_tokens,
+                    max_file_tokens,
+                    max_file_tokens,
+                )
+                with truncation_lock:
+                    truncated_files.append(
+                        {
+                            "filename": filename,
+                            "original_tokens": original_tokens,
+                            "cap": max_file_tokens,
+                        }
+                    )
         chunks = chunk_file(filename, content)
         target_chunks: set[int] | None = (
             reextract_chunks.get(filename) if reextract_chunks else None
@@ -559,6 +586,17 @@ def run_pass2(
         (intermediate_dir / "failed_chunks.json").write_text(
             json.dumps(failed_entries, indent=_cfg.JSON_INDENT), encoding="utf-8"
         )
+        # Written only when at least one file was truncated (mirrors the "absent when
+        # nothing happened" convention); sorted for deterministic output.
+        if truncated_files:
+            (intermediate_dir / "oversized_files.json").write_text(
+                json.dumps(
+                    sorted(truncated_files, key=lambda r: r["filename"]),
+                    indent=_cfg.JSON_INDENT,
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
 
     return results, chunk_index, failed_entries
 

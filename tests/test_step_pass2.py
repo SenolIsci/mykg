@@ -107,6 +107,53 @@ def test_run_pass2_step_fresh_extraction(tmp_path, monkeypatch):
     assert "doc.md" in raw
 
 
+def test_run_pass2_step_per_file_writes_oversized_manifest(tmp_path, monkeypatch):
+    """per_file mode with a positive per_file_token_target writes oversized_files.json for a
+    file over the cap, and omits it entirely when nothing is truncated."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS2_PREP_MODE", "per_file")
+    monkeypatch.setattr(cfg, "PASS2_PER_FILE_TOKEN_TARGET", 100)
+
+    ctx = _make_ctx(tmp_path)
+    _write_schema(ctx)
+    (ctx.intermediate_dir / "flattened_schema.json").write_text(
+        json.dumps({"Person": ["name"], "Organization": ["name"]})
+    )
+    (ctx.intermediate_dir / "file_manifest.json").write_text(
+        json.dumps({"big.md": "word " * 400, "small.md": "Alice works at Acme."})
+    )
+
+    run_pass2_step(ctx)
+
+    manifest_path = ctx.intermediate_dir / "oversized_files.json"
+    assert manifest_path.exists()
+    manifest = json.loads(manifest_path.read_text())
+    assert [r["filename"] for r in manifest] == ["big.md"]
+    assert manifest[0]["cap"] == 100
+
+
+def test_run_pass2_step_per_file_no_manifest_when_all_fit(tmp_path, monkeypatch):
+    """No oversized_files.json when every file is under the cap."""
+    import mykg.config as cfg
+
+    monkeypatch.setattr(cfg, "PASS2_PREP_MODE", "per_file")
+    monkeypatch.setattr(cfg, "PASS2_PER_FILE_TOKEN_TARGET", 100_000)
+
+    ctx = _make_ctx(tmp_path)
+    _write_schema(ctx)
+    (ctx.intermediate_dir / "flattened_schema.json").write_text(
+        json.dumps({"Person": ["name"], "Organization": ["name"]})
+    )
+    (ctx.intermediate_dir / "file_manifest.json").write_text(
+        json.dumps({"small.md": "Alice works at Acme."})
+    )
+
+    run_pass2_step(ctx)
+
+    assert not (ctx.intermediate_dir / "oversized_files.json").exists()
+
+
 def test_run_pass2_step_skips_shards_already_present(tmp_path, monkeypatch):
     """With existing shards, pass2 skips those files."""
     import mykg.config as cfg
