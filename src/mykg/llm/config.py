@@ -97,6 +97,24 @@ def load_adapter(
             error_gate=error_gate,
         )
 
+    if provider == "gemini":
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        return GeminiAdapter(
+            model=section["model"],
+            max_tokens=section["max_output_tokens"],
+            timeout=section["timeout"],
+            api_key=(
+                section.get("api_key")
+                or os.environ.get("GEMINI_API_KEY")
+                or os.environ.get("GOOGLE_API_KEY")
+            ),
+            thinking_level=section.get("thinking_level", "low"),
+            retry_429_max=section.get("retry_429_max", _cfg.LLM_RETRY_429_MAX),
+            retry_429_base_delay=section.get("retry_429_base_delay", _cfg.LLM_RETRY_429_BASE_DELAY),
+            error_gate=error_gate,
+        )
+
     if provider == "claude-cli":
         from mykg.llm.claude_cli_adapter import ClaudeCLIAdapter
 

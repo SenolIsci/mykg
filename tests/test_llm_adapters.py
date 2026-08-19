@@ -1102,8 +1102,7 @@ def test_openrouter_wall_clock_timeout_raises_timeouterror(monkeypatch):
 
     # record_llm_call should have been invoked with the wall-clock error
     found = any(
-        "wall-clock timeout" in str(c.kwargs.get("error", ""))
-        for c in mock_record.call_args_list
+        "wall-clock timeout" in str(c.kwargs.get("error", "")) for c in mock_record.call_args_list
     )
     assert found, "record_llm_call should record the wall-clock timeout error"
 
@@ -1309,9 +1308,7 @@ def test_anthropic_adapter_context_exceeded_logs_and_reraises():
             adapter.complete("sys", "user")
 
     call_kwargs_list = [c.kwargs for c in mock_record.call_args_list]
-    assert any(
-        "context_length_exceeded" in str(k.get("error", "")) for k in call_kwargs_list
-    )
+    assert any("context_length_exceeded" in str(k.get("error", "")) for k in call_kwargs_list)
 
 
 def test_openai_adapter_truncated_response_logs_finish_reason():
@@ -1387,9 +1384,7 @@ def test_openai_adapter_context_exceeded_logs_and_reraises():
             adapter.complete("sys", "user")
 
     call_kwargs_list = [c.kwargs for c in mock_record.call_args_list]
-    assert any(
-        "context_length_exceeded" in str(k.get("error", "")) for k in call_kwargs_list
-    )
+    assert any("context_length_exceeded" in str(k.get("error", "")) for k in call_kwargs_list)
 
 
 def test_openrouter_adapter_truncated_response_logs_finish_reason():
@@ -1463,9 +1458,7 @@ def test_openrouter_adapter_context_exceeded_marks_error():
             adapter.complete("s", "u")
 
     call_kwargs_list = [c.kwargs for c in mock_record.call_args_list]
-    assert any(
-        "context_length_exceeded" in str(k.get("error", "")) for k in call_kwargs_list
-    )
+    assert any("context_length_exceeded" in str(k.get("error", "")) for k in call_kwargs_list)
 
 
 def test_ollama_adapter_truncated_response_logs_finish_reason():
@@ -1545,9 +1538,7 @@ def test_ollama_adapter_context_exceeded_http_error_logs_and_reraises():
             adapter.complete("sys", "user")
 
     call_kwargs_list = [c.kwargs for c in mock_record.call_args_list]
-    assert any(
-        "context_length_exceeded" in str(k.get("error", "")) for k in call_kwargs_list
-    )
+    assert any("context_length_exceeded" in str(k.get("error", "")) for k in call_kwargs_list)
 
 
 def test_ollama_adapter_context_exceeded_url_error_logs_and_reraises():
@@ -1563,9 +1554,7 @@ def test_ollama_adapter_context_exceeded_url_error_logs_and_reraises():
             adapter.complete("sys", "user")
 
     call_kwargs_list = [c.kwargs for c in mock_record.call_args_list]
-    assert any(
-        "context_length_exceeded" in str(k.get("error", "")) for k in call_kwargs_list
-    )
+    assert any("context_length_exceeded" in str(k.get("error", "")) for k in call_kwargs_list)
 
 
 def test_ollama_adapter_non_context_url_error_not_logged():
@@ -1606,7 +1595,10 @@ def test_anthropic_truncation_warns_on_standard_logger(caplog):
     truncated_response.content = [truncated_block]
     truncated_response.stop_reason = "max_tokens"
 
-    with patch("anthropic.Anthropic") as mock_cls, caplog.at_level("WARNING", logger="mykg.llm.retry"):
+    with (
+        patch("anthropic.Anthropic") as mock_cls,
+        caplog.at_level("WARNING", logger="mykg.llm.retry"),
+    ):
         mock_client = MagicMock()
         mock_cls.return_value = mock_client
         mock_client.messages.create.return_value = truncated_response
@@ -1630,7 +1622,10 @@ def test_anthropic_normal_completion_emits_no_warning(caplog):
     ok_response.content = [ok_block]
     ok_response.stop_reason = "end_turn"
 
-    with patch("anthropic.Anthropic") as mock_cls, caplog.at_level("WARNING", logger="mykg.llm.retry"):
+    with (
+        patch("anthropic.Anthropic") as mock_cls,
+        caplog.at_level("WARNING", logger="mykg.llm.retry"),
+    ):
         mock_client = MagicMock()
         mock_cls.return_value = mock_client
         mock_client.messages.create.return_value = ok_response
@@ -2042,3 +2037,755 @@ def test_anthropic_adapter_missing_usage_defaults_all_to_zero():
     assert kwargs.get("output_tokens") == 0
     assert kwargs.get("cache_read_tokens") == 0
     assert kwargs.get("cache_creation_tokens") == 0
+
+
+# ---------------------------------------------------------------------------
+# GeminiAdapter
+# ---------------------------------------------------------------------------
+
+
+class _GeminiUsage:
+    """usage_metadata stand-in.
+
+    Plain class rather than MagicMock so a test can omit fields entirely and
+    exercise the adapter's absent-field default path. Gemini reports these as
+    present-but-None when a count does not apply, so None is the default here
+    rather than 0.
+    """
+
+    def __init__(
+        self,
+        prompt_token_count=100,
+        candidates_token_count=20,
+        thoughts_token_count=None,
+        cached_content_token_count=None,
+    ):
+        self.prompt_token_count = prompt_token_count
+        self.candidates_token_count = candidates_token_count
+        self.thoughts_token_count = thoughts_token_count
+        self.cached_content_token_count = cached_content_token_count
+
+
+def _gemini_response(text="{}", finish_reason="STOP", usage=None):
+    """Build a generate_content response double.
+
+    finish_reason is an enum in the real SDK, so the double exposes `.name`
+    exactly as FinishReason does.
+    """
+    candidate = MagicMock()
+    candidate.finish_reason = MagicMock()
+    candidate.finish_reason.name = finish_reason
+    resp = MagicMock()
+    resp.candidates = [candidate]
+    resp.text = text
+    resp.usage_metadata = usage if usage is not None else _GeminiUsage()
+    return resp
+
+
+def _gemini_client(response=None, side_effect=None):
+    """Patch google.genai.Client and return (patcher_cm, mock_client)."""
+    mock_client = MagicMock()
+    if side_effect is not None:
+        mock_client.models.generate_content.side_effect = side_effect
+    else:
+        mock_client.models.generate_content.return_value = response or _gemini_response()
+    return mock_client
+
+
+def _api_error(status: int, message: str = "boom"):
+    """Construct a google-genai APIError carrying an HTTP status code."""
+    from google.genai import errors as genai_errors
+
+    exc = genai_errors.APIError.__new__(genai_errors.APIError)
+    Exception.__init__(exc, message)
+    exc.code = status
+    exc.message = message
+    return exc
+
+
+def test_gemini_adapter_complete():
+    """complete() sends system as system_instruction and user as contents."""
+    with patch("google.genai.Client") as mock_cls:
+        mock_client = _gemini_client(_gemini_response(text='{"ok": true}'))
+        mock_cls.return_value = mock_client
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(
+            model="gemini-3.7-flash", max_tokens=4096, timeout=30, api_key="test-key"
+        )
+        result = adapter.complete("system prompt", "user prompt")
+
+    assert result == '{"ok": true}'
+    kwargs = mock_client.models.generate_content.call_args.kwargs
+    assert kwargs["model"] == "gemini-3.7-flash"
+    assert kwargs["contents"] == "user prompt"
+    assert kwargs["config"].system_instruction == "system prompt"
+    assert kwargs["config"].max_output_tokens == 4096
+
+
+def test_gemini_adapter_requests_json_and_thinking_level():
+    """JSON mime type and the configured thinking_level reach the request config."""
+    with patch("google.genai.Client") as mock_cls:
+        mock_client = _gemini_client()
+        mock_cls.return_value = mock_client
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(
+            model="gemini-3.7-flash",
+            max_tokens=4096,
+            timeout=30,
+            api_key="test-key",
+            thinking_level="medium",
+        )
+        adapter.complete("sys", "user")
+
+    config = mock_client.models.generate_content.call_args.kwargs["config"]
+    assert config.response_mime_type == "application/json"
+    # The SDK coerces the string into a ThinkingLevel enum, so compare on value.
+    assert str(config.thinking_config.thinking_level.value).lower() == "medium"
+
+
+def test_gemini_thinking_level_none_omits_thinking_config():
+    """thinking_level=None sends no thinking_config, letting the model decide.
+
+    Kept configurable because thinking tokens are billed as output and drawn from
+    the max_output_tokens allowance; "low" is only a measured default, not a
+    requirement.
+    """
+    with patch("google.genai.Client") as mock_cls:
+        mock_client = _gemini_client()
+        mock_cls.return_value = mock_client
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(
+            model="gemini-3.7-flash",
+            max_tokens=4096,
+            timeout=30,
+            api_key="test-key",
+            thinking_level=None,
+        )
+        adapter.complete("sys", "user")
+
+    assert mock_client.models.generate_content.call_args.kwargs["config"].thinking_config is None
+
+
+def test_gemini_adapter_per_call_max_tokens_override():
+    """A per-call max_tokens overrides the adapter default."""
+    with patch("google.genai.Client") as mock_cls:
+        mock_client = _gemini_client()
+        mock_cls.return_value = mock_client
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(
+            model="gemini-3.7-flash", max_tokens=4096, timeout=30, api_key="test-key"
+        )
+        adapter.complete("sys", "user", max_tokens=99)
+
+    assert mock_client.models.generate_content.call_args.kwargs["config"].max_output_tokens == 99
+
+
+def test_gemini_adapter_forwards_timeout_as_milliseconds():
+    """The configured timeout reaches the SDK, converted from seconds to ms."""
+    with patch("google.genai.Client") as mock_cls:
+        mock_client = _gemini_client()
+        mock_cls.return_value = mock_client
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(
+            model="gemini-3.7-flash", max_tokens=10, timeout=30, api_key="test-key"
+        )
+        adapter.complete("sys", "user")
+        adapter.complete("sys", "user", timeout=7)
+
+    calls = mock_client.models.generate_content.call_args_list
+    assert calls[0].kwargs["config"].http_options.timeout == 30_000
+    # per-call override wins
+    assert calls[1].kwargs["config"].http_options.timeout == 7_000
+
+
+def test_gemini_adapter_raises_without_api_key():
+    """Missing GEMINI_API_KEY and GOOGLE_API_KEY raises a helpful ValueError."""
+    with patch("google.genai.Client"), patch.dict(os.environ, {}, clear=True):
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        with pytest.raises(ValueError, match="GEMINI_API_KEY"):
+            GeminiAdapter(model="gemini-3.7-flash", max_tokens=10, timeout=10)
+
+
+def test_gemini_adapter_falls_back_to_google_api_key():
+    """GOOGLE_API_KEY is accepted when GEMINI_API_KEY is absent."""
+    with (
+        patch("google.genai.Client") as mock_cls,
+        patch.dict(os.environ, {"GOOGLE_API_KEY": "goog-key"}, clear=True),
+    ):
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        GeminiAdapter(model="gemini-3.7-flash", max_tokens=10, timeout=10)
+
+    assert mock_cls.call_args.kwargs["api_key"] == "goog-key"
+
+
+def test_gemini_endpoint_label_includes_model():
+    with patch("google.genai.Client"):
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(model="gemini-3.7-flash", max_tokens=10, timeout=10, api_key="k")
+    label = adapter.endpoint_label()
+    assert "gemini" in label
+    assert "gemini-3.7-flash" in label
+
+
+def test_config_creates_gemini_adapter():
+    """load_adapter dispatches provider 'gemini' and forwards retry settings."""
+    raw = {
+        "provider": "gemini",
+        "llm": {
+            "model": "gemini-3.7-flash",
+            "max_output_tokens": 4096,
+            "timeout": 120,
+            "thinking_level": "high",
+            "retry_429_max": 4,
+            "retry_429_base_delay": 5.0,
+        },
+    }
+    with patch("google.genai.Client"), patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}):
+        from mykg.llm.config import load_adapter
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = load_adapter(_raw=raw)
+
+    assert isinstance(adapter, GeminiAdapter)
+    assert adapter._model == "gemini-3.7-flash"
+    assert adapter._max_tokens == 4096
+    assert adapter._thinking_level == "high"
+    assert adapter._retry_429_max == 4
+    assert adapter._retry_429_base_delay == 5.0
+
+
+def test_gemini_429_retries_and_succeeds():
+    """A 429 is retried and the subsequent success is returned."""
+    with (
+        patch("google.genai.Client") as mock_cls,
+        patch("time.sleep"),
+    ):
+        mock_client = _gemini_client(
+            side_effect=[_api_error(429, "quota"), _gemini_response(text='{"ok":1}')]
+        )
+        mock_cls.return_value = mock_client
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(
+            model="gemini-3.7-flash",
+            max_tokens=10,
+            timeout=10,
+            api_key="k",
+            retry_429_max=2,
+            retry_429_base_delay=0.01,
+        )
+        assert adapter.complete("sys", "user") == '{"ok":1}'
+
+    assert mock_client.models.generate_content.call_count == 2
+
+
+def test_gemini_5xx_is_retried():
+    """A transient 5xx is retried rather than surfaced immediately."""
+    with patch("google.genai.Client") as mock_cls, patch("time.sleep"):
+        mock_client = _gemini_client(
+            side_effect=[_api_error(503, "overloaded"), _gemini_response(text="{}")]
+        )
+        mock_cls.return_value = mock_client
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(
+            model="gemini-3.7-flash",
+            max_tokens=10,
+            timeout=10,
+            api_key="k",
+            retry_429_max=2,
+            retry_429_base_delay=0.01,
+        )
+        adapter.complete("sys", "user")
+
+    assert mock_client.models.generate_content.call_count == 2
+
+
+def test_gemini_400_is_not_retried():
+    """A 400 is a caller error — surfaced immediately, never retried (cf. PR #44)."""
+    from google.genai import errors as genai_errors
+
+    with patch("google.genai.Client") as mock_cls, patch("time.sleep"):
+        mock_client = _gemini_client(side_effect=_api_error(400, "invalid argument"))
+        mock_cls.return_value = mock_client
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(
+            model="gemini-3.7-flash",
+            max_tokens=10,
+            timeout=10,
+            api_key="k",
+            retry_429_max=3,
+            retry_429_base_delay=0.01,
+        )
+        with pytest.raises(genai_errors.APIError):
+            adapter.complete("sys", "user")
+
+    assert mock_client.models.generate_content.call_count == 1
+
+
+def test_gemini_exhausts_retries_and_raises_provider_error():
+    """After retries are exhausted the provider's own exception surfaces."""
+    from google.genai import errors as genai_errors
+
+    with patch("google.genai.Client") as mock_cls, patch("time.sleep"):
+        mock_client = _gemini_client(side_effect=_api_error(429, "quota"))
+        mock_cls.return_value = mock_client
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(
+            model="gemini-3.7-flash",
+            max_tokens=10,
+            timeout=10,
+            api_key="k",
+            retry_429_max=2,
+            retry_429_base_delay=0.01,
+        )
+        with pytest.raises(genai_errors.APIError):
+            adapter.complete("sys", "user")
+
+    assert mock_client.models.generate_content.call_count == 3
+
+
+def test_gemini_reports_cached_token_usage():
+    """cached_content_token_count is forwarded as cache_read_tokens.
+
+    Implicit caching is automatic and server-side; the adapter only reports it.
+    """
+    usage = _GeminiUsage(
+        prompt_token_count=7005,
+        candidates_token_count=12,
+        thoughts_token_count=30,
+        cached_content_token_count=4037,
+    )
+    with (
+        patch("google.genai.Client") as mock_cls,
+        patch("mykg.llm.gemini_adapter.record_llm_call") as mock_record,
+    ):
+        mock_cls.return_value = _gemini_client(_gemini_response(usage=usage))
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(model="gemini-3.7-flash", max_tokens=100, timeout=10, api_key="k")
+        adapter.complete("sys", "user")
+
+    kwargs = mock_record.call_args.kwargs
+    assert kwargs["input_tokens"] == 7005
+    # thinking tokens are billed output, so they are counted as output
+    assert kwargs["output_tokens"] == 42
+    assert kwargs["cache_read_tokens"] == 4037
+    # implicit caching has no creation step
+    assert kwargs.get("cache_creation_tokens", 0) == 0
+
+
+def test_gemini_absent_usage_counts_default_to_zero():
+    """None-valued usage fields coerce to 0 rather than raising."""
+    usage = _GeminiUsage(
+        prompt_token_count=None,
+        candidates_token_count=None,
+        thoughts_token_count=None,
+        cached_content_token_count=None,
+    )
+    with (
+        patch("google.genai.Client") as mock_cls,
+        patch("mykg.llm.gemini_adapter.record_llm_call") as mock_record,
+    ):
+        mock_cls.return_value = _gemini_client(_gemini_response(usage=usage))
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(model="gemini-3.7-flash", max_tokens=10, timeout=10, api_key="k")
+        adapter.complete("sys", "user")
+
+    kwargs = mock_record.call_args.kwargs
+    assert kwargs["input_tokens"] == 0
+    assert kwargs["output_tokens"] == 0
+    assert kwargs["cache_read_tokens"] == 0
+
+
+def test_gemini_truncated_response_logs_finish_reason():
+    """MAX_TOKENS is normalised to 'max_tokens' for record_llm_call."""
+    with (
+        patch("google.genai.Client") as mock_cls,
+        patch("mykg.llm.gemini_adapter.record_llm_call") as mock_record,
+    ):
+        mock_cls.return_value = _gemini_client(
+            _gemini_response(text='{"partial": ', finish_reason="MAX_TOKENS")
+        )
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(model="gemini-3.7-flash", max_tokens=10, timeout=10, api_key="k")
+        adapter.complete("sys", "user")
+
+    assert mock_record.call_args.kwargs["finish_reason"] == "max_tokens"
+
+
+def test_gemini_normal_response_omits_finish_reason():
+    with (
+        patch("google.genai.Client") as mock_cls,
+        patch("mykg.llm.gemini_adapter.record_llm_call") as mock_record,
+    ):
+        mock_cls.return_value = _gemini_client(_gemini_response(finish_reason="STOP"))
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(model="gemini-3.7-flash", max_tokens=10, timeout=10, api_key="k")
+        adapter.complete("sys", "user")
+
+    assert mock_record.call_args.kwargs["finish_reason"] is None
+
+
+def test_gemini_empty_output_at_cap_warns_about_thinking_budget(caplog):
+    """An empty body at MAX_TOKENS names the thinking budget as the cause.
+
+    Gemini draws thinking tokens from max_output_tokens, so a too-small budget
+    returns finish_reason=MAX_TOKENS with no text at all. Without this warning
+    the failure surfaces downstream as an unexplained blank chunk (D33).
+    """
+    with patch("google.genai.Client") as mock_cls:
+        mock_cls.return_value = _gemini_client(
+            _gemini_response(text="", finish_reason="MAX_TOKENS")
+        )
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(model="gemini-3.7-flash", max_tokens=10, timeout=10, api_key="k")
+        with caplog.at_level("WARNING", logger="mykg.llm.gemini_adapter"):
+            assert adapter.complete("sys", "user") == ""
+
+    assert any("thinking budget" in r.getMessage().lower() for r in caplog.records)
+    assert any("max_output_tokens" in r.getMessage() for r in caplog.records)
+
+
+def test_gemini_context_exceeded_logs_and_reraises(caplog):
+    """A context-overflow error is logged with the standard marker and re-raised."""
+    from google.genai import errors as genai_errors
+
+    with (
+        patch("google.genai.Client") as mock_cls,
+        patch("time.sleep"),
+        caplog.at_level("WARNING", logger="mykg.llm.retry"),
+    ):
+        mock_cls.return_value = _gemini_client(
+            side_effect=_api_error(400, "input token count exceeds the maximum")
+        )
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(
+            model="gemini-3.7-flash", max_tokens=10, timeout=10, api_key="k", retry_429_max=0
+        )
+        with pytest.raises(genai_errors.APIError):
+            adapter.complete("sys", "user")
+
+    assert any("context length exceeded" in r.message for r in caplog.records)
+    assert any("gemini/gemini-3.7-flash" in r.message for r in caplog.records)
+
+
+def test_gemini_strips_code_fences():
+    """A fenced JSON body is unwrapped like every other adapter."""
+    with patch("google.genai.Client") as mock_cls:
+        mock_cls.return_value = _gemini_client(_gemini_response(text='```json\n{"a": 1}\n```'))
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(model="gemini-3.7-flash", max_tokens=10, timeout=10, api_key="k")
+        assert adapter.complete("sys", "user") == '{"a": 1}'
+
+
+@pytest.mark.live
+def test_gemini_live_call_returns_json():
+    """Real API call — skipped unless GEMINI_API_KEY is set."""
+    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    if not key:
+        pytest.skip("GEMINI_API_KEY not set")
+
+    from mykg.llm.gemini_adapter import GeminiAdapter
+
+    adapter = GeminiAdapter(
+        model=os.environ.get("GEMINI_MODEL", "gemini-3.7-flash"),
+        max_tokens=2000,
+        timeout=120,
+        api_key=key,
+    )
+    out = adapter.complete("Reply with JSON only.", 'Return {"pong": true}')
+    assert out.strip()
+    assert json.loads(out)["pong"] is True
+
+
+def test_gemini_safety_blocked_response_warns_and_records(caplog):
+    """A SAFETY-blocked empty body is diagnosed instead of returning silently.
+
+    Gemini returns HTTP 200 with an empty body and finish_reason=SAFETY when it
+    refuses. Without an explicit branch this looks identical to a successful
+    empty extraction and lands in failed_chunks.json unexplained (D33).
+    """
+    with (
+        patch("google.genai.Client") as mock_cls,
+        patch("mykg.llm.gemini_adapter.record_llm_call") as mock_record,
+    ):
+        mock_cls.return_value = _gemini_client(_gemini_response(text="", finish_reason="SAFETY"))
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(model="gemini-3.7-flash", max_tokens=500, timeout=10, api_key="k")
+        with caplog.at_level("WARNING", logger="mykg.llm.gemini_adapter"):
+            assert adapter.complete("sys", "user") == ""
+
+    assert any("blocked" in r.getMessage().lower() for r in caplog.records)
+    assert any("SAFETY" in r.getMessage() for r in caplog.records)
+    assert "SAFETY" in (mock_record.call_args.kwargs.get("error") or "")
+
+
+def test_gemini_recitation_block_is_reported():
+    """RECITATION is treated the same as any other non-STOP empty response."""
+    with (
+        patch("google.genai.Client") as mock_cls,
+        patch("mykg.llm.gemini_adapter.record_llm_call") as mock_record,
+    ):
+        mock_cls.return_value = _gemini_client(
+            _gemini_response(text="", finish_reason="RECITATION")
+        )
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(model="gemini-3.7-flash", max_tokens=500, timeout=10, api_key="k")
+        adapter.complete("sys", "user")
+
+    assert "RECITATION" in (mock_record.call_args.kwargs.get("error") or "")
+
+
+def test_gemini_successful_response_records_no_error():
+    """A normal STOP response carries no error field."""
+    with (
+        patch("google.genai.Client") as mock_cls,
+        patch("mykg.llm.gemini_adapter.record_llm_call") as mock_record,
+    ):
+        mock_cls.return_value = _gemini_client(
+            _gemini_response(text='{"ok": true}', finish_reason="STOP")
+        )
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(model="gemini-3.7-flash", max_tokens=500, timeout=10, api_key="k")
+        adapter.complete("sys", "user")
+
+    assert mock_record.call_args.kwargs.get("error") is None
+
+
+def test_gemini_empty_body_with_stop_is_not_flagged_as_blocked():
+    """An empty body with finish_reason=STOP is a genuine empty answer, not a block."""
+    with (
+        patch("google.genai.Client") as mock_cls,
+        patch("mykg.llm.gemini_adapter.record_llm_call") as mock_record,
+    ):
+        mock_cls.return_value = _gemini_client(_gemini_response(text="", finish_reason="STOP"))
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(model="gemini-3.7-flash", max_tokens=500, timeout=10, api_key="k")
+        assert adapter.complete("sys", "user") == ""
+
+    assert mock_record.call_args.kwargs.get("error") is None
+
+
+def test_gemini_output_cap_error_not_mislabelled_as_context_overflow():
+    """A max_output_tokens rejection must not be reported as context overflow.
+
+    The two have different fixes — one is a chunking-budget problem, the other a
+    max_output_tokens problem — so conflating them misdirects the operator.
+    """
+    from mykg.llm.retry import looks_like_context_exceeded
+
+    output_cap = Exception(
+        "Requested max_output_tokens exceeds the maximum number of tokens allowed"
+    )
+    input_overflow = Exception(
+        "The input token count (1200000) exceeds the maximum number of tokens allowed (1048576)"
+    )
+    assert looks_like_context_exceeded(output_cap) is False
+    assert looks_like_context_exceeded(input_overflow) is True
+
+
+def test_gemini_missing_usage_metadata_defaults_to_zero():
+    """A response with no usage_metadata at all records zero counts, not an error.
+
+    Guards the `getattr(usage, field, 0)` default path in `_count` against a
+    malformed or usage-free response (raised in review of PR #61).
+    """
+    with (
+        patch("google.genai.Client") as mock_cls,
+        patch("mykg.llm.gemini_adapter.record_llm_call") as mock_record,
+    ):
+        resp = _gemini_response()
+        resp.usage_metadata = None
+        mock_cls.return_value = _gemini_client(resp)
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(model="gemini-3.7-flash", max_tokens=10, timeout=10, api_key="k")
+        adapter.complete("sys", "user")
+
+    kwargs = mock_record.call_args.kwargs
+    assert kwargs["input_tokens"] == 0
+    assert kwargs["output_tokens"] == 0
+    assert kwargs["cache_read_tokens"] == 0
+
+
+def test_gemini_count_helper_tolerates_absent_usage():
+    """_count returns 0 for a None usage object, a bare object, and non-int values."""
+    from mykg.llm.gemini_adapter import _count
+
+    class _Bare:
+        pass
+
+    class _NoneValued:
+        prompt_token_count = None
+
+    class _NonInt:
+        prompt_token_count = "12"
+
+    assert _count(None, "prompt_token_count") == 0
+    assert _count(_Bare(), "prompt_token_count") == 0
+    assert _count(_NoneValued(), "prompt_token_count") == 0
+    assert _count(_NonInt(), "prompt_token_count") == 0
+
+
+def test_gemini_afc_notice_filtered_without_muting_real_warnings():
+    """The AFC notice is dropped, but genuine google_genai warnings still pass.
+
+    Raised in review of PR #61: raising the logger's level would have suppressed
+    legitimate warnings from the same logger, so a message-specific filter is
+    used instead.
+    """
+    import logging as _logging
+
+    with patch("google.genai.Client"):
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        GeminiAdapter(model="gemini-3.7-flash", max_tokens=10, timeout=10, api_key="k")
+
+    logger = _logging.getLogger("google_genai.models")
+    # The level is untouched — only a filter was added.
+    assert logger.level == _logging.NOTSET
+
+    def _rec(msg):
+        return _logging.LogRecord(
+            "google_genai.models", _logging.WARNING, __file__, 1, msg, None, None
+        )
+
+    # Both AFC variants the SDK emits must be dropped.
+    for noisy in (
+        "Direct use of automatic function calling (AFC) is not recommended",
+        "AFC is enabled with max remote calls: 10.",
+    ):
+        assert any(not f(_rec(noisy)) for f in logger.filters), f"should be filtered: {noisy}"
+
+    assert all(f(_rec("quota exceeded for this project")) for f in logger.filters), (
+        "genuine warnings must still pass through"
+    )
+
+
+def test_gemini_afc_filter_installed_only_once():
+    """Constructing many adapters does not stack duplicate filters."""
+    import logging as _logging
+
+    logger = _logging.getLogger("google_genai.models")
+    with patch("google.genai.Client"):
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        GeminiAdapter(model="gemini-3.7-flash", max_tokens=10, timeout=10, api_key="k")
+        before = len(logger.filters)
+        for _ in range(5):
+            GeminiAdapter(model="gemini-3.7-flash", max_tokens=10, timeout=10, api_key="k")
+
+    assert len(logger.filters) == before
+
+
+def test_gemini_status_of_falls_back_to_status_code():
+    """_status_of reads .status_code when .code is absent or non-integer."""
+    from mykg.llm.gemini_adapter import _status_of
+
+    class _NoCode:
+        status_code = 503
+
+    class _StringCode:
+        code = "RESOURCE_EXHAUSTED"
+        status_code = 429
+
+    class _Neither:
+        pass
+
+    assert _status_of(_NoCode()) == 503
+    # a non-int .code must not be returned verbatim
+    assert _status_of(_StringCode()) == 429
+    assert _status_of(_Neither()) is None
+
+
+def test_gemini_raw_finish_reason_edge_cases():
+    """_raw_finish_reason handles absent candidates, a None reason, and enum reprs."""
+    from mykg.llm.gemini_adapter import GeminiAdapter
+
+    read = GeminiAdapter._raw_finish_reason
+
+    class _NoCandidates:
+        candidates = []
+
+    class _NoneReason:
+        def __init__(self):
+            c = MagicMock()
+            c.finish_reason = None
+            self.candidates = [c]
+
+    class _PlainStringEnum:
+        """finish_reason whose str() is a dotted enum repr and has no .name."""
+
+        def __init__(self):
+            c = MagicMock()
+            c.finish_reason = "FinishReason.MAX_TOKENS"
+            self.candidates = [c]
+
+    assert read(_NoCandidates()) is None
+    assert read(_NoneReason()) is None
+    # dotted enum repr is reduced to the bare member name
+    assert read(_PlainStringEnum()) == "MAX_TOKENS"
+
+
+def test_config_gemini_thinking_level_defaults_when_key_absent():
+    """Omitting llm.thinking_level yields the adapter's "low" default.
+
+    The shipped gemini profile deliberately does not carry the key, so the
+    default must survive its absence rather than becoming None.
+    """
+    raw = {
+        "provider": "gemini",
+        "llm": {
+            "model": "gemini-3.7-flash",
+            "max_output_tokens": 4096,
+            "timeout": 120,
+        },
+    }
+    with patch("google.genai.Client"), patch.dict(os.environ, {"GEMINI_API_KEY": "k"}):
+        from mykg.llm.config import load_adapter
+
+        adapter = load_adapter(_raw=raw)
+
+    assert adapter._thinking_level == "low"

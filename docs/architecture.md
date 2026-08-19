@@ -42,7 +42,7 @@ This document explains how **myKG** works at a conceptual level: the pipelines, 
 
 Both pipelines run as a sequence of named steps. All intermediate state is written to disk after every step, so any step can be re-entered without repeating upstream work.
 
-The LLM layer is provider-pluggable: six adapters ship out of the box (Anthropic, OpenAI, Ollama, OpenRouter, Claude CLI, and **Agent**). The Agent provider is unusual — instead of calling an HTTP API or a subprocess, it writes LLM tasks to a session-local inbox folder and polls an outbox for answers supplied by a Claude Code skill running on the user's side. The 12 pipeline steps and the orchestrator do not know which adapter is active.
+The LLM layer is provider-pluggable: seven adapters ship out of the box (Anthropic, OpenAI, Gemini, Ollama, OpenRouter, Claude CLI, and **Agent**). The Agent provider is unusual — instead of calling an HTTP API or a subprocess, it writes LLM tasks to a session-local inbox folder and polls an outbox for answers supplied by a Claude Code skill running on the user's side. The 12 pipeline steps and the orchestrator do not know which adapter is active.
 
 <p align="center">
   <img src="diagrams/system-overview.png" width="80%" style="vertical-align:middle;">
@@ -674,12 +674,13 @@ The pipeline applies two tiers of automatic correction before asking for human i
 
 ## LLM Provider Support
 
-The pipeline is fully decoupled from any specific LLM provider. A single abstract adapter interface — accepting a system prompt and a user prompt, returning a string — is all that pipeline logic depends on. Six provider implementations ship out of the box:
+The pipeline is fully decoupled from any specific LLM provider. A single abstract adapter interface — accepting a system prompt and a user prompt, returning a string — is all that pipeline logic depends on. Seven provider implementations ship out of the box:
 
 | Provider | Notes |
 |---|---|
 | Anthropic (Claude) | Recommended for quality; supports prompt caching |
 | OpenAI (GPT-4o) | Also works with Azure OpenAI and any OpenAI-compatible endpoint |
+| Google Gemini | Native `google-genai` SDK. The shipped profile mirrors the `openai` token budgets (128K window); the models themselves support up to 1M, so raise `llm.context_window` and rerun the context-calculator to exploit it. Implicit context caching is automatic and server-side — the adapter implements no caching, it only reports `cache_read_tokens`. The reasoning budget is drawn from the same `max_output_tokens` allowance as the answer and defaults to `low`; add an optional `llm.thinking_level` key to the profile to change it |
 | Ollama | Local inference; no API key required |
 | OpenRouter | Access many models via a single API key |
 | Claude CLI | Uses the `claude -p` subprocess; no API key; billing via Claude Pro/Max plan; serial only |
@@ -689,7 +690,7 @@ All provider parameters — model, context window, token limits, timeout, base U
 
 ### Agent provider — adapter that polls a filesystem
 
-The Agent provider is the sixth `LLMAdapter` subclass, not a fork of the orchestrator. The 12 pipeline steps, all 14 LLM call sites, every `prompts/*.txt` template, and the `ThreadPoolExecutor` parallelism in `pass1` / `pass2` / `orphan_connect` are unchanged. Only the implementation of `LLMAdapter.complete(system, user) → str` differs: instead of making an HTTP request, it writes a JSON task envelope to disk and polls for the response. This keeps the entire correctness story of mykg's deterministic pipeline — re-entry, sentinel-based completion checks, retry-once + LLM feedback — applicable verbatim to agent mode.
+The Agent provider is the seventh `LLMAdapter` subclass, not a fork of the orchestrator. The 12 pipeline steps, all 14 LLM call sites, every `prompts/*.txt` template, and the `ThreadPoolExecutor` parallelism in `pass1` / `pass2` / `orphan_connect` are unchanged. Only the implementation of `LLMAdapter.complete(system, user) → str` differs: instead of making an HTTP request, it writes a JSON task envelope to disk and polls for the response. This keeps the entire correctness story of mykg's deterministic pipeline — re-entry, sentinel-based completion checks, retry-once + LLM feedback — applicable verbatim to agent mode.
 
 The request/response contract lives entirely on the filesystem under each session's `intermediate/` directory. The adapter writes `agent_inbox/<task_id>.task.json` (containing the system prompt, user prompt, step name, and a context label) atomically via the `.tmp` + `rename` pattern. The skill on the other side reads the task, dispatches a subagent, and writes the answer envelope to `agent_outbox/<task_id>.answer.json` — again atomically. After the answer file is fully renamed, the skill creates a zero-byte sentinel at `agent_outbox/<task_id>.done`. The adapter polls only for the sentinel, never for the answer file, so it can never observe a half-written response.
 
@@ -713,7 +714,7 @@ The Claude Code skill in `src/mykg/data/skills/mykg/SKILL.md` exposes a single s
 | **Session isolation** | Each run lives in a timestamped folder containing its own inputs, intermediate state, outputs, and logs | Runs never interfere; any run can be resumed or re-entered independently without touching other sessions |
 | **Single config file** | `mykg_config.yaml` is the sole source of truth for all parameters | No hardcoded literals in pipeline or adapter code; switching provider, model, or tuning parameters requires only a config change |
 | **Pydantic for all data models** | All structured data between pipeline stages uses Pydantic BaseModel | Free JSON serialization, field validation, and type coercion at every pipeline boundary |
-| **Filesystem-backed agent provider** | Sixth `LLMAdapter` subclass that writes JSON tasks to a session-local inbox and polls a `.done` sentinel | Lets a Claude Code skill — or any other host with file access — supply LLM answers without modifying the 12-step pipeline, the orchestrator, or any of the 14 LLM call sites. The contract is JSON files on disk; testable with a mock drainer in `tmp_path` |
+| **Filesystem-backed agent provider** | Seventh `LLMAdapter` subclass that writes JSON tasks to a session-local inbox and polls a `.done` sentinel | Lets a Claude Code skill — or any other host with file access — supply LLM answers without modifying the 12-step pipeline, the orchestrator, or any of the 14 LLM call sites. The contract is JSON files on disk; testable with a mock drainer in `tmp_path` |
 | **Fetch-web as a standalone acquisition command** | `mykg fetch-web` has no session, no LLM calls, and no pipeline step of its own — it just writes a folder shaped like an `extract-graph` input | Acquisition and provenance are decoupled from extraction; the output folder can be inspected, edited, or reused independently before any LLM cost is incurred |
 | **MCP server as a query-only layer** | `mykg mcp-serve` loads a completed session into memory and serves 13 read-only tools via MCP; no extraction, no writes, no LLM calls | Clean separation between the extraction pipeline (expensive, long-running, write-heavy) and the query layer (fast, in-memory, read-only); any MCP client can query without understanding the pipeline |
 | **GitHub URL → shallow clone, not crawl** | `is_github_repo_url()` routes `github.com/<owner>/<repo>` to `git clone --depth N`, skipping Crawlee and the venv entirely | A repo's source files are better obtained via git than by crawling rendered HTML pages; avoids paying the Crawlee venv cost when it adds no value |

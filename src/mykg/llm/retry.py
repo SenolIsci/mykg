@@ -30,6 +30,13 @@ _CONTEXT_EXCEEDED_MARKERS = (
     "too many tokens",
     "prompt is too long",
     "context_length_exceeded",
+    # Gemini phrases input overflow as "The input token count (N) exceeds the
+    # maximum number of tokens allowed" — matched by neither "maximum context"
+    # nor "too many tokens". Anchored on "input token count" rather than the
+    # looser "exceeds the maximum number of tokens", which also matches Gemini's
+    # *output*-cap rejection and would mislabel a max_output_tokens problem as a
+    # context-window one (different fix, different knob).
+    "input token count",
 )
 
 
