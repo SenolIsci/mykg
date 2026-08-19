@@ -680,7 +680,7 @@ The pipeline is fully decoupled from any specific LLM provider. A single abstrac
 |---|---|
 | Anthropic (Claude) | Recommended for quality; supports prompt caching |
 | OpenAI (GPT-4o) | Also works with Azure OpenAI and any OpenAI-compatible endpoint |
-| Google Gemini | Native `google-genai` SDK. The shipped profile mirrors the `openai` token budgets (128K window); the models themselves support up to 1M, so raise `llm.context_window` and rerun the context-calculator to exploit it. Implicit context caching is automatic and server-side — the adapter implements no caching, it only reports `cache_read_tokens`. `llm.thinking_level` bounds the reasoning budget, which is drawn from the same `max_output_tokens` allowance as the answer |
+| Google Gemini | Native `google-genai` SDK. The shipped profile mirrors the `openai` token budgets (128K window); the models themselves support up to 1M, so raise `llm.context_window` and rerun the context-calculator to exploit it. Implicit context caching is automatic and server-side — the adapter implements no caching, it only reports `cache_read_tokens`. The reasoning budget is drawn from the same `max_output_tokens` allowance as the answer and defaults to `low`; add an optional `llm.thinking_level` key to the profile to change it |
 | Ollama | Local inference; no API key required |
 | OpenRouter | Access many models via a single API key |
 | Claude CLI | Uses the `claude -p` subprocess; no API key; billing via Claude Pro/Max plan; serial only |

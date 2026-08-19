@@ -2767,3 +2767,25 @@ def test_gemini_raw_finish_reason_edge_cases():
     assert read(_NoneReason()) is None
     # dotted enum repr is reduced to the bare member name
     assert read(_PlainStringEnum()) == "MAX_TOKENS"
+
+
+def test_config_gemini_thinking_level_defaults_when_key_absent():
+    """Omitting llm.thinking_level yields the adapter's "low" default.
+
+    The shipped gemini profile deliberately does not carry the key, so the
+    default must survive its absence rather than becoming None.
+    """
+    raw = {
+        "provider": "gemini",
+        "llm": {
+            "model": "gemini-3.7-flash",
+            "max_output_tokens": 4096,
+            "timeout": 120,
+        },
+    }
+    with patch("google.genai.Client"), patch.dict(os.environ, {"GEMINI_API_KEY": "k"}):
+        from mykg.llm.config import load_adapter
+
+        adapter = load_adapter(_raw=raw)
+
+    assert adapter._thinking_level == "low"

@@ -739,11 +739,14 @@ profiles:
   # only *reports* the saving via cache_read_tokens in llm.log — it implements no
   # caching of its own.
   #
-  # thinking_level controls the reasoning budget. Gemini 3.x draws thinking
-  # tokens from the SAME max_output_tokens allowance as the visible answer, so a
-  # budget that is too small returns an EMPTY response with finish_reason=
-  # MAX_TOKENS. Keep max_output_tokens generous. Use thinking_level (not
-  # thinking_budget) — thinking_budget=0 is rejected by gemini-3.6-flash.
+  # Gemini 3.x draws thinking tokens from the SAME max_output_tokens allowance as
+  # the visible answer, so a budget that is too small returns an EMPTY response
+  # with finish_reason=MAX_TOKENS. Keep max_output_tokens generous.
+  #
+  # The reasoning budget defaults to "low" in the adapter. To change it, add an
+  # `llm.thinking_level` key here (low | medium | high, or null to let the model
+  # decide). Use thinking_level, not thinking_budget — thinking_budget=0 is
+  # rejected outright by gemini-3.6-flash.
   #
   # NOTE ON RATE LIMITS (Invariant 13): max_workers below matches the openai
   # profile. The Gemini FREE tier allows only 5 requests/minute/model and will
@@ -766,11 +769,6 @@ profiles:
       context_window: 128000      # ① model's total context limit
       max_output_tokens: 32000    # ② output cap — shared by thinking + answer
       model: gemini-3.7-flash
-      thinking_level: low         # low | medium | high, or null to omit and let the
-                                  # model decide. Thinking tokens are billed as output
-                                  # AND drawn from max_output_tokens. Measured on an
-                                  # extraction prompt: low = 442 thinking tokens / 2.9s
-                                  # vs omitted = 942 / 4.4s, same parsed result.
       timeout: 1800                # seconds per LLM call before raising a timeout error
       retry_429_max: 5            # max retries on HTTP 429 rate-limit before giving up
       retry_429_base_delay: 2.0   # initial backoff seconds; doubles on each retry (exponential)

@@ -36,8 +36,9 @@ _log = logging.getLogger(__name__)
 #
 # `thinking_level` is the portable control: thinking_budget=0 is rejected with
 # 400 INVALID_ARGUMENT by gemini-3.6-flash while being accepted by 3.7/3.5/3.1.
-# Set llm.thinking_level to null in mykg_config.yaml to omit it entirely and let
-# the model use its own default.
+# The shipped gemini profile does not carry the key, so this default applies;
+# add an optional llm.thinking_level to the profile to override it, or set it to
+# null there to omit thinking_config entirely and let the model decide.
 _DEFAULT_THINKING_LEVEL = "low"
 
 
