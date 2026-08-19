@@ -245,8 +245,21 @@ The check was exercised against live endpoints during implementation. What it fo
 ```
 
 **Capabilities.** `fetch-web` pulled 5 pages from aiportal.news. MinerU converted
-`team.pdf` and `projects.xlsx`. A full `extract-graph` on `anthropic-claude` produced
-**45 nodes / 44 edges**, a valid TTL with zero TBox/ABox errors, and 46 Obsidian notes.
+`team.pdf` and `projects.xlsx`. A full `extract-graph` on `anthropic-claude` produced a
+valid TTL with zero TBox/ABox errors and a populated Obsidian vault. Stages 3, 5 and 6
+chained green in 2m42s:
+
+```
+  CAPABILITIES      status
+  extract (docs)    ok      37 nodes / 47 edges, TTL valid, 0 failed chunks
+  query             ok      matched
+  walkthrough       ok      4577 bytes
+```
+
+`query ok matched` is notable: it found a real seed node in a graph the pipeline had
+just produced — previously `mykg query` was only ever tested against hand-written
+session fixtures. Node/edge counts vary run to run (37/47 here, 45/44 on an earlier
+run); the check asserts the graph is well-formed, not that it is identical.
 
 ### Two real findings
 
