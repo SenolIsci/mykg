@@ -745,14 +745,16 @@ profiles:
   # MAX_TOKENS. Keep max_output_tokens generous. Use thinking_level (not
   # thinking_budget) — thinking_budget=0 is rejected by gemini-3.6-flash.
   #
-  # NOTE ON RATE LIMITS (Invariant 13): the Gemini free tier allows only
-  # 5 requests/minute/model, so max_workers below is deliberately 2, not 8.
-  # On a paid tier, raise the max_workers values to match your quota.
+  # NOTE ON RATE LIMITS (Invariant 13): max_workers below matches the openai
+  # profile. The Gemini FREE tier allows only 5 requests/minute/model and will
+  # return 429 RESOURCE_EXHAUSTED at these settings — drop pass1/pass2/
+  # orphan_pass max_workers to 1–2 if you are on it. Paid tiers handle these
+  # values fine.
   #
   # Token budget chain (use context-calculator to recompute when switching models):
-  #   ① context_window    = 1000000
+  #   ① context_window    = 128000
   #   ② max_output_tokens = 32000
-  #   ③ input_headroom    = ① − ② = 968000
+  #   ③ input_headroom    = ① − ② = 96000
   #      batch_token_target = 32000  (conservative for reliable JSON output)
   #      window_tokens      = batch_token_target / 4 = 8000
   #      overlap_tokens     = window_tokens × 0.10 = 800
@@ -761,7 +763,7 @@ profiles:
     llm_retry:
       max_retries: 2        # retries on empty/blank response; set to 0 to disable
     llm:
-      context_window: 1000000     # ① model's total context limit
+      context_window: 128000      # ① model's total context limit
       max_output_tokens: 32000    # ② output cap — shared by thinking + answer
       model: gemini-3.7-flash
       thinking_level: low         # low | medium | high, or null to omit and let the
@@ -776,7 +778,7 @@ profiles:
     pipeline:
       # --- Ingestion & chunking -----------------------------------------------
       ingest:
-        max_workers: 2  # free tier = 5 req/min/model; raise on a paid tier
+        max_workers: 8
       # --- Preprocess (optional non-md document conversion via MinerU) ----------
       # MinerU runs inside an ephemeral uv-managed venv created per parse-docs
       # call and deleted on exit; nothing is installed into mykg's interpreter.
@@ -834,13 +836,13 @@ profiles:
       # --- Pass 1: schema induction -------------------------------------------
       pass1:
         batch_token_target: 32000  # conservative; MUST stay ≤ context_window − max_output_tokens
-        max_workers: 2  # free tier = 5 req/min/model; raise on a paid tier
+        max_workers: 4
         per_file_batching: false
         max_schema_proposals: 25  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
         random_seed: 0  # fixed seed for deterministic batch sampling when batches exceed max_schema_proposals; scoped per-call, not shared across repeated Pass 1 invocations
       # --- Pass 2: instance extraction ----------------------------------------
       pass2:
-        max_workers: 2  # free tier = 5 req/min/model; raise on a paid tier
+        max_workers: 4
         stateful_chunks: true
         prep_mode: batch_chunks             # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
         per_file_token_target: 32000   # token cap per file; used when prep_mode=per_file. Files over this are truncated to the first N tokens. 0 = no cap
@@ -859,7 +861,7 @@ profiles:
         top_k_per_orphan: 5
         confidence_base: 0.5
         confidence_weight: 0.5
-        max_workers: 2  # free tier = 5 req/min/model; raise on a paid tier
+        max_workers: 4
         schema_max_restarts: 0
         excerpt_window: 4000
         excerpt_context: 1500
