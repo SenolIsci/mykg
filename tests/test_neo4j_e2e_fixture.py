@@ -23,7 +23,7 @@ def test_label_distribution():
     counts = {}
     for path, text in csvs.items():
         if path.name.startswith("nodes_"):
-            label = path.stem[len("nodes_"):]
+            label = path.stem[len("nodes_") :]
             _, rows = _parse_csv(text)
             counts[label] = len(rows)
     assert counts == {"SoftwareEngineer": 1, "Person": 2, "Organization": 3}
@@ -35,7 +35,7 @@ def test_rel_type_distribution():
     counts = {}
     for path, text in csvs.items():
         if path.name.startswith("relationships_"):
-            rel_type = path.stem[len("relationships_"):]
+            rel_type = path.stem[len("relationships_") :]
             _, rows = _parse_csv(text)
             counts[rel_type] = len(rows)
     assert counts == {"WORKS_AT": 3, "KNOWS": 2, "LOCATED_IN": 1}

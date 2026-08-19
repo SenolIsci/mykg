@@ -481,9 +481,7 @@ def test_init_agent_is_idempotent_when_marker_present(tmp_path, monkeypatch):
     assert result1.exit_code == 0, result1.output
     first = (tmp_path / "CLAUDE.md").read_bytes()
 
-    result2 = runner.invoke(
-        cli_mod.cli, ["init", "--force", "--profile", "agent-claude-code"]
-    )
+    result2 = runner.invoke(cli_mod.cli, ["init", "--force", "--profile", "agent-claude-code"])
     assert result2.exit_code == 0, result2.output
     second = (tmp_path / "CLAUDE.md").read_bytes()
 

@@ -549,7 +549,9 @@ def test_extract_website_healthy(cli_env, report, docs_session):
     """Stage 4 — the fetched site becomes a graph too."""
     fetched = cli_env / "fetched"
     if not fetched.exists() or not list(fetched.rglob("*.html")):
-        pytest.skip("stage 1 (fetch-web) did not produce input")
+        reason = "stage 1 (fetch-web) produced no input"
+        report.capability("extract (web)", "skip", reason)
+        pytest.skip(reason)
 
     code, output = _invoke(["extract-graph", str(fetched), "--profile", DEFAULT_PROFILE])
     if code != 0:
@@ -569,7 +571,9 @@ def test_query_healthy(cli_env, report, docs_session):
     """Stage 5 — the graph built in stage 3 can actually be queried."""
     session = docs_session.get("path")
     if session is None or not (session / "output" / "nodes.jsonl").exists():
-        pytest.skip("stage 3 (extract docs) did not produce a graph")
+        reason = "stage 3 (extract docs) produced no graph"
+        report.capability("query", "skip", reason)
+        pytest.skip(reason)
 
     code, output = _invoke(["query", "Acme", "--session", docs_session["name"]])
     if code != 0:
@@ -589,7 +593,9 @@ def test_walkthrough_healthy(cli_env, report, docs_session):
     """Stage 6 — the run explains itself in a readable report."""
     session = docs_session.get("path")
     if session is None or not (session / "output" / "nodes.jsonl").exists():
-        pytest.skip("stage 3 (extract docs) did not produce a graph")
+        reason = "stage 3 (extract docs) produced no graph"
+        report.capability("walkthrough", "skip", reason)
+        pytest.skip(reason)
 
     code, output = _invoke(["walkthrough", "--session", docs_session["name"]])
     if code != 0:

@@ -109,9 +109,7 @@ def test_cli_model_without_profile_errors(tmp_path):
     input_dir.mkdir()
     (input_dir / "a.md").write_text("# hello", encoding="utf-8")
 
-    result = CliRunner().invoke(
-        cli, ["extract-graph", str(input_dir), "--model", "x"]
-    )
+    result = CliRunner().invoke(cli, ["extract-graph", str(input_dir), "--model", "x"])
     assert result.exit_code != 0
     assert "--model requires --profile" in result.output
 
@@ -121,8 +119,6 @@ def test_cli_unknown_profile_errors(tmp_path):
     input_dir.mkdir()
     (input_dir / "a.md").write_text("# hello", encoding="utf-8")
 
-    result = CliRunner().invoke(
-        cli, ["extract-graph", str(input_dir), "--profile", "nope"]
-    )
+    result = CliRunner().invoke(cli, ["extract-graph", str(input_dir), "--profile", "nope"])
     assert result.exit_code != 0
     assert "not found" in result.output.lower()

@@ -101,9 +101,7 @@ def test_write_schema_extra_merged_into_delta(tmp_path: Path) -> None:
     """When `extra` is supplied, its keys are merged into the delta file (line 102-103)."""
     schema = {
         "concepts": [{"type": "Person", "parent": None, "attributes": ["name"]}],
-        "properties": [
-            {"name": "knows", "domain": "Person", "range": "Person", "attributes": []}
-        ],
+        "properties": [{"name": "knows", "domain": "Person", "range": "Person", "attributes": []}],
     }
     write_schema(
         schema,

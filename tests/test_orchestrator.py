@@ -550,7 +550,9 @@ def test_human_review_waits_for_approval(tmp_path):
         (c.intermediate_dir / "b.json").write_text("{}")
 
     steps = [
-        Step(name="human_review", fn=fn, outputs=["schema_approved.flag"], requires_review_flag=True),
+        Step(
+            name="human_review", fn=fn, outputs=["schema_approved.flag"], requires_review_flag=True
+        ),
         Step(name="b", fn=fn_b, outputs=["b.json"]),
     ]
     run(steps, ctx)
@@ -593,7 +595,9 @@ def test_feedback_handler_failure_logged(tmp_path, monkeypatch):
     """When feedback.apply raises, the orchestrator logs and continues."""
     import mykg.feedback as feedback
 
-    monkeypatch.setattr(feedback, "apply", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("fb")))
+    monkeypatch.setattr(
+        feedback, "apply", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("fb"))
+    )
 
     ctx = _make_ctx(tmp_path)
     ctx.intermediate_dir.mkdir(parents=True)
@@ -658,7 +662,12 @@ def test_append_mode_invalidates_downstream(tmp_path):
             outputs=["raw_extractions.json", "chunk_node_index.json"],
             is_llm_step=True,
         ),
-        Step(name="normalize_names", fn=normalize_fn, outputs=["name_normalization.json"], is_llm_step=True),
+        Step(
+            name="normalize_names",
+            fn=normalize_fn,
+            outputs=["name_normalization.json"],
+            is_llm_step=True,
+        ),
         Step(name="assemble", fn=assemble_fn, outputs=["edge_metadata.json"]),
     ]
     run(steps, ctx)

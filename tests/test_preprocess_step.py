@@ -101,9 +101,7 @@ def test_preprocess_step_in_steps_registry() -> None:
 def test_preprocess_converts_html_file(tmp_path: Path) -> None:
     """HTML files routed through _convert_html_files (in-process markdownify)."""
     ctx = _make_ctx(tmp_path)
-    (ctx.input_dir / "page.html").write_text(
-        "<html><body><h1>Hello</h1><p>World</p></body></html>"
-    )
+    (ctx.input_dir / "page.html").write_text("<html><body><h1>Hello</h1><p>World</p></body></html>")
 
     with (
         patch("mykg.config.PREPROCESS_ENABLED", True),

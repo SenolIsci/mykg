@@ -53,17 +53,13 @@ def _pass2_answer() -> str:
                 {
                     "id": "person-alice",
                     "type": "Person",
-                    "attributes": {
-                        "name": {"value": "Alice", "confidence": 0.95}
-                    },
+                    "attributes": {"name": {"value": "Alice", "confidence": 0.95}},
                     "confidence": 0.95,
                 },
                 {
                     "id": "organization-acme-corp",
                     "type": "Organization",
-                    "attributes": {
-                        "name": {"value": "Acme Corp", "confidence": 0.95}
-                    },
+                    "attributes": {"name": {"value": "Acme Corp", "confidence": 0.95}},
                     "confidence": 0.95,
                 },
             ],
@@ -205,9 +201,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seconds", type=float, default=60.0)
     parser.add_argument("--poll", type=float, default=0.2)
     args = parser.parse_args(argv)
-    handled = run_watcher(
-        args.inbox, args.outbox, args.seconds, poll_interval=args.poll
-    )
+    handled = run_watcher(args.inbox, args.outbox, args.seconds, poll_interval=args.poll)
     print(f"mock_skill: handled {handled} tasks", file=sys.stderr)
     return 0
 

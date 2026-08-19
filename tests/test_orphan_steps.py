@@ -14,6 +14,7 @@ def _enable_orphan_pass(monkeypatch):
 
     monkeypatch.setattr(cfg, "ORPHAN_PASS_ENABLED", True)
 
+
 NODES = [
     {
         "id": "person-alice",

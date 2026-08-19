@@ -47,36 +47,32 @@ def provider_key_var_label(profile: str) -> str:
     return " or ".join(variables) if variables else "(no key required)"
 
 
+def _key_fixture(profile: str) -> str:
+    """Resolve a profile's key or skip, naming every env var it accepts."""
+    key = provider_key(profile)
+    if not key:
+        pytest.skip(f"{provider_key_var_label(profile)} not set")
+    return key
+
+
 @pytest.fixture(scope="session")
 def openrouter_api_key():
-    key = provider_key("openrouter-free")
-    if not key:
-        pytest.skip("OPENROUTER_API_KEY not set")
-    return key
+    return _key_fixture("openrouter-free")
 
 
 @pytest.fixture(scope="session")
 def gemini_api_key():
-    key = provider_key("gemini")
-    if not key:
-        pytest.skip("GEMINI_API_KEY not set")
-    return key
+    return _key_fixture("gemini")
 
 
 @pytest.fixture(scope="session")
 def anthropic_api_key():
-    key = provider_key("anthropic-claude")
-    if not key:
-        pytest.skip("ANTHROPIC_API_KEY not set")
-    return key
+    return _key_fixture("anthropic-claude")
 
 
 @pytest.fixture(scope="session")
 def openai_api_key():
-    key = provider_key("openai")
-    if not key:
-        pytest.skip("OPENAI_API_KEY not set")
-    return key
+    return _key_fixture("openai")
 
 
 @pytest.fixture(scope="session")

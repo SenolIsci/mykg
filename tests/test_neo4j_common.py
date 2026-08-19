@@ -39,14 +39,17 @@ def test_load_session_missing_schema(tmp_path):
         load_session(tmp_path)
 
 
-@pytest.mark.parametrize("raw,expected", [
-    ("Person", "Person"),
-    ("SoftwareEngineer", "SoftwareEngineer"),
-    ("software_engineer", "SoftwareEngineer"),
-    ("software-engineer", "SoftwareEngineer"),
-    ("urban planner", "UrbanPlanner"),
-    ("123Bad", "Bad"),
-])
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("Person", "Person"),
+        ("SoftwareEngineer", "SoftwareEngineer"),
+        ("software_engineer", "SoftwareEngineer"),
+        ("software-engineer", "SoftwareEngineer"),
+        ("urban planner", "UrbanPlanner"),
+        ("123Bad", "Bad"),
+    ],
+)
 def test_sanitize_label(raw, expected):
     assert sanitize_label(raw) == expected
 
@@ -78,10 +81,12 @@ def test_parent_chain_unknown_type_returns_empty():
 
 
 def test_parent_chain_breaks_cycle():
-    cyclic = {"concepts": [
-        {"type": "A", "parent": "B"},
-        {"type": "B", "parent": "A"},
-    ]}
+    cyclic = {
+        "concepts": [
+            {"type": "A", "parent": "B"},
+            {"type": "B", "parent": "A"},
+        ]
+    }
     assert parent_chain(cyclic, "A") == ["B"]
 
 
@@ -205,13 +210,16 @@ def test_flatten_edge_empty_attributes():
     }
 
 
-@pytest.mark.parametrize("raw,expected", [
-    ("works_at", "WORKS_AT"),
-    ("worksAt", "WORKS_AT"),
-    ("WorksAt", "WORKS_AT"),
-    ("works at", "WORKS_AT"),
-    ("works-at", "WORKS_AT"),
-    ("located_in", "LOCATED_IN"),
-])
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("works_at", "WORKS_AT"),
+        ("worksAt", "WORKS_AT"),
+        ("WorksAt", "WORKS_AT"),
+        ("works at", "WORKS_AT"),
+        ("works-at", "WORKS_AT"),
+        ("located_in", "LOCATED_IN"),
+    ],
+)
 def test_sanitize_rel_type(raw, expected):
     assert sanitize_rel_type(raw) == expected

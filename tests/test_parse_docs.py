@@ -386,9 +386,7 @@ def test_parse_docs_directory_input_recurses(tmp_path: Path) -> None:
     assert len(mineru_calls) == 2  # the .md is excluded; the two PDFs each get one call
 
     invoked = sorted(call[2] for call in mineru_calls)  # the `-p <src>` value
-    assert invoked == sorted(
-        [str(input_dir / "a.pdf"), str(input_dir / "sub" / "b.pdf")]
-    )
+    assert invoked == sorted([str(input_dir / "a.pdf"), str(input_dir / "sub" / "b.pdf")])
 
     # Subfolder structure preserved at the output for the nested file.
     by_src = {call[2]: call[4] for call in mineru_calls}
@@ -441,9 +439,7 @@ def test_parse_docs_directory_input_continues_on_per_file_failure(tmp_path: Path
     assert len(mineru_calls) == 2
     # The run exits non-zero because at least one file failed.
     assert result.exit_code != 0
-    assert "1 of 2 files failed" in result.output or "1 of 2 files failed" in str(
-        result.exception
-    )
+    assert "1 of 2 files failed" in result.output or "1 of 2 files failed" in str(result.exception)
 
 
 def test_parse_docs_command_propagates_mineru_failure(tmp_path: Path) -> None:

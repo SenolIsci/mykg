@@ -5,6 +5,7 @@ The terminal query is a replication of the MCP tool (mcp_server.py is
 read-only). These tests lock in that the two produce byte-for-byte identical
 output for the same session data.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,8 +25,7 @@ SCHEMA = {
         {"type": "Organization", "attributes": ["name", "industry"], "parent": None},
     ],
     "properties": [
-        {"name": "works_at", "domain": "Person", "range": "Organization",
-         "attributes": ["role"]},
+        {"name": "works_at", "domain": "Person", "range": "Organization", "attributes": ["role"]},
     ],
 }
 
@@ -72,12 +72,8 @@ def session_dir(tmp_path: Path) -> Path:
     output.mkdir()
     intermediate = tmp_path / "intermediate"
     intermediate.mkdir()
-    (output / "nodes.jsonl").write_text(
-        "\n".join(json.dumps(n) for n in NODES), encoding="utf-8"
-    )
-    (output / "edges.jsonl").write_text(
-        "\n".join(json.dumps(e) for e in EDGES), encoding="utf-8"
-    )
+    (output / "nodes.jsonl").write_text("\n".join(json.dumps(n) for n in NODES), encoding="utf-8")
+    (output / "edges.jsonl").write_text("\n".join(json.dumps(e) for e in EDGES), encoding="utf-8")
     (intermediate / "schema.json").write_text(json.dumps(SCHEMA), encoding="utf-8")
     return tmp_path
 
@@ -117,8 +113,7 @@ class TestQueryGraph:
     def test_no_match(self, qg: QueryGraph):
         out = query_graph(qg, "zzz-nomatch")
         assert out == (
-            "No nodes found matching 'zzz-nomatch'. "
-            "Try mykg_search_nodes for more flexible search."
+            "No nodes found matching 'zzz-nomatch'. Try mykg_search_nodes for more flexible search."
         )
 
     def test_dfs_mode(self, qg: QueryGraph):
@@ -168,6 +163,7 @@ class TestQueryCLI:
         (sessions_root / "synth").mkdir(parents=True)
         # move the synthetic session under sessions_root/synth
         import shutil
+
         shutil.copytree(session_dir / "output", sessions_root / "synth" / "output")
         shutil.copytree(session_dir / "intermediate", sessions_root / "synth" / "intermediate")
 

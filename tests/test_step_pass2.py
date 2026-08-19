@@ -176,7 +176,9 @@ def test_run_pass2_step_skips_shards_already_present(tmp_path, monkeypatch):
 
     # Pre-existing shard for doc.md
     (shard_dir / "doc.md.json").write_text(
-        json.dumps({"_fname": "doc.md", "data": {"nodes": [{"id": "p-1", "type": "Person"}], "edges": []}})
+        json.dumps(
+            {"_fname": "doc.md", "data": {"nodes": [{"id": "p-1", "type": "Person"}], "edges": []}}
+        )
     )
     (chunk_shard_dir / "doc.md.json").write_text(
         json.dumps({"_fname": "doc.md", "data": {"1": ["p-1"]}})
@@ -614,12 +616,12 @@ def test_concat_legacy_virtual_shards_migrated(tmp_path, monkeypatch):
     chunk_shard_dir.mkdir()
     # Legacy virtual-batch shard from a pre-refactor concat run.
     (shard_dir / "concat_batch_0000.md.json").write_text(
-        json.dumps({"_fname": "concat_batch_0000.md", "data": {"nodes": [{"id": "stale"}], "edges": []}})
+        json.dumps(
+            {"_fname": "concat_batch_0000.md", "data": {"nodes": [{"id": "stale"}], "edges": []}}
+        )
     )
     (ctx.intermediate_dir / "pass2_concat_map.json").write_text("{}")
-    (ctx.intermediate_dir / "file_manifest.json").write_text(
-        json.dumps({"a.md": "Alice."})
-    )
+    (ctx.intermediate_dir / "file_manifest.json").write_text(json.dumps({"a.md": "Alice."}))
 
     run_pass2_step(ctx)
 

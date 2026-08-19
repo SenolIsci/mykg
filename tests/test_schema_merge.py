@@ -247,7 +247,6 @@ def test_harmonize_no_locked_block_unchanged():
     assert system_prompt == _HARMONIZE_SYSTEM_PROMPT
 
 
-
 def test_review_quality_injects_locked_block():
     adapter = MagicMock()
     adapter.complete.return_value = json.dumps(_SMALL_SCHEMA)
