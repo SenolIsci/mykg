@@ -121,9 +121,7 @@ def test_extract_pass1_only_and_append_mutually_exclusive(tmp_path, input_dir, m
     assert "mutually exclusive" in out.lower() or "cannot be combined" in out.lower()
 
 
-def test_extract_pass2_only_and_freeze_schema_mutually_exclusive(
-    tmp_path, input_dir, monkeypatch
-):
+def test_extract_pass2_only_and_freeze_schema_mutually_exclusive(tmp_path, input_dir, monkeypatch):
     import mykg.cli as cli_mod
     import mykg.config as cfg_mod
 
@@ -342,9 +340,7 @@ def test_extract_obsidian_vault_flag_mutates_config(tmp_path, input_dir, monkeyp
     monkeypatch.setattr("mykg.llm.config.load_adapter", lambda **kw: MagicMock())
 
     runner = CliRunner()
-    result = runner.invoke(
-        cli_mod.cli, ["extract-graph", str(input_dir), "--obsidian-vault"]
-    )
+    result = runner.invoke(cli_mod.cli, ["extract-graph", str(input_dir), "--obsidian-vault"])
 
     assert result.exit_code == 0, result.output
     assert cfg_mod.OBSIDIAN_ENABLED is True

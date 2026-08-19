@@ -1,4 +1,5 @@
 """Tests for the mykg MCP server module."""
+
 from __future__ import annotations
 
 import asyncio
@@ -105,15 +106,9 @@ def session_dir(tmp_path: Path) -> Path:
     intermediate = tmp_path / "intermediate"
     intermediate.mkdir()
 
-    (output / "nodes.jsonl").write_text(
-        "\n".join(json.dumps(n) for n in NODES), encoding="utf-8"
-    )
-    (output / "edges.jsonl").write_text(
-        "\n".join(json.dumps(e) for e in EDGES), encoding="utf-8"
-    )
-    (intermediate / "schema.json").write_text(
-        json.dumps(SCHEMA), encoding="utf-8"
-    )
+    (output / "nodes.jsonl").write_text("\n".join(json.dumps(n) for n in NODES), encoding="utf-8")
+    (output / "edges.jsonl").write_text("\n".join(json.dumps(e) for e in EDGES), encoding="utf-8")
+    (intermediate / "schema.json").write_text(json.dumps(SCHEMA), encoding="utf-8")
     return tmp_path
 
 
@@ -147,9 +142,7 @@ def chunked_session_dir(session_dir: Path) -> Path:
     (intermediate / "chunk_node_index.json").write_text(
         json.dumps(CHUNK_NODE_INDEX), encoding="utf-8"
     )
-    (intermediate / "file_manifest.json").write_text(
-        json.dumps(FILE_MANIFEST), encoding="utf-8"
-    )
+    (intermediate / "file_manifest.json").write_text(json.dumps(FILE_MANIFEST), encoding="utf-8")
     return session_dir
 
 
@@ -312,11 +305,13 @@ class TestNeighbors:
 class TestPathFinding:
     def test_path_exists(self, kg: KnowledgeGraph):
         import networkx as _nx
+
         path = _nx.shortest_path(kg.graph, "person-alice", "organization-acme")
         assert path == ["person-alice", "organization-acme"]
 
     def test_path_between_persons(self, kg: KnowledgeGraph):
         import networkx as _nx
+
         undirected = kg.graph.to_undirected()
         path = _nx.shortest_path(undirected, "person-alice", "person-bob")
         assert len(path) == 3
@@ -324,6 +319,7 @@ class TestPathFinding:
 
     def test_no_directed_path_reversed(self, kg: KnowledgeGraph):
         import networkx as _nx
+
         with pytest.raises(_nx.NetworkXNoPath):
             _nx.shortest_path(kg.graph, "organization-acme", "person-alice")
 
@@ -331,6 +327,7 @@ class TestPathFinding:
 class TestStats:
     def test_graph_stats(self, kg: KnowledgeGraph):
         import networkx as _nx
+
         G = kg.graph
         assert G.number_of_nodes() == 3
         assert G.number_of_edges() == 2
@@ -393,6 +390,7 @@ class TestReadNote:
 class TestMCPServerRegistration:
     def test_mcp_server_has_tools(self):
         from mykg.mcp_server import mcp
+
         tool_names = [t.name for t in mcp._tool_manager.list_tools()]
         expected = [
             "mykg_search_nodes",
@@ -454,7 +452,8 @@ class TestSourceChunks:
         # person-alice only has 1 chunk in the fixture; force a smaller cap
         # to exercise total_chunks vs returned_chunks bookkeeping directly.
         kg_with_chunks.chunk_node_index_by_id["person-alice"] = [
-            "team.md::1", "partners.md::1",
+            "team.md::1",
+            "partners.md::1",
         ]
         result = _resolve_node_excerpt(kg_with_chunks, "person-alice", max_chunks=1)
         assert result["total_chunks"] == 2
@@ -511,9 +510,7 @@ class TestSourceChunks:
 
 def _fake_ctx(kg: KnowledgeGraph):
     """Minimal stand-in for FastMCP's Context — _get_kg only reads this path."""
-    return SimpleNamespace(
-        request_context=SimpleNamespace(lifespan_context=SimpleNamespace(kg=kg))
-    )
+    return SimpleNamespace(request_context=SimpleNamespace(lifespan_context=SimpleNamespace(kg=kg)))
 
 
 class TestMykgGetSourceTool:

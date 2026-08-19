@@ -7,6 +7,7 @@ adds ``src/mykg/query.py`` and the ``query`` CLI command. The query-dependent
 tests are skipped (not failed) until those exist, so this file is green either
 way.
 """
+
 from __future__ import annotations
 
 import json
@@ -33,9 +34,7 @@ except Exception:  # pragma: no cover - exercised only pre-sibling-merge
 
 _QUERY_CMD_REGISTERED = "query" in cli.commands
 
-requires_query = pytest.mark.skipif(
-    not _QUERY_AVAILABLE, reason="mykg.query not present yet"
-)
+requires_query = pytest.mark.skipif(not _QUERY_AVAILABLE, reason="mykg.query not present yet")
 requires_query_cmd = pytest.mark.skipif(
     not (_QUERY_AVAILABLE and _QUERY_CMD_REGISTERED),
     reason="mykg query CLI command not registered yet",
@@ -156,17 +155,13 @@ def test_query_graph_core(session_root: Path):
 
 
 @requires_query_cmd
-def test_query_cli_parity(
-    session_root: Path, sessions_root: Path, session_name: str, monkeypatch
-):
+def test_query_cli_parity(session_root: Path, sessions_root: Path, session_name: str, monkeypatch):
     monkeypatch.setattr("mykg.cli._sessions_root", lambda: sessions_root)
 
     qg = build_query_graph(session_root)
     expected = query_graph(qg, "Alice")
 
-    result = CliRunner().invoke(
-        cli, ["query", "Alice", "--session", session_name]
-    )
+    result = CliRunner().invoke(cli, ["query", "Alice", "--session", session_name])
     assert result.exit_code == 0, result.output
     assert result.output.rstrip("\n") == expected.rstrip("\n")
 
@@ -188,8 +183,6 @@ def test_query_cli_no_match(
 ):
     monkeypatch.setattr("mykg.cli._sessions_root", lambda: sessions_root)
 
-    result = CliRunner().invoke(
-        cli, ["query", "zzznotathing", "--session", session_name]
-    )
+    result = CliRunner().invoke(cli, ["query", "zzznotathing", "--session", session_name])
     assert result.exit_code == 0, result.output
     assert result.output.startswith("No nodes found matching")

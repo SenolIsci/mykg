@@ -295,9 +295,11 @@ def test_single_batch_when_inventory_fits():
 def test_batching_splits_on_budget(monkeypatch):
     """When batch_token_target is tiny, each type gets its own batch."""
     import mykg.config as cfg
+
     monkeypatch.setattr(cfg, "NORMALIZE_NAMES_BATCH_TOKEN_TARGET", 1)  # force one type per batch
 
     calls = []
+
     def fake_complete(system, user):
         payload = json.loads(user)
         calls.append(list(payload.keys()))
@@ -323,6 +325,7 @@ def test_batching_splits_on_budget(monkeypatch):
 def test_multi_batch_results_merge(monkeypatch):
     """Results from multiple batches are merged into one map."""
     import mykg.config as cfg
+
     monkeypatch.setattr(cfg, "NORMALIZE_NAMES_BATCH_TOKEN_TARGET", 1)
 
     responses = [
@@ -347,6 +350,7 @@ def test_multi_batch_results_merge(monkeypatch):
 def test_json_parse_error_in_one_batch_continues(monkeypatch):
     """A JSON parse error in one batch is recorded but other batches still run."""
     import mykg.config as cfg
+
     monkeypatch.setattr(cfg, "NORMALIZE_NAMES_BATCH_TOKEN_TARGET", 1)
 
     adapter = MagicMock()

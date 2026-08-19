@@ -368,9 +368,7 @@ def test_nx_flatten_attributes_with_list_value():
     """_nx_flatten_attributes joins list values with '|' for GML safety."""
     from mykg.exporter import _nx_flatten_attributes
 
-    flat = _nx_flatten_attributes(
-        {"tags": {"value": ["python", "rust"], "confidence": 0.8}}
-    )
+    flat = _nx_flatten_attributes({"tags": {"value": ["python", "rust"], "confidence": 0.8}})
     assert flat["attr_tags_value"] == "python|rust"
     assert flat["attr_tags_confidence"] == 0.8
 
@@ -442,9 +440,7 @@ def test_html_contains_confidence_filter_sliders(tmp_path: Path) -> None:
     G = nx.DiGraph()
     G.add_node("person-alice", label="Alice", node_type="Person", confidence=0.9)
     G.add_node("organization-acme", label="Acme", node_type="Organization", confidence=0.8)
-    G.add_edge(
-        "person-alice", "organization-acme", edge_type="works_at", confidence=0.7
-    )
+    G.add_edge("person-alice", "organization-acme", edge_type="works_at", confidence=0.7)
 
     export_html(G, tmp_path)
     content = (tmp_path / "knowledge_graph.html").read_text(encoding="utf-8")

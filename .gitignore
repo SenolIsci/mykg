@@ -43,3 +43,6 @@ tests/fixtures/**/__pycache__/
 # Profiler dumps
 profile.out
 *.prof
+
+# symlink to the latest healthiness-check workspace (pytest tmp)
+_healthiness_run

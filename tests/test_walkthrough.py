@@ -745,8 +745,7 @@ def test_node_edge_trace_counts_output_jsonl(tmp_path):
     output = merged / "output"
     output.mkdir(exist_ok=True)
     output.joinpath("nodes.jsonl").write_text(
-        '{"id":"person-alice","type":"Person"}\n'
-        '{"id":"org-acme","type":"Organization"}\n'
+        '{"id":"person-alice","type":"Person"}\n{"id":"org-acme","type":"Organization"}\n'
     )
     output.joinpath("edges.jsonl").write_text(
         '{"type":"works_at","from":"person-alice","to":"org-acme"}\n'

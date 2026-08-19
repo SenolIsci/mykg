@@ -184,9 +184,7 @@ def test_shard_files_written_incrementally(tmp_path):
     def on_file_done(fname, result, file_idx):
         (shard_dir / f"{fname.replace('.md', '')}.json").write_text("{}")
         # Snapshot what's on disk at the moment THIS file is finalized.
-        written_before_second_file_done.append(
-            sorted(p.name for p in shard_dir.glob("*.json"))
-        )
+        written_before_second_file_done.append(sorted(p.name for p in shard_dir.glob("*.json")))
 
     with mock.patch.object(p2_mod, "_extract_batch", side_effect=fake_extract):
         run_pass2_batched(

@@ -303,9 +303,7 @@ def test_run_pass1_writes_batch_selection_before_dispatch(tmp_path):
         def endpoint_label(self):
             return "recording"
 
-    run_pass1(
-        CHUNKS, RecordingAdapter(), locked_schema_block="", intermediate_dir=tmp_path
-    )
+    run_pass1(CHUNKS, RecordingAdapter(), locked_schema_block="", intermediate_dir=tmp_path)
     assert seen_before_dispatch["exists"] is True
 
     selection = json.loads((tmp_path / "pass1_batch_selection.json").read_text())

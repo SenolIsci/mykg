@@ -6,6 +6,7 @@ import pytest
 
 def test_fetch_config_constants_exist_with_defaults() -> None:
     from mykg import config
+
     # Constants exist and have the documented default types/values.
     assert isinstance(config.FETCH_ENABLED, bool)
     assert config.FETCH_OUTPUT_DIR == "mykg_web_fetch"
@@ -46,23 +47,39 @@ def test_fetch_block_present_in_both_yaml_files() -> None:
             pipeline = prof.get("pipeline", {})
             assert "fetch" in pipeline, f"fetch block missing in {cfg_path} profile {name}"
             fetch = pipeline["fetch"]
-            for key in ("enabled", "output_dir", "strategy", "max_pages", "max_depth",
-                        "respect_robots", "request_delay_seconds", "concurrency",
-                        "download_assets", "timeout_seconds", "uv_path",
-                        "uv_python_version", "crawlee_spec", "install_timeout_seconds",
-                        "github_clone_enabled", "github_clone_depth",
-                        "github_clone_timeout_seconds", "max_workers"):
+            for key in (
+                "enabled",
+                "output_dir",
+                "strategy",
+                "max_pages",
+                "max_depth",
+                "respect_robots",
+                "request_delay_seconds",
+                "concurrency",
+                "download_assets",
+                "timeout_seconds",
+                "uv_path",
+                "uv_python_version",
+                "crawlee_spec",
+                "install_timeout_seconds",
+                "github_clone_enabled",
+                "github_clone_depth",
+                "github_clone_timeout_seconds",
+                "max_workers",
+            ):
                 assert key in fetch, f"fetch.{key} missing in {cfg_path} profile {name}"
 
 
 def test_default_output_dir_uses_seed_domain(tmp_path) -> None:
     from mykg.fetch_web import default_output_dir
+
     out = default_output_dir("https://example.com/docs/guide", "mykg_web_fetch", base=tmp_path)
     assert out == tmp_path / "mykg_web_fetch" / "example.com"
 
 
 def test_build_crawl_config_reflects_overrides() -> None:
     from mykg.fetch_web import build_crawl_config
+
     cfg = build_crawl_config(
         seed_url="https://example.com",
         output_dir="/tmp/fw",
@@ -83,6 +100,7 @@ def test_build_crawl_config_reflects_overrides() -> None:
 
 def test_local_path_for_url_html_and_query() -> None:
     from mykg.fetch_web import local_path_for_url
+
     # Trailing-slash path → index.html
     assert local_path_for_url("https://example.com/", "text/html") == "index.html"
     # Nested path preserved
@@ -96,6 +114,7 @@ def test_local_path_for_url_html_and_query() -> None:
 
 def test_ext_from_content_type() -> None:
     from mykg.fetch_web import ext_from_content_type
+
     assert ext_from_content_type("application/pdf") == ".pdf"
     assert ext_from_content_type("application/pdf; charset=binary") == ".pdf"
     assert ext_from_content_type("image/jpeg") == ".jpg"
@@ -108,7 +127,11 @@ def test_local_path_for_url_extensionless_non_html_uses_content_type() -> None:
     the saved filename must get one from content-type so preprocess.extensions
     can match it downstream."""
     from mykg.fetch_web import local_path_for_url
-    assert local_path_for_url("https://arxiv.org/pdf/2606.09884", "application/pdf") == "pdf/2606.09884.pdf"
+
+    assert (
+        local_path_for_url("https://arxiv.org/pdf/2606.09884", "application/pdf")
+        == "pdf/2606.09884.pdf"
+    )
     # A path that already has an extension is left alone.
     assert local_path_for_url("https://example.com/g.pdf", "application/pdf") == "g.pdf"
     # Generic binary content-type gets the conventional .bin extension.
@@ -119,20 +142,28 @@ def test_local_path_for_url_extensionless_non_html_uses_content_type() -> None:
 
 def test_manifest_merge_and_atomic_write(tmp_path) -> None:
     from mykg.fetch_web import load_manifest, write_manifest
+
     out = tmp_path / "fw"
     out.mkdir()
     # No prior manifest → empty pages
     assert load_manifest(out) == {}
     rows = {
         "https://example.com/": {
-            "local_file": "index.html", "sha256": "abc",
-            "content_type": "text/html", "status": 200, "depth": 0,
+            "local_file": "index.html",
+            "sha256": "abc",
+            "content_type": "text/html",
+            "status": 200,
+            "depth": 0,
             "fetched_at": "2026-06-12T00:00:00Z",
         }
     }
-    write_manifest(out, seed_url="https://example.com", strategy="same-domain",
-                   pages=rows, stats={"pages": 1, "assets": 0,
-                                      "skipped_robots": 0, "errors": 0})
+    write_manifest(
+        out,
+        seed_url="https://example.com",
+        strategy="same-domain",
+        pages=rows,
+        stats={"pages": 1, "assets": 0, "skipped_robots": 0, "errors": 0},
+    )
     loaded = load_manifest(out)
     assert "https://example.com/" in loaded
     assert (out / "fetch_manifest.json").exists()
@@ -140,6 +171,7 @@ def test_manifest_merge_and_atomic_write(tmp_path) -> None:
 
 def test_already_fetched_skips_matching_sha() -> None:
     from mykg.fetch_web import is_already_fetched
+
     prior = {"https://example.com/": {"sha256": "abc"}}
     assert is_already_fetched(prior, "https://example.com/", "abc") is True
     assert is_already_fetched(prior, "https://example.com/", "xyz") is False
@@ -149,6 +181,7 @@ def test_already_fetched_skips_matching_sha() -> None:
 def test_local_path_for_url_rejects_path_traversal() -> None:
     """CRITICAL: a hostile URL path must never escape the output dir."""
     from mykg.fetch_web import local_path_for_url
+
     # `..` segments are stripped; result stays inside output_dir.
     p = local_path_for_url("https://evil.com/../etc/passwd", "text/html")
     assert not p.startswith("..")
@@ -159,6 +192,7 @@ def test_local_path_for_url_rejects_path_traversal() -> None:
 
 def test_local_path_for_url_strips_interior_dotdot() -> None:
     from mykg.fetch_web import local_path_for_url
+
     p = local_path_for_url("https://evil.com/a/../../b", "text/html")
     assert ".." not in p.split("/")
     assert not p.startswith("/")
@@ -167,6 +201,7 @@ def test_local_path_for_url_strips_interior_dotdot() -> None:
 
 def test_local_path_for_url_only_dot_segments_falls_back_to_index() -> None:
     from mykg.fetch_web import local_path_for_url
+
     p = local_path_for_url("https://evil.com/../..", "text/html")
     assert ".." not in p.split("/")
     assert p == "index.html"
@@ -175,6 +210,7 @@ def test_local_path_for_url_only_dot_segments_falls_back_to_index() -> None:
 def test_local_path_for_url_no_silent_collision_on_stem_strip() -> None:
     """IMPORTANT: /foo and /foo.html must not map to the same file."""
     from mykg.fetch_web import local_path_for_url
+
     a = local_path_for_url("https://example.com/foo", "text/html")
     b = local_path_for_url("https://example.com/foo.html", "text/html")
     assert a != b
@@ -184,11 +220,13 @@ def test_local_path_for_url_no_silent_collision_on_stem_strip() -> None:
 def test_local_path_for_url_plain_path_unchanged_by_collision_fix() -> None:
     """No dot in basename → no disambiguator fires (no regression)."""
     from mykg.fetch_web import local_path_for_url
+
     assert local_path_for_url("https://example.com/a/b", "text/html") == "a/b.html"
 
 
 def test_default_output_dir_sanitizes_netloc(tmp_path) -> None:
     from mykg.fetch_web import default_output_dir
+
     out = default_output_dir("https://a@b:8080/", "mykg_web_fetch", base=tmp_path)
     assert out == tmp_path / "mykg_web_fetch" / "b_8080"
 
@@ -226,9 +264,7 @@ def test_crawl_runner_module_imports_without_crawlee() -> None:
 def test_crawl_runner_save_page_refuses_traversal_escape(tmp_path) -> None:
     """save_page must never write outside output_dir, even for a hostile URL."""
     mod = _load_runner_module()
-    row = mod.save_page(
-        tmp_path, "https://evil.com/../../etc/passwd", "text/html", b"x"
-    )
+    row = mod.save_page(tmp_path, "https://evil.com/../../etc/passwd", "text/html", b"x")
     from pathlib import Path
 
     # The mirror strips ".." so the local_file is a contained relative path.
@@ -257,9 +293,9 @@ def test_crawl_runner_local_path_parity_with_fetch_web() -> None:
         ("https://example.com/blob", "application/octet-stream"),
     ]
     for url, ctype in cases:
-        assert mod._local_path_for_url(url, ctype) == local_path_for_url(
-            url, ctype
-        ), f"mirror drift for {url!r} ({ctype})"
+        assert mod._local_path_for_url(url, ctype) == local_path_for_url(url, ctype), (
+            f"mirror drift for {url!r} ({ctype})"
+        )
 
 
 def test_fetch_web_command_runs_runner_and_writes_manifest(tmp_path, monkeypatch) -> None:
@@ -274,6 +310,7 @@ def test_fetch_web_command_runs_runner_and_writes_manifest(tmp_path, monkeypatch
     class _FakeVenv:
         def __enter__(self):
             return tmp_path / "venv" / "bin" / "python"
+
         def __exit__(self, *a):
             return False
 
@@ -282,15 +319,19 @@ def test_fetch_web_command_runs_runner_and_writes_manifest(tmp_path, monkeypatch
         results = {
             "pages": {
                 "https://example.com/": {
-                    "local_file": "index.html", "sha256": "abc",
-                    "content_type": "text/html", "status": 200, "depth": 0,
+                    "local_file": "index.html",
+                    "sha256": "abc",
+                    "content_type": "text/html",
+                    "status": 200,
+                    "depth": 0,
                     "fetched_at": "2026-06-12T00:00:00Z",
                 }
             },
             "stats": {"pages": 1, "assets": 0, "skipped_robots": 0, "errors": 0},
         }
         (out / ".fetch_results.json").write_text(json.dumps(results))
-        proc = MagicMock(); proc.returncode = 0
+        proc = MagicMock()
+        proc.returncode = 0
         return proc
 
     with (
@@ -298,8 +339,8 @@ def test_fetch_web_command_runs_runner_and_writes_manifest(tmp_path, monkeypatch
         patch("mykg.cli.subprocess.run", side_effect=fake_run),
     ):
         result = CliRunner().invoke(
-            cli, ["fetch-web", "https://example.com", "--output", str(out),
-                  "--max-pages", "5"],
+            cli,
+            ["fetch-web", "https://example.com", "--output", str(out), "--max-pages", "5"],
         )
 
     assert result.exit_code == 0, result.output
@@ -323,7 +364,8 @@ def test_fetch_web_command_disabled_short_circuits(tmp_path, monkeypatch) -> Non
 
     out = tmp_path / "fw"
     result = CliRunner().invoke(
-        cli, ["fetch-web", "https://example.com", "--output", str(out)],
+        cli,
+        ["fetch-web", "https://example.com", "--output", str(out)],
     )
 
     assert result.exit_code != 0
@@ -347,15 +389,19 @@ def _fake_venv_and_run(out):
         results = {
             "pages": {
                 "https://example.com/": {
-                    "local_file": "index.html", "sha256": "abc",
-                    "content_type": "text/html", "status": 200, "depth": 0,
+                    "local_file": "index.html",
+                    "sha256": "abc",
+                    "content_type": "text/html",
+                    "status": 200,
+                    "depth": 0,
                     "fetched_at": "2026-06-12T00:00:00Z",
                 }
             },
             "stats": {"pages": 1, "assets": 0, "skipped_robots": 0, "errors": 0},
         }
         (out / ".fetch_results.json").write_text(json.dumps(results))
-        proc = MagicMock(); proc.returncode = 0
+        proc = MagicMock()
+        proc.returncode = 0
         return proc
 
     return _FakeVenv(), fake_run
@@ -377,8 +423,16 @@ def test_fetch_web_verbose_flag_is_wired_and_succeeds(tmp_path) -> None:
         patch("mykg.logging.setup") as mock_setup,
     ):
         result = CliRunner().invoke(
-            cli, ["fetch-web", "https://example.com", "--output", str(out),
-                  "--max-pages", "5", "--verbose"],
+            cli,
+            [
+                "fetch-web",
+                "https://example.com",
+                "--output",
+                str(out),
+                "--max-pages",
+                "5",
+                "--verbose",
+            ],
         )
 
     assert result.exit_code == 0, result.output
@@ -409,7 +463,9 @@ def test_crawl_runner_asset_allowed_falls_back_to_content_type() -> None:
     content-type maps to an allowed suffix, and rejected otherwise."""
     mod = _load_runner_module()
     allowed = {".pdf", ".png"}
-    assert mod._asset_allowed("https://arxiv.org/pdf/2606.09884", allowed, "application/pdf") is True
+    assert (
+        mod._asset_allowed("https://arxiv.org/pdf/2606.09884", allowed, "application/pdf") is True
+    )
     # A path extension still wins over content-type when both are present.
     assert mod._asset_allowed("https://x.com/doc.pdf", allowed, "text/html") is True
     # No path extension, content-type not in allowlist.
@@ -441,8 +497,7 @@ def test_fetch_web_e2e_local_site(tmp_path) -> None:
 
     site = tmp_path / "site"
     site.mkdir()
-    (site / "index.html").write_text(
-        '<html><body><a href="/a.html">A</a></body></html>')
+    (site / "index.html").write_text('<html><body><a href="/a.html">A</a></body></html>')
     (site / "a.html").write_text("<html><body><p>page a</p></body></html>")
 
     handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(site))
@@ -452,10 +507,18 @@ def test_fetch_web_e2e_local_site(tmp_path) -> None:
         t.start()
         try:
             out = tmp_path / "fw"
-            result = CliRunner().invoke(cli, [
-                "fetch-web", f"http://127.0.0.1:{port}/",
-                "--output", str(out), "--max-pages", "10", "--no-robots",
-            ])
+            result = CliRunner().invoke(
+                cli,
+                [
+                    "fetch-web",
+                    f"http://127.0.0.1:{port}/",
+                    "--output",
+                    str(out),
+                    "--max-pages",
+                    "10",
+                    "--no-robots",
+                ],
+            )
             assert result.exit_code == 0, result.output
             manifest = json.loads((out / "fetch_manifest.json").read_text())
             assert manifest["stats"]["pages"] >= 1
@@ -483,17 +546,20 @@ def test_fetch_web_e2e_local_site(tmp_path) -> None:
 )
 def test_is_github_repo_url(url, expected) -> None:
     from mykg.fetch_web import is_github_repo_url
+
     assert is_github_repo_url(url) == expected
 
 
 def test_seed_subdir_name_github_vs_plain() -> None:
     from mykg.fetch_web import seed_subdir_name
+
     assert seed_subdir_name("https://github.com/SenolIsci/mykg") == "github.com_SenolIsci_mykg"
     assert seed_subdir_name("https://example.com/docs/guide") == "example.com"
 
 
 def test_default_output_dir_github_repo(tmp_path) -> None:
     from mykg.fetch_web import default_output_dir
+
     out = default_output_dir("https://github.com/SenolIsci/mykg", "mykg_web_fetch", base=tmp_path)
     assert out == tmp_path / "mykg_web_fetch" / "github.com_SenolIsci_mykg"
 
@@ -509,6 +575,7 @@ def test_default_output_dir_github_repo(tmp_path) -> None:
 )
 def test_infer_max_depth(url, expected_depth) -> None:
     from mykg.fetch_web import infer_max_depth
+
     configured_default = 3
     expected = configured_default if expected_depth == "default" else expected_depth
     assert infer_max_depth(url, configured_default) == expected
@@ -516,17 +583,20 @@ def test_infer_max_depth(url, expected_depth) -> None:
 
 def test_parse_url_list(tmp_path) -> None:
     from mykg.fetch_web import parse_url_list
+
     f = tmp_path / "urls.txt"
     f.write_text(
-        "\n".join([
-            "# a comment",
-            "",
-            "https://example.com",
-            "  # indented comment",
-            "https://github.com/SenolIsci/mykg  ",
-            "",
-            "https://example.org/page",
-        ]),
+        "\n".join(
+            [
+                "# a comment",
+                "",
+                "https://example.com",
+                "  # indented comment",
+                "https://github.com/SenolIsci/mykg  ",
+                "",
+                "https://example.org/page",
+            ]
+        ),
         encoding="utf-8",
     )
     assert parse_url_list(f) == [
@@ -554,9 +624,13 @@ def test_filter_repo_files(tmp_path) -> None:
     allowed = frozenset({".png", ".pdf"})
     result = filter_repo_files(repo, input_dir, allowed)
 
-    assert sorted(result["copied"]) == sorted([
-        "README.md", "docs/guide.md", "assets/logo.png",
-    ])
+    assert sorted(result["copied"]) == sorted(
+        [
+            "README.md",
+            "docs/guide.md",
+            "assets/logo.png",
+        ]
+    )
     assert result["skipped"] == [{"path": "src/main.py", "ext": ".py"}]
     assert result["total_files"] == 4  # .git/config excluded entirely
     assert result["copied_count"] == 3
@@ -584,8 +658,12 @@ def test_clone_github_repo_command_shape(tmp_path) -> None:
     args, kwargs = mock_run.call_args
     cmd = args[0]
     assert cmd == [
-        "git", "clone", "--depth", "1",
-        "https://github.com/SenolIsci/mykg.git", str(dest),
+        "git",
+        "clone",
+        "--depth",
+        "1",
+        "https://github.com/SenolIsci/mykg.git",
+        str(dest),
     ]
     assert kwargs["timeout"] == 60
     assert kwargs["check"] is True
@@ -653,7 +731,8 @@ def test_fetch_web_github_url_skips_crawlee(tmp_path) -> None:
         patch("mykg.fetch_web.clone_github_repo", side_effect=fake_clone),
     ):
         result = CliRunner().invoke(
-            cli, ["fetch-web", "https://github.com/SenolIsci/mykg", "--output", str(out)],
+            cli,
+            ["fetch-web", "https://github.com/SenolIsci/mykg", "--output", str(out)],
         )
 
     assert result.exit_code == 0, result.output
@@ -730,8 +809,11 @@ def test_fetch_web_url_list_mixed_seeds(tmp_path) -> None:
                 {
                     "pages": {
                         "https://example.com/": {
-                            "local_file": "index.html", "sha256": "abc",
-                            "content_type": "text/html", "status": 200, "depth": 0,
+                            "local_file": "index.html",
+                            "sha256": "abc",
+                            "content_type": "text/html",
+                            "status": 200,
+                            "depth": 0,
                             "fetched_at": "2026-06-12T00:00:00Z",
                         }
                     },
@@ -758,7 +840,8 @@ def test_fetch_web_url_list_mixed_seeds(tmp_path) -> None:
         patch("mykg.fetch_web.clone_github_repo", side_effect=fake_clone),
     ):
         result = CliRunner().invoke(
-            cli, ["fetch-web", "--url-list", str(url_list), "--output", str(out)],
+            cli,
+            ["fetch-web", "--url-list", str(url_list), "--output", str(out)],
         )
 
     assert result.exit_code == 0, result.output
@@ -813,8 +896,11 @@ def test_fetch_web_url_list_single_shared_venv_for_plain_urls(tmp_path) -> None:
         seeds = cfg["seeds"]
         results = {
             "seeds": [
-                {"pages": {}, "stats": {"pages": 0, "assets": 0, "skipped_robots": 0, "errors": 0},
-                 "crawlee_version": "1.0.0"}
+                {
+                    "pages": {},
+                    "stats": {"pages": 0, "assets": 0, "skipped_robots": 0, "errors": 0},
+                    "crawlee_version": "1.0.0",
+                }
                 for _ in seeds
             ],
             "crawlee_version": "1.0.0",
@@ -829,7 +915,8 @@ def test_fetch_web_url_list_single_shared_venv_for_plain_urls(tmp_path) -> None:
         patch("mykg.cli.subprocess.run", side_effect=fake_run) as mock_subproc,
     ):
         result = CliRunner().invoke(
-            cli, ["fetch-web", "--url-list", str(url_list), "--output", str(out)],
+            cli,
+            ["fetch-web", "--url-list", str(url_list), "--output", str(out)],
         )
 
     assert result.exit_code == 0, result.output
@@ -837,6 +924,7 @@ def test_fetch_web_url_list_single_shared_venv_for_plain_urls(tmp_path) -> None:
     mock_subproc.assert_called_once()
     assert len(captured["cfg"]["seeds"]) == 3
     from mykg import config
+
     assert captured["cfg"]["max_workers"] == config.FETCH_MAX_WORKERS
 
     manifest = json.loads((out / "fetch_manifest.json").read_text())
@@ -876,8 +964,11 @@ def test_fetch_web_url_list_per_seed_depth_inference(tmp_path) -> None:
         seeds = cfg["seeds"]
         results = {
             "seeds": [
-                {"pages": {}, "stats": {"pages": 0, "assets": 0, "skipped_robots": 0, "errors": 0},
-                 "crawlee_version": "1.0.0"}
+                {
+                    "pages": {},
+                    "stats": {"pages": 0, "assets": 0, "skipped_robots": 0, "errors": 0},
+                    "crawlee_version": "1.0.0",
+                }
                 for _ in seeds
             ],
             "crawlee_version": "1.0.0",
@@ -892,7 +983,8 @@ def test_fetch_web_url_list_per_seed_depth_inference(tmp_path) -> None:
         patch("mykg.cli.subprocess.run", side_effect=fake_run),
     ):
         result = CliRunner().invoke(
-            cli, ["fetch-web", "--url-list", str(url_list), "--output", str(out)],
+            cli,
+            ["fetch-web", "--url-list", str(url_list), "--output", str(out)],
         )
 
     assert result.exit_code == 0, result.output
@@ -933,8 +1025,11 @@ def test_fetch_web_url_list_explicit_max_depth_overrides_inference(tmp_path) -> 
         seeds = cfg["seeds"]
         results = {
             "seeds": [
-                {"pages": {}, "stats": {"pages": 0, "assets": 0, "skipped_robots": 0, "errors": 0},
-                 "crawlee_version": "1.0.0"}
+                {
+                    "pages": {},
+                    "stats": {"pages": 0, "assets": 0, "skipped_robots": 0, "errors": 0},
+                    "crawlee_version": "1.0.0",
+                }
                 for _ in seeds
             ],
             "crawlee_version": "1.0.0",
@@ -983,7 +1078,10 @@ def test_fetch_web_single_url_depth_inference(tmp_path) -> None:
         config_path = Path(cmd[-1])
         cfg = json.loads(config_path.read_text())
         captured["cfg"] = cfg
-        results = {"pages": {}, "stats": {"pages": 0, "assets": 0, "skipped_robots": 0, "errors": 0}}
+        results = {
+            "pages": {},
+            "stats": {"pages": 0, "assets": 0, "skipped_robots": 0, "errors": 0},
+        }
         (out / ".fetch_results.json").write_text(json.dumps(results))
         proc = MagicMock()
         proc.returncode = 0
@@ -996,7 +1094,8 @@ def test_fetch_web_single_url_depth_inference(tmp_path) -> None:
         patch("mykg.cli.subprocess.run", side_effect=fake_run),
     ):
         result = CliRunner().invoke(
-            cli, ["fetch-web", "https://example.com/docs/guide", "--output", str(out)],
+            cli,
+            ["fetch-web", "https://example.com/docs/guide", "--output", str(out)],
         )
 
     assert result.exit_code == 0, result.output
@@ -1062,7 +1161,9 @@ def test_crawl_runner_concurrency_bound(tmp_path) -> None:
 
     mod = _load_runner_module()
 
-    seeds = [{"output_dir": str(tmp_path), "seed_url": f"https://s{i}.example.com"} for i in range(4)]
+    seeds = [
+        {"output_dir": str(tmp_path), "seed_url": f"https://s{i}.example.com"} for i in range(4)
+    ]
 
     async def run_with_max_workers(max_workers):
         in_flight = 0
@@ -1080,6 +1181,7 @@ def test_crawl_runner_concurrency_bound(tmp_path) -> None:
             return {"pages": {}, "stats": {}, "seed_url": cfg["seed_url"]}
 
         from unittest.mock import patch
+
         with patch.object(mod, "crawl", side_effect=fake_crawl):
             results = await mod._crawl_many(seeds, max_workers)
         return results, max_in_flight

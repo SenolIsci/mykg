@@ -147,7 +147,9 @@ def test_merge_raw_does_not_overwrite_existing_norm_file(tmp_path):
     """run_merge_raw must NOT overwrite an existing name_normalization.json (line 46 branch)."""
     ctx = _make_ctx(tmp_path)
     norm = ctx.intermediate_dir / "name_normalization.json"
-    norm.write_text(json.dumps({"mappings": {"Person": {"Alice": "Alice Smith"}}}), encoding="utf-8")
+    norm.write_text(
+        json.dumps({"mappings": {"Person": {"Alice": "Alice Smith"}}}), encoding="utf-8"
+    )
 
     run_merge_raw(ctx)
 

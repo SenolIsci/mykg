@@ -498,7 +498,9 @@ def test_section_orphan_pass_promoted_to_schema_gap(tmp_path):
     session = tmp_path / "session"
     inter = session / "intermediate"
     inter.mkdir(parents=True)
-    (inter / "orphan_candidates.json").write_text(json.dumps({"groups": [], "schema_gap_orphans": []}))
+    (inter / "orphan_candidates.json").write_text(
+        json.dumps({"groups": [], "schema_gap_orphans": []})
+    )
 
     lines = [
         {
@@ -688,7 +690,10 @@ def _make_minimal_merge_session(tmp_path, with_net_new=False, with_cross_edge=Fa
         _write(s / "intermediate" / "nodes.json", nodes)
         _write(s / "intermediate" / "edge_metadata.json", {})
         _write(s / "intermediate" / "schema.json", {"concepts": [], "properties": []})
-        _write(s / "intermediate" / "raw_extractions.json", {f"{s.name}/doc.md": {"nodes": [], "edges": []}})
+        _write(
+            s / "intermediate" / "raw_extractions.json",
+            {f"{s.name}/doc.md": {"nodes": [], "edges": []}},
+        )
 
     # Merged artifacts
     merged_nodes = [
@@ -696,7 +701,9 @@ def _make_minimal_merge_session(tmp_path, with_net_new=False, with_cross_edge=Fa
         {"id": "b-1", "type": "X", "attributes": {"name": {"value": "n3"}}},
     ]
     if with_net_new:
-        merged_nodes.append({"id": "net-new-1", "type": "Y", "attributes": {"name": {"value": "n4"}}})
+        merged_nodes.append(
+            {"id": "net-new-1", "type": "Y", "attributes": {"name": {"value": "n4"}}}
+        )
 
     merged_edges = {}
     if with_cross_edge:
@@ -797,9 +804,7 @@ def test_section_merge_provenance_many_net_new(tmp_path):
     # Add many net-new nodes
     nodes = _load_json(session / "intermediate" / "nodes.json")
     for i in range(25):
-        nodes.append(
-            {"id": f"net-{i}", "type": "Z", "attributes": {"name": {"value": f"n{i}"}}}
-        )
+        nodes.append({"id": f"net-{i}", "type": "Z", "attributes": {"name": {"value": f"n{i}"}}})
     _write(session / "intermediate" / "nodes.json", nodes)
 
     result = _section_merge_provenance(session)
