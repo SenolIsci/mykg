@@ -57,6 +57,8 @@
   - [claude-cli profile](#claude-cli-profile)
 - [Roadmap](#roadmap)
 - [Development](#development)
+  - [Testing](#testing)
+  - [Healthiness check](#healthiness-check)
 - [Design](#design)
 - [License](#license)
 
@@ -1206,8 +1208,20 @@ classified into an actionable cause (`quota or balance exhausted`, `api key reje
   ollama-local      ok      ok        2 node(s), 1 edge(s)
 ```
 
+Artifacts land in a pytest temp directory — the crawled HTML, the MinerU-converted
+Markdown, and a full session under `mykg_sessions/` — so a health check never touches
+your real sessions. The gitignored `_healthiness_run` symlink in the repo root points at
+the most recent run.
+
+Two things to expect. A **failing** endpoint is the slow one: the cause is only known
+after the adapter exhausts its 429 backoff ladder, which is what lets the report tell
+"rate limited, recovered" apart from "quota exhausted" — lower `llm.retry_429_max` for a
+faster verdict. And on free tiers (Gemini allows 5 requests/minute/model, OpenRouter's
+free models are similarly capped) the extraction stages log 429 backoff warnings; the
+adapters retry and recover, which is documented behaviour, not a failure.
+
 The whole file carries the `live` marker, so it is excluded from CI and from
-`pytest -m "not live"`. Design notes and results from the first runs are in
+`pytest -m "not live"`. Design notes and measured results are in
 [docs/healthiness-check.md](docs/healthiness-check.md).
 
 ### Linting and Formatting
