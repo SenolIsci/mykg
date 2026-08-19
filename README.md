@@ -1207,7 +1207,8 @@ classified into an actionable cause (`quota or balance exhausted`, `api key reje
 ```
 
 The whole file carries the `live` marker, so it is excluded from CI and from
-`pytest -m "not live"`.
+`pytest -m "not live"`. Design notes and results from the first runs are in
+[docs/healthiness-check.md](docs/healthiness-check.md).
 
 ### Linting and Formatting
 

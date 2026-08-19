@@ -27,6 +27,13 @@ Run with:
 `--no-cov` matters: addopts forces coverage on every run, which is pure overhead
 here. Every test is marked `live`, so CI's existing `-m "not live"` excludes the
 whole file automatically.
+
+Known discrepancy this check surfaced: the README Quick Start says to open
+`output/knowledge_graph.html`, but `export_networkx()` writes the viewer to
+`output/networkx_output/knowledge_graph.html`. Both locations are accepted below
+until that is reconciled.
+
+Design notes and results from the first runs: docs/healthiness-check.md
 """
 
 from __future__ import annotations
@@ -522,7 +529,14 @@ def test_extract_documents_healthy(cli_env, report, docs_session):
 
     vault = session / "output" / "obsidian_vault"
     assert vault.exists() and list(vault.rglob("*.md")), "obsidian vault is empty"
-    assert (session / "output" / "knowledge_graph.html").exists(), (
+    # The interactive viewer is written by export_networkx(), so it lands in
+    # output/networkx_output/. (The README Quick Start points at output/ — see
+    # the note in this file's docstring.) Accept either location.
+    viewer = [
+        session / "output" / "knowledge_graph.html",
+        session / "output" / "networkx_output" / "knowledge_graph.html",
+    ]
+    assert any(path.exists() for path in viewer), (
         "no knowledge_graph.html — the README tells users to open this in a browser"
     )
 
