@@ -211,13 +211,22 @@ uv run pytest tests/ -m "not live" -q --no-cov
 
 `--no-cov` matters — `addopts` forces coverage on every run, pure overhead here.
 
-**Runtime:** endpoints ~5 s; without MinerU ~3–5 min; +5–15 min on the first MinerU run
-(venv build + model download), less afterwards.
+**Runtime (measured, not estimated):** endpoints ~2.5 min for all five (the probe is two
+real calls per provider, and a failing one burns its full retry ladder — gemini alone
+took ~90 s exhausting 5 backoff attempts). A full `extract-graph` is ~2m45s on
+`anthropic-claude`. MinerU adds the ephemeral-venv build on first use.
 
 **Expect on free tiers:** Gemini allows 5 req/min/model and OpenRouter free models are
-similarly capped, so stages 3–4 log 429 backoff warnings. Adapters retry and recover —
-documented behaviour (Invariant 13), not a failure. The generated config pins
-`max_workers: 1–2`.
+similarly capped, so the extraction stages log 429 backoff warnings. Adapters retry and
+recover — documented behaviour (Invariant 13), not a failure. The generated config pins
+`max_workers: 1`.
+
+**A failing endpoint is slow, by design.** `classify_failure` only sees the exception
+*after* `retry_on_rate_limit` has exhausted `retry_429_max` attempts with exponential
+backoff. That is the right trade — the report distinguishes "rate limited, recovered"
+from "quota exhausted" precisely because it waited — but it means an unhealthy provider
+costs more wall-clock than a healthy one. Lower `llm.retry_429_max` in the profile if
+you want a faster verdict.
 
 ## Out of scope
 
@@ -229,11 +238,12 @@ documented behaviour (Invariant 13), not a failure. The generated config pins
 
 ---
 
-## Results from the first real runs
+## Results from real runs
 
-The check was exercised against live endpoints during implementation. What it found:
+The check has been exercised repeatedly against live endpoints — during implementation
+and then as a full `-m live` run (all 11 tests, MinerU included). What it found:
 
-**Endpoints — 4 of 5 healthy.**
+**Endpoints — 4 of 5 healthy, reproducible across every run.**
 
 ```
   ENDPOINTS         reach   contract
@@ -277,3 +287,53 @@ run); the check asserts the graph is well-formed, not that it is identical.
 
 Both were surfaced by the check rather than by the 1358-test unit suite, which is the
 point of having it.
+
+### Full `-m live` run
+
+`uv run pytest tests/test_healthiness.py -m live -v --no-cov` — all 11 tests, MinerU
+included. Stage-by-stage:
+
+```
+test_endpoints_healthy[openrouter-free]   PASSED
+test_endpoints_healthy[anthropic-claude]  PASSED
+test_endpoints_healthy[openai]            PASSED
+test_endpoints_healthy[gemini]            FAILED   quota exhausted (known)
+test_endpoints_healthy[ollama-local]      PASSED
+test_fetch_web_healthy                    PASSED   aiportal.news crawled
+test_parse_docs_healthy                   PASSED   MinerU converted pdf + xlsx
+```
+
+`test_parse_docs_healthy` passing is the notable one: MinerU had **no genuine
+end-to-end coverage before this** — every prior test patched `subprocess.run`. The
+ephemeral uv venv (D48) is now exercised for real, and the converted output is
+verifiably good:
+
+```markdown
+# Team Notes — Acme Corp
+## Engineering
+Alice Chen is a Senior Software Engineer at Acme Corp. She joined the company in
+March 2021 and holds a BSc in Computer Science from MIT...
+```
+
+Headings, prose and structure all survive the PDF → Markdown conversion.
+
+### Where the artifacts land
+
+The check writes to a pytest temp directory, never into the project — a health check
+must not pollute real `mykg_sessions/`. Layout:
+
+```
+<pytest-tmp>/healthiness0/
+├── mykg_config.yaml                  isolated config (cwd is chdir'd here)
+├── fetched/                          stage 1 — crawled HTML + fetch_manifest.json
+├── converted/                        stage 2 — MinerU output
+│   ├── team/hybrid_auto/team.md
+│   └── projects/office/projects.md
+├── docs/                             corpus copied from _test_files/
+└── mykg_sessions/<timestamp>/        stages 3–6 (input/ intermediate/ output/ run.log)
+```
+
+A gitignored `_healthiness_run` symlink in the repo root points at
+`pytest-of-<user>/pytest-current/healthiness0`, so it follows the newest run rather
+than going stale. Note pytest keeps only the last 3 runs — these artifacts are for
+inspection, not archival.
