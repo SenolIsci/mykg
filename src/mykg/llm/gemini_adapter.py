@@ -41,6 +41,36 @@ _log = logging.getLogger(__name__)
 _DEFAULT_THINKING_LEVEL = "low"
 
 
+# google-genai logs an INFO notice on every generate_content call recommending
+# Chat.send_message for automatic function calling. mykg never uses tools, so
+# that notice is pure noise repeated once per chunk in run.log.
+#
+# A filter on that one message is used rather than raising the logger's level:
+# setLevel would also suppress genuine warnings from google_genai.models, and
+# re-applying it per adapter construction would mutate global logging state on
+# behalf of the whole process. The filter is installed exactly once and drops
+# only the AFC line.
+# Two distinct AFC lines are emitted: an INFO "AFC is enabled with max remote
+# calls: N." on every call, and a longer "Direct use of automatic function
+# calling (AFC) ... is not recommended" notice.
+_AFC_MARKERS = ("automatic function calling", "afc is enabled")
+_afc_filter_installed = False
+
+
+def _drop_afc_notice(record: logging.LogRecord) -> bool:
+    msg = record.getMessage().lower()
+    return not any(marker in msg for marker in _AFC_MARKERS)
+
+
+def _silence_afc_notice() -> None:
+    """Install the AFC-notice filter once per process."""
+    global _afc_filter_installed
+    if _afc_filter_installed:
+        return
+    logging.getLogger("google_genai.models").addFilter(_drop_afc_notice)
+    _afc_filter_installed = True
+
+
 class _GeminiRetryable(Exception):
     """Marker for Gemini errors worth retrying (429 and 5xx).
 
@@ -92,13 +122,8 @@ class GeminiAdapter(LLMAdapter):
                 "set it in your environment or supply api_key in mykg_config.yaml"
             )
 
+        _silence_afc_notice()
         self._client = genai.Client(api_key=api_key)
-
-        # google-genai warns on every generate_content call that automatic
-        # function calling is better used via Chat.send_message. mykg never uses
-        # tools/function calling, so the notice is pure noise that would repeat
-        # once per chunk in run.log.
-        logging.getLogger("google_genai.models").setLevel(logging.ERROR)
 
     def endpoint_label(self) -> str:
         return f"gemini / {self._model} @ https://generativelanguage.googleapis.com"

@@ -2623,3 +2623,147 @@ def test_gemini_output_cap_error_not_mislabelled_as_context_overflow():
     )
     assert looks_like_context_exceeded(output_cap) is False
     assert looks_like_context_exceeded(input_overflow) is True
+
+
+def test_gemini_missing_usage_metadata_defaults_to_zero():
+    """A response with no usage_metadata at all records zero counts, not an error.
+
+    Guards the `getattr(usage, field, 0)` default path in `_count` against a
+    malformed or usage-free response (raised in review of PR #61).
+    """
+    with (
+        patch("google.genai.Client") as mock_cls,
+        patch("mykg.llm.gemini_adapter.record_llm_call") as mock_record,
+    ):
+        resp = _gemini_response()
+        resp.usage_metadata = None
+        mock_cls.return_value = _gemini_client(resp)
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(model="gemini-3.7-flash", max_tokens=10, timeout=10, api_key="k")
+        adapter.complete("sys", "user")
+
+    kwargs = mock_record.call_args.kwargs
+    assert kwargs["input_tokens"] == 0
+    assert kwargs["output_tokens"] == 0
+    assert kwargs["cache_read_tokens"] == 0
+
+
+def test_gemini_count_helper_tolerates_absent_usage():
+    """_count returns 0 for a None usage object, a bare object, and non-int values."""
+    from mykg.llm.gemini_adapter import _count
+
+    class _Bare:
+        pass
+
+    class _NoneValued:
+        prompt_token_count = None
+
+    class _NonInt:
+        prompt_token_count = "12"
+
+    assert _count(None, "prompt_token_count") == 0
+    assert _count(_Bare(), "prompt_token_count") == 0
+    assert _count(_NoneValued(), "prompt_token_count") == 0
+    assert _count(_NonInt(), "prompt_token_count") == 0
+
+
+def test_gemini_afc_notice_filtered_without_muting_real_warnings():
+    """The AFC notice is dropped, but genuine google_genai warnings still pass.
+
+    Raised in review of PR #61: raising the logger's level would have suppressed
+    legitimate warnings from the same logger, so a message-specific filter is
+    used instead.
+    """
+    import logging as _logging
+
+    with patch("google.genai.Client"):
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        GeminiAdapter(model="gemini-3.7-flash", max_tokens=10, timeout=10, api_key="k")
+
+    logger = _logging.getLogger("google_genai.models")
+    # The level is untouched — only a filter was added.
+    assert logger.level == _logging.NOTSET
+
+    def _rec(msg):
+        return _logging.LogRecord(
+            "google_genai.models", _logging.WARNING, __file__, 1, msg, None, None
+        )
+
+    # Both AFC variants the SDK emits must be dropped.
+    for noisy in (
+        "Direct use of automatic function calling (AFC) is not recommended",
+        "AFC is enabled with max remote calls: 10.",
+    ):
+        assert any(not f(_rec(noisy)) for f in logger.filters), f"should be filtered: {noisy}"
+
+    assert all(f(_rec("quota exceeded for this project")) for f in logger.filters), (
+        "genuine warnings must still pass through"
+    )
+
+
+def test_gemini_afc_filter_installed_only_once():
+    """Constructing many adapters does not stack duplicate filters."""
+    import logging as _logging
+
+    logger = _logging.getLogger("google_genai.models")
+    with patch("google.genai.Client"):
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        GeminiAdapter(model="gemini-3.7-flash", max_tokens=10, timeout=10, api_key="k")
+        before = len(logger.filters)
+        for _ in range(5):
+            GeminiAdapter(model="gemini-3.7-flash", max_tokens=10, timeout=10, api_key="k")
+
+    assert len(logger.filters) == before
+
+
+def test_gemini_status_of_falls_back_to_status_code():
+    """_status_of reads .status_code when .code is absent or non-integer."""
+    from mykg.llm.gemini_adapter import _status_of
+
+    class _NoCode:
+        status_code = 503
+
+    class _StringCode:
+        code = "RESOURCE_EXHAUSTED"
+        status_code = 429
+
+    class _Neither:
+        pass
+
+    assert _status_of(_NoCode()) == 503
+    # a non-int .code must not be returned verbatim
+    assert _status_of(_StringCode()) == 429
+    assert _status_of(_Neither()) is None
+
+
+def test_gemini_raw_finish_reason_edge_cases():
+    """_raw_finish_reason handles absent candidates, a None reason, and enum reprs."""
+    from mykg.llm.gemini_adapter import GeminiAdapter
+
+    read = GeminiAdapter._raw_finish_reason
+
+    class _NoCandidates:
+        candidates = []
+
+    class _NoneReason:
+        def __init__(self):
+            c = MagicMock()
+            c.finish_reason = None
+            self.candidates = [c]
+
+    class _PlainStringEnum:
+        """finish_reason whose str() is a dotted enum repr and has no .name."""
+
+        def __init__(self):
+            c = MagicMock()
+            c.finish_reason = "FinishReason.MAX_TOKENS"
+            self.candidates = [c]
+
+    assert read(_NoCandidates()) is None
+    assert read(_NoneReason()) is None
+    # dotted enum repr is reduced to the bare member name
+    assert read(_PlainStringEnum()) == "MAX_TOKENS"
