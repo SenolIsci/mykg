@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![CI](https://github.com/SenolIsci/mykg/actions/workflows/ci.yml/badge.svg)](https://github.com/SenolIsci/mykg/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/SenolIsci/mykg/branch/main/graph/badge.svg)](https://codecov.io/gh/SenolIsci/mykg)
-[![Providers](https://img.shields.io/badge/LLM-Anthropic%20%7C%20OpenAI%20%7C%20Ollama%20%7C%20OpenRouter-orange.svg)](#configuration)
+[![Providers](https://img.shields.io/badge/LLM-Anthropic%20%7C%20OpenAI%20%7C%20Gemini%20%7C%20Ollama%20%7C%20OpenRouter%20%7C%20Claude%20CLI%20%7C%20Agent-orange.svg)](#configuration)
 [![PyPI version](https://img.shields.io/pypi/v/mykg.svg)](https://pypi.org/project/mykg/)
 [![Downloads](https://img.shields.io/pepy/dt/mykg?color=blue&label=downloads)](https://pepy.tech/project/mykg)
 [![GitHub Stars](https://img.shields.io/github/stars/SenolIsci/mykg?style=flat-square&logo=github)](https://github.com/SenolIsci/mykg/stargazers)
@@ -100,7 +100,7 @@ MyKG builds trustworthy knowledge graphs through a self-evolving ontology that c
 
 ### Graph & Output
 
-- **Provider-agnostic** — works with Anthropic (Claude), OpenAI (GPT), Ollama (local), OpenRouter, or the `claude` CLI
+- **Provider-agnostic** — works with Anthropic (Claude), OpenAI (GPT), Google Gemini, Ollama (local), OpenRouter, or the `claude` CLI
 - **Five output families** — JSONL for Neo4j/NetworkX/RAG, Turtle RDF for OWL toolchains, NetworkX multi-format for graph analysis, Obsidian vault for linked personal knowledge management, and an optional Neo4j LOAD CSV bundle (plain-header CSVs + paste-and-run Cypher script for Neo4j Browser / `cypher-shell`)
 - **Obsidian vault — second brain for AI coding assistants** — every extracted entity becomes a wikilinked Markdown note in `output/obsidian_vault/`; open it in [Obsidian](https://obsidian.md) to navigate the graph with backlinks and Graph View, or point your AI coding assistant (Claude Code, Cursor, Copilot) at the vault folder so it can answer questions, trace relationships, and reason over your knowledge base in natural language
 - **Interactive HTML graph** — node/edge filtering, search, hover popups; opens directly in a browser
@@ -108,7 +108,7 @@ MyKG builds trustworthy knowledge graphs through a self-evolving ontology that c
 
 ## Quick Start
 
-Requires Python 3.11+ (developed on macOS; automated CI runs the test suite on Ubuntu and Windows), and one of: an Anthropic/OpenAI/OpenRouter API key, Ollama running locally, or the `claude` CLI.
+Requires Python 3.11+ (developed on macOS; automated CI runs the test suite on Ubuntu and Windows), and one of: an Anthropic/OpenAI/Gemini/OpenRouter API key, Ollama running locally, or the `claude` CLI.
 
 ### Install from PyPI
 
@@ -194,7 +194,7 @@ mykg init --profile openrouter-free --model google/llama-4-maverick --api-key sk
 
 The wizard walks you through three prompts:
 
-1. **Profile** — choose your LLM provider (OpenRouter, Anthropic, OpenAI, Ollama, Claude CLI, or Agent / Claude Code skill)
+1. **Profile** — choose your LLM provider (OpenRouter, Anthropic, OpenAI, Gemini, Ollama, Claude CLI, or Agent / Claude Code skill)
 2. **Model** — accept the default or type any model slug for that provider *(skipped in agent mode — the host Claude Code session is the LLM)*
 3. **API key** — paste your key (skipped for Ollama, Claude CLI, and agent mode)
 
@@ -287,7 +287,7 @@ A `429` surfaces in the log as a retry warning like:
 - `pass2.max_workers` — concurrent per-file extraction calls
 - `orphan_pass.max_workers` — concurrent orphan-connection calls
 
-Lower these (e.g. from `8` down to `2`–`4`) in the active profile to reduce concurrent requests. This is especially likely on `openrouter-free` (free-tier models have very low per-minute caps) and on lower-tier `anthropic-claude`/`openai` accounts. `llm.retry_429_max` / `llm.retry_429_base_delay` control automatic backoff on a 429, but a persistent 429 is a signal to reduce `max_workers`, not just retry harder. `claude-cli` is unaffected — it is serial by design (`max_workers: 1`); it doesn't hit API rate limits since there's no API call. `agent-claude-code` is not API rate-limited either (no API key involved), but it is not serial — its default profile sets `pass1`/`pass2`/`orphan_pass` `max_workers` > 1 (configurable, like any other profile), since the skill dispatches multiple subagents per wave.
+Lower these (e.g. from `8` down to `2`–`4`) in the active profile to reduce concurrent requests. This is especially likely on `openrouter-free` (free-tier models have very low per-minute caps), on `gemini` with a free-tier key (5 requests/minute/model — drop `pass1`/`pass2`/`orphan_pass` to `1`–`2`), and on lower-tier `anthropic-claude`/`openai` accounts. `llm.retry_429_max` / `llm.retry_429_base_delay` control automatic backoff on a 429, but a persistent 429 is a signal to reduce `max_workers`, not just retry harder. `claude-cli` is unaffected — it is serial by design (`max_workers: 1`); it doesn't hit API rate limits since there's no API call. `agent-claude-code` is not API rate-limited either (no API key involved), but it is not serial — its default profile sets `pass1`/`pass2`/`orphan_pass` `max_workers` > 1 (configurable, like any other profile), since the skill dispatches multiple subagents per wave.
 
 **Also check your quota/credits.** Some providers return `429` when your account has exhausted its token quota or spending balance, not only for request cadence. If lowering `max_workers` doesn't help and the 429s persist from the very first call, **check that your account still has available tokens/credits** (e.g. the OpenAI/Anthropic billing dashboard, or your OpenRouter balance). No `max_workers` value will clear a 429 caused by a depleted balance — top up or switch to a profile with quota (e.g. `ollama-local` for local inference, or `claude-cli` which bills via your Claude Pro/Max plan instead of the API).
 
