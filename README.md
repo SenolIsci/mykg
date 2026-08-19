@@ -204,6 +204,7 @@ The wizard walks you through three prompts:
 |---|---|---|---|
 | Anthropic (Claude) | `anthropic-claude` | `ANTHROPIC_API_KEY` | Recommended for quality |
 | OpenAI | `openai` | `OPENAI_API_KEY` | |
+| Google Gemini | `gemini` | `GEMINI_API_KEY` | 1M-token context; implicit prompt caching is automatic |
 | Ollama | `ollama-local` | — | Local inference, no key needed |
 | OpenRouter | `openrouter-free` | `OPENROUTER_API_KEY` | Access many models via one key |
 | Claude CLI | `claude-cli` | — | Uses `claude -p` subprocess; serial only |

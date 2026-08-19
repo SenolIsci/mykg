@@ -2,7 +2,8 @@
 # myKG — Knowledge Graph Extractor
 # =============================================================================
 # ACTIVE PROFILE — change this one line to switch provider and all settings.
-# Available: ollama-local | anthropic-claude | openai | openrouter-free | claude-cli | agent-claude-code
+# Available: ollama-local | anthropic-claude | openai | gemini | openrouter-free |
+#            claude-cli | agent-claude-code
 # =============================================================================
 profile: openai
 
@@ -728,6 +729,203 @@ profiles:
       transport: stdio             # default transport: stdio | streamable_http
 
   # ---------------------------------------------------------------------------
+  gemini:
+  # Google Gemini — native google-genai SDK, requires GEMINI_API_KEY (or
+  # GOOGLE_API_KEY) in env / .env.mykg.
+  #
+  # Implicit context caching is automatic and server-side on Gemini 2.5+ models:
+  # a stable prompt prefix (the flattened schema in system_instruction) is cached
+  # by Google with no cache object to create and no storage cost. The adapter
+  # only *reports* the saving via cache_read_tokens in llm.log — it implements no
+  # caching of its own.
+  #
+  # thinking_level controls the reasoning budget. Gemini 3.x draws thinking
+  # tokens from the SAME max_output_tokens allowance as the visible answer, so a
+  # budget that is too small returns an EMPTY response with finish_reason=
+  # MAX_TOKENS. Keep max_output_tokens generous. Use thinking_level (not
+  # thinking_budget) — thinking_budget=0 is rejected by gemini-3.6-flash.
+  #
+  # NOTE ON RATE LIMITS (Invariant 13): the Gemini free tier allows only
+  # 5 requests/minute/model, so max_workers below is deliberately 2, not 8.
+  # On a paid tier, raise the max_workers values to match your quota.
+  #
+  # Token budget chain (use context-calculator to recompute when switching models):
+  #   ① context_window    = 1000000
+  #   ② max_output_tokens = 32000
+  #   ③ input_headroom    = ① − ② = 968000
+  #      batch_token_target = 32000  (conservative for reliable JSON output)
+  #      window_tokens      = batch_token_target / 4 = 8000
+  #      overlap_tokens     = window_tokens × 0.10 = 800
+  # ---------------------------------------------------------------------------
+    provider: gemini
+    llm_retry:
+      max_retries: 2        # retries on empty/blank response; set to 0 to disable
+    llm:
+      context_window: 1000000     # ① model's total context limit
+      max_output_tokens: 32000    # ② output cap — shared by thinking + answer
+      model: gemini-3.7-flash
+      thinking_level: low         # low | medium | high, or null to omit and let the
+                                  # model decide. Thinking tokens are billed as output
+                                  # AND drawn from max_output_tokens. Measured on an
+                                  # extraction prompt: low = 442 thinking tokens / 2.9s
+                                  # vs omitted = 942 / 4.4s, same parsed result.
+      timeout: 1800                # seconds per LLM call before raising a timeout error
+      retry_429_max: 5            # max retries on HTTP 429 rate-limit before giving up
+      retry_429_base_delay: 2.0   # initial backoff seconds; doubles on each retry (exponential)
+      # api_key:                  # optional: override GEMINI_API_KEY env var
+    pipeline:
+      # --- Ingestion & chunking -----------------------------------------------
+      ingest:
+        max_workers: 2  # free tier = 5 req/min/model; raise on a paid tier
+      # --- Preprocess (optional non-md document conversion via MinerU) ----------
+      # MinerU runs inside an ephemeral uv-managed venv created per parse-docs
+      # call and deleted on exit; nothing is installed into mykg's interpreter.
+      preprocess:
+        enabled: true                # set true to convert non-md files (PDF/DOCX/images) via MinerU before ingest
+        subdir: _preprocessed         # converted .md files land in <session>/input/<subdir>/
+        keep_artifacts: false        # when false (default) keep only the final <stem>.md; drop MinerU's nested subtree, images/, and .mineru.json sidecar. Set true to retain everything MinerU wrote (debugging).
+        extra_args: []                # extra arguments passed through to mineru (e.g. ["--backend", "pipeline"])
+        timeout_seconds: 1800         # mineru run-phase timeout (30 min)
+        uv_path: uv                   # path or PATH name of the uv CLI (uv is a core mykg dependency)
+        uv_python_version: "3.12"    # interpreter version uv pins the ephemeral venv to
+        mineru_spec: "mineru[all] pdftext<0.7.0"      # package spec installed via `uv pip install -U <spec>`
+        install_timeout_seconds: 1800 # install-phase timeout (30 min); first-run downloads PyTorch/Ray
+        extensions:                   # suffixes the preprocess step may convert (.md is native and never listed). Backend per suffix is hardcoded: HTML → markdownify in-process, everything else → MinerU. Remove a line to skip that suffix.
+          - .pdf
+          - .docx
+          - .doc
+          - .pptx
+          - .xlsx
+          - .png
+          - .jpg
+          - .jpeg
+          - .html
+          - .htm
+          - .txt
+      # --- Fetch (optional web crawl via fetch-web command) --------------------
+      # The crawler runs inside an ephemeral uv-managed venv created per fetch-web
+      # call and deleted on exit; nothing is installed into mykg's interpreter.
+      fetch:
+        enabled: true                 # master toggle for the fetch-web command
+        output_dir: mykg_web_fetch    # default base folder for fetch-web output (./<output_dir>/<domain>/); overridden by --output
+        strategy: same-domain         # link-following scope, passed to Crawlee's enqueue_links(strategy=...):
+                                       #   same-domain — follow links to the same registrable domain, across subdomains (e.g. docs.example.com + www.example.com)
+                                       #   same-origin — follow links matching scheme+host+port exactly (stricter than same-domain; subdomains excluded)
+                                       #   all         — follow any link found, including off-site domains (use with care: max_pages/max_depth become the only guardrails)
+        max_pages: 1000                # hard cap on total fetched pages (bounds runtime)
+        max_depth: 1                   # max crawl depth from the seed URL
+        respect_robots: true          # honor robots.txt disallow + crawl-delay
+        request_delay_seconds: 0.5    # politeness delay between requests
+        concurrency: 4                # max concurrent requests
+        download_assets: true         # download linked binaries whose suffix is in preprocess.extensions
+        timeout_seconds: 1800         # crawl run-phase timeout (30 min)
+        uv_path: uv                   # uv CLI path (uv is a core mykg dependency)
+        uv_python_version: "3.12"    # interpreter pinned for the ephemeral crawl venv
+        crawlee_spec: "crawlee[beautifulsoup]"   # spec installed via `uv pip install -U`
+        install_timeout_seconds: 1800 # install-phase timeout (30 min)
+        github_clone_enabled: true    # master toggle for the GitHub-repo git-clone path (vs Crawlee)
+        github_clone_depth: 1          # `git clone --depth N` — shallow clone (history depth only; full working tree is always cloned). 1 = latest commit's files only, no history. Increase (or set higher) only if you want .git/ history in _repo/ for provenance.
+        github_clone_timeout_seconds: 1800  # git clone timeout (30 min)
+        max_workers: 2                 # max concurrent seed crawls inside one shared venv for --url-list
+      chunking:
+        window_tokens: 8000     # = batch_token_target / 4
+        overlap_tokens: 800     # = window_tokens × 0.10
+        tiktoken_encoding: cl100k_base
+      # --- Pass 1: schema induction -------------------------------------------
+      pass1:
+        batch_token_target: 32000  # conservative; MUST stay ≤ context_window − max_output_tokens
+        max_workers: 2  # free tier = 5 req/min/model; raise on a paid tier
+        per_file_batching: false
+        max_schema_proposals: 25  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
+        random_seed: 0  # fixed seed for deterministic batch sampling when batches exceed max_schema_proposals; scoped per-call, not shared across repeated Pass 1 invocations
+      # --- Pass 2: instance extraction ----------------------------------------
+      pass2:
+        max_workers: 2  # free tier = 5 req/min/model; raise on a paid tier
+        stateful_chunks: true
+        prep_mode: batch_chunks             # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
+        per_file_token_target: 32000   # token cap per file; used when prep_mode=per_file. Files over this are truncated to the first N tokens. 0 = no cap
+        concat_batch_token_target: 32000  # target token budget per virtual batch; used when prep_mode=concat
+        batch_token_target: 32000         # token budget per chunk batch; used when prep_mode=batch_chunks
+        batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
+        batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
+      normalize_names:
+        enabled: true
+        max_names_per_type: 50000 # safety-net cap per type; primary batch sizing is controlled by batch_token_target
+        batch_token_target: 32000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
+      # --- Orphan recovery -----------------------------------------------------
+      orphan_pass:
+        enabled: false
+        min_cooccurrence: 1
+        top_k_per_orphan: 5
+        confidence_base: 0.5
+        confidence_weight: 0.5
+        max_workers: 2  # free tier = 5 req/min/model; raise on a paid tier
+        schema_max_restarts: 0
+        excerpt_window: 4000
+        excerpt_context: 1500
+        excerpt_max_total: 16000
+        blank_recovery_enabled: true
+        connected_sample_size: 200
+      # --- Assembly & deduplication -------------------------------------------
+      assembly:
+        confidence_agg: mean
+        edge_id_prefix: "edge-"
+        edge_id_hex_length: 6
+        edge_dedup_separator: "|"
+        confidence_fallback: 0.0
+        confidence_scalar_omitted: 0.5
+      # --- Export --------------------------------------------------------------
+      export:
+        schema_namespace: "http://mykg.local/schema/"
+        data_namespace: "http://mykg.local/data/"
+        rdf_namespace: "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+        rdfs_namespace: "http://www.w3.org/2000/01/rdf-schema#"
+        schema_prefix_label: ex
+        data_prefix_label: data
+        comment_width: 42
+        skos_namespace: "http://www.w3.org/2004/02/skos/core#"
+        networkx_enabled: true
+        obsidian_enabled: true
+        obsidian_vault_dir: obsidian_vault
+        neo4j_csv_enabled: false
+        neo4j_csv_dir: neo4j_csv
+      # --- Pipeline infrastructure --------------------------------------------
+      error_gate:
+        enabled: false
+        threshold: 3
+      feedback:
+        max_file_chars: 224640
+      paths:
+        output_dir: output
+        intermediate_dir: intermediate
+        sessions_dir: mykg_sessions
+      output:
+        json_indent: 2
+      logging:
+        max_bytes: 10485760
+        backup_count: 3
+        llm_log: false
+        capture_prompts: false
+        error_output_max_chars: 500
+      report:
+        enabled: true           # generate walkthrough.md after each extract run; set false to skip
+      merge_graphs:
+        reextraction_strategy: surgical  # none | surgical | full — controls re-extraction when merged schema has new properties absent from a source session
+        surgical_top_k_chunks_per_property: 0  # 0 = no cap; >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
+        human_review: false             # pause for human review of merged schema; overridden by --human-review CLI flag
+        orphan_pass_max_restarts: 1     # max schema-gap restart loops during merge orphan pass (0 = disabled)
+      append:
+        grow_schema_backfill_top_k_chunks_per_type: 10  # --append --grow-schema: 0 = disable back-fill; >0 = top-K old chunks re-extracted per newly added concept/property (ranked by domain/range/hierarchy node co-occurrence) (D52)
+    # --- MCP server — mykg mcp-serve settings --------------------------------
+    mcp:
+      enabled: true                # master toggle for the MCP server (mykg mcp-serve) (mykg mcp-serve)
+      host: localhost              # bind address for streamable HTTP (ignored for stdio)
+      port: 3100                   # port for streamable HTTP (ignored for stdio)
+      transport: stdio             # default transport: stdio | streamable_http
+
+  # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
   ollama-local:
   # Ollama — local inference, no API key required.
   # Requires Ollama running at base_url (default: http://localhost:11434).

@@ -103,6 +103,13 @@ _PROFILE_META = {
         "key_url": "https://platform.openai.com/api-keys",
         "default_model": "gpt-4o",
     },
+    "gemini": {
+        "label": "Google Gemini",
+        "key_var": "GEMINI_API_KEY",
+        "key_hint": "AIza...",
+        "key_url": "https://aistudio.google.com/apikey",
+        "default_model": "gemini-3.7-flash",
+    },
     "ollama-local": {
         "label": "Ollama (local inference, no API key needed)",
         "key_var": None,
