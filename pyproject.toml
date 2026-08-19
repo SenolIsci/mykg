@@ -59,6 +59,7 @@ addopts = "--cov=mykg --cov-report=term-missing --cov-report=html"
 testpaths = ["tests"]
 markers = [
     "live: marks tests that make real network/API calls (deselect with '-m not live')",
+    "mineru: exercises the MinerU ephemeral venv (multi-GB download on first run)",
 ]
 
 [tool.coverage.run]

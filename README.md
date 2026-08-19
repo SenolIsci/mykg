@@ -1171,6 +1171,44 @@ uv run pytest -m "not live"
 open htmlcov/index.html
 ```
 
+### Healthiness check
+
+A dry-run smoke test that answers one question: **is everything alive and right?** It
+probes every configured LLM endpoint, then exercises the major capabilities —
+`fetch-web`, `parse-docs` (MinerU), `extract-graph`, `query`, `walkthrough` — end to end
+through the real CLI, and prints a summary table.
+
+```bash
+# Just the endpoints — seconds
+uv run pytest tests/test_healthiness.py -k endpoints -v --no-cov
+
+# Everything except MinerU — the usual quick check
+uv run pytest tests/test_healthiness.py -m "live and not mineru" -v --no-cov
+
+# Full check including PDF/XLSX conversion via MinerU
+uv run pytest tests/test_healthiness.py -m live -v --no-cov
+
+# Point the capability stages at a specific provider
+MYKG_E2E_PROFILE=gemini uv run pytest tests/test_healthiness.py -m live -v --no-cov
+```
+
+Each endpoint is checked twice: that it is reachable, and that it can return the JSON
+contract Pass 2 depends on — a provider can answer a ping and still fail every real
+extraction. Providers with no key configured are skipped, never failed, and failures are
+classified into an actionable cause (`quota or balance exhausted`, `api key rejected`,
+`model not available`, …) rather than a bare traceback.
+
+```
+  ENDPOINTS         reach   contract
+  openrouter-free   ok      ok        2 node(s), 1 edge(s)
+  anthropic-claude  ok      ok        2 node(s), 1 edge(s)
+  gemini            FAIL    —         quota or balance exhausted → top up, or switch profile
+  ollama-local      ok      ok        2 node(s), 1 edge(s)
+```
+
+The whole file carries the `live` marker, so it is excluded from CI and from
+`pytest -m "not live"`.
+
 ### Linting and Formatting
 
 ```bash
