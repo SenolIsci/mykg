@@ -12,8 +12,14 @@ from mykg.cli import _copy_input_files, cli
 
 
 def _mirror(session_root: Path) -> list[str]:
+    """Mirror contents as POSIX-style relative paths.
+
+    `as_posix()` rather than `str()`: Path renders "\\" on Windows, so a literal
+    "srcB/index.md" expectation would fail there on separators alone — a test
+    artifact, not a product difference (the code compares Path objects).
+    """
     root = session_root / "input"
-    return sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file())
+    return sorted(p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file())
 
 
 def _build(tmp_path: Path) -> tuple[Path, Path]:
