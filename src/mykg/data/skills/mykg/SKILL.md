@@ -116,14 +116,20 @@ that are faster and more precise than manual grep/Read for graph queries.
 
 Shall I create .mcp.json with this content?
 
-  {
-    "mcpServers": {
-      "mykg": {
-        "command": "mykg",
-        "args": ["mcp-serve"]
-      }
+{
+  "mcpServers": {
+    "mykg": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/your/project",
+        "run",
+        "mykg",
+        "mcp-serve"
+      ]
     }
   }
+}
 
 This tells Claude Code to start `mykg mcp-serve` as an MCP subprocess,
 making the `mcp__mykg__*` tools available in this session. The server
