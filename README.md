@@ -725,7 +725,7 @@ mykg extract-graph my_notes/ --session <name> --append --sync
 mykg extract-graph my_notes/ --session <name> --update
 ```
 
-> **⚠️ Behaviour change:** before this release, plain `--append` re-extracted
+> **⚠️ Behaviour change:** before the release 0.4.3, plain `--append` re-extracted
 > modified files. It no longer does — add `--sync`. If your edits stop showing
 > up in the graph, that is why; the run will have logged a warning naming the
 > files.
