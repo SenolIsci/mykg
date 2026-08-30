@@ -703,6 +703,44 @@ mykg extract-graph my_notes/ --session <name> --append
 
 The input directory may contain PDF, DOCX, HTML, TXT, and image files alongside `.md` — newly-added non-Markdown files are converted automatically during the append run (the same incremental `preprocess` step the initial run uses, subject to `preprocess.enabled`). No separate `mykg parse-docs` step is needed. Only new or changed source files are converted; unchanged ones are skipped by content hash.
 
+#### Reconciling Edits and Deletions (`--sync`)
+
+**`--append` adds; `--sync` reconciles.** Plain `--append` extracts *new* files
+only — it detects modified and deleted files and warns about them, but leaves
+the graph untouched. Add `--sync` to act on them:
+
+```bash
+mykg extract-graph my_notes/ --session <name> --append --sync
+```
+
+| Command | New | Modified | Deleted |
+|---|---|---|---|
+| `--append` | extracted | warn only | warn only |
+| `--append --sync` | extracted | re-extracted | **removed** |
+
+`--sync` requires `--append`, and composes with `--append-with-grow-schema`.
+
+> **⚠️ Behaviour change:** before this release, plain `--append` re-extracted
+> modified files. It no longer does — add `--sync`. If your edits stop showing
+> up in the graph, that is why; the run will have logged a warning naming the
+> files.
+
+Deleting a file removes the nodes and edges that came only from it; nodes shared
+with a surviving file are **recomputed**, so their confidence and attribute
+values no longer reflect the removed document. Running `--sync` with nothing to
+reconcile costs nothing — it degrades to exactly plain `--append`, so it is safe
+to leave in a script.
+
+**Exact deletion needs `pass2.prep_mode: per_file`** or `batch_chunks` with
+`pass2.batch_per_file: true`. On the shipped default one LLM call covers several
+files, so a co-batched sibling may retain some of the deleted file's nodes.
+
+**Multiple source folders.** Each folder you append to a session is registered
+with its own subtree of `session/input/`, so two `fetch-web` crawls that both
+produce `index.md` no longer overwrite each other. `--sync` is scoped to the
+folder you name — reconciling one folder can never delete another's files, which
+is why no confirmation prompt or size cap is needed.
+
 #### Incremental Schema Growth (`--append-with-grow-schema`)
 
 Plain `--append` freezes the schema — Pass 1 is skipped, so new entity types and relationships are never induced. Use `--append-with-grow-schema` when you add documents that introduce concepts the current schema doesn't cover:
@@ -711,7 +749,7 @@ Plain `--append` freezes the schema — Pass 1 is skipped, so new entity types a
 mykg extract-graph my_notes/ --session <name> --append-with-grow-schema
 ```
 
-This runs a **locked Pass 1** over only the changed files: the LLM may add new concepts and properties but cannot rename, remove, or restructure existing ones. When the schema grows, a surgical back-fill re-extracts the old chunks most likely to contain instances of the new types (configurable via `append.grow_schema_backfill_top_k_chunks_per_type`, default 10; set 0 to disable). When the new documents don't introduce new types, the run collapses to a plain `--append` at no extra cost.
+This runs a **locked Pass 1** over only the changed files: the LLM may add new concepts and properties but cannot rename, remove, or restructure existing ones. When the schema grows, a surgical back-fill re-extracts the old chunks most likely to contain instances of the new types (configurable via `append.grow_schema_backfill_top_k_chunks_per_type`, default 10; set 0 to disable). When the new documents don't introduce new types, the run collapses to a plain `--append` at no extra cost — and with nothing to reconcile at all, the locked Pass 1 is skipped entirely (zero LLM calls). Note that "changed files" means *new* files unless you also pass `--sync`.
 
 The flag implies `--append` (no need to pass both) and is mutually exclusive with `--from-step` and `--base-schema` (the session's existing `schema.ttl` is auto-loaded as the locked base).
 
