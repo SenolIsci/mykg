@@ -234,3 +234,37 @@ def test_prune_on_a_brand_new_folder_deletes_nothing(tmp_path):
     )
 
     assert _mirror(session) == ["a.md", "b.md", "fresh/c.md"]
+
+
+def test_plain_append_warns_about_a_deleted_file(tmp_path, caplog):
+    """Detection must run even without --sync.
+
+    Ingest scans the MIRROR, not the user's folder, and the mirror is not
+    pruned without --sync — so without an explicit check here the deleted file
+    still appears present, `deleted_files` stays empty, and the documented
+    warning never fires. The user would get no signal at all.
+    """
+    import logging
+
+    src, session = _build(tmp_path)
+    _copy_input_files(src, session, copy_config=False)
+    (src / "a.md").unlink()
+
+    with caplog.at_level(logging.WARNING):
+        _copy_input_files(src, session, copy_config=False, append_detect=True)
+
+    assert "a.md" in caplog.text
+    assert "--sync" in caplog.text
+    assert _mirror(session) == ["a.md", "b.md"], "detection must not delete anything"
+
+
+def test_plain_append_is_silent_when_nothing_was_deleted(tmp_path, caplog):
+    import logging
+
+    src, session = _build(tmp_path)
+    _copy_input_files(src, session, copy_config=False)
+
+    with caplog.at_level(logging.WARNING):
+        _copy_input_files(src, session, copy_config=False, append_detect=True)
+
+    assert "deleted from" not in caplog.text

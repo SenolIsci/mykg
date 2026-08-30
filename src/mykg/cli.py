@@ -89,6 +89,7 @@ def _copy_input_files(
     mirror_prefix: str = "",
     prune: bool = False,
     other_prefixes: tuple[str, ...] | None = None,
+    append_detect: bool = False,
 ) -> None:
     """Copy all files from input_dir into session_root/input/, preserving subfolder structure.
 
@@ -144,18 +145,37 @@ def _copy_input_files(
 
     if prune:
         _prune_mirror(input_dir, dest, allowed_exts, other_prefixes=other_prefixes or ())
+    elif append_detect:
+        # Detection still runs without --sync (D58). Ingest scans the MIRROR, and
+        # the mirror was not pruned, so it cannot see the deletion on its own —
+        # without this the documented warning would never fire for deleted files
+        # and the user would get no signal at all.
+        stale = _stale_mirror_files(input_dir, dest, allowed_exts, other_prefixes or ())
+        if stale:
+            logging.getLogger(__name__).warning(
+                "%d file(s) deleted from %s are still in the graph: %s. "
+                "Re-run with --sync (or --update) to remove them.",
+                len(stale),
+                input_dir,
+                ", ".join(sorted(str(s.relative_to(dest)) for s in stale)),
+            )
 
     if copy_config:
         shutil.copy2(_cfg().CONFIG_PATH, session_root / "mykg_config.yaml")
 
 
-def _prune_mirror(
+def _stale_mirror_files(
     input_dir: Path,
     dest: Path,
     allowed_exts: set[str],
     other_prefixes: tuple[str, ...] = (),
-) -> None:
-    """Remove mirror files under ``dest`` that no longer exist in ``input_dir`` (D58).
+) -> list[Path]:
+    """Mirror files under ``dest`` with no counterpart in ``input_dir`` (D58).
+
+    Pure detection — nothing is unlinked. Split out from ``_prune_mirror`` so a
+    plain ``--append`` can still WARN about deletions: the mirror is not pruned
+    without ``--sync``, so ingest (which scans the mirror, not the user's folder)
+    would otherwise never see the file as missing and no warning would fire.
 
     Only files this function could itself have created are considered — same
     allowlist as the copy loop — so a prune can never touch anything unexpected.
@@ -178,7 +198,7 @@ def _prune_mirror(
     # owned by other registered prefixes explicitly.
     foreign_roots = [(dest / p).resolve() for p in other_prefixes if p]
 
-    to_delete: list[Path] = []
+    stale: list[Path] = []
     for f in dest.rglob("*"):
         if not f.is_file():
             continue
@@ -202,8 +222,18 @@ def _prune_mirror(
         if owned_by_other:
             continue  # belongs to a different registered folder
         if not (input_dir / f.relative_to(dest)).exists():
-            to_delete.append(f)
+            stale.append(f)
+    return stale
 
+
+def _prune_mirror(
+    input_dir: Path,
+    dest: Path,
+    allowed_exts: set[str],
+    other_prefixes: tuple[str, ...] = (),
+) -> None:
+    """Unlink the mirror files ``_stale_mirror_files`` identifies."""
+    to_delete = _stale_mirror_files(input_dir, dest, allowed_exts, other_prefixes)
     if not to_delete:
         return
 
@@ -978,6 +1008,7 @@ def extract_graph(
             mirror_prefix=_prefix,
             prune=bool(append and sync),
             other_prefixes=_others,
+            append_detect=bool(append and not sync),
         )
         input_dir = session_root / "input"
     elif output_dir is None and intermediate_dir is None:
@@ -991,6 +1022,7 @@ def extract_graph(
             mirror_prefix=_prefix,
             prune=bool(append and sync),
             other_prefixes=_others,
+            append_detect=bool(append and not sync),
         )
         input_dir = session_root / "input"
         click.echo(f"Session: {session_name}")
