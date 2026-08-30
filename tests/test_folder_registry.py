@@ -160,3 +160,19 @@ def test_save_creates_intermediate_dir(tmp_path):
     fr.save(registry, inter)
 
     assert (inter / fr.REGISTRY_FILENAME).exists()
+
+
+def test_load_ignores_a_non_dict_payload(tmp_path):
+    """A JSON array where an object is expected must not crash the run."""
+    (tmp_path / fr.REGISTRY_FILENAME).write_text("[1, 2, 3]", encoding="utf-8")
+
+    assert fr.load(tmp_path).folders == []
+
+
+def test_load_handles_a_file_with_neither_key(tmp_path):
+    (tmp_path / fr.REGISTRY_FILENAME).write_text("{}", encoding="utf-8")
+
+    registry = fr.load(tmp_path)
+
+    assert registry.folders == []
+    assert registry.original_input_dir == ""

@@ -171,3 +171,38 @@ def test_no_extraction_record_at_all_still_re_extracts(tmp_path):
     _run_append_ingest(ctx)
 
     assert ctx.append_new_files == {"a.md", "b.md"}
+
+
+def test_corrupt_raw_extractions_does_not_crash_ingest(tmp_path):
+    """A truncated raw_extractions.json must degrade, not raise.
+
+    It is written with a plain write_text, so a killed run can leave it
+    half-written. Treating that as "nothing extracted" would re-run the whole
+    corpus, so the recovery pass simply skips the check.
+    """
+    inp, inter = _session(tmp_path, {"a.md": "A"})
+    (inter / "raw_extractions.json").write_text('{"a.md": {', encoding="utf-8")
+
+    ctx = _ctx(inp, inter, sync=False)
+    _run_append_ingest(ctx)
+
+    assert ctx.append_new_files == set()
+
+
+def test_corrupt_shard_is_skipped_during_recovery(tmp_path):
+    """One unreadable shard must not derail the fallback scan."""
+    inp, inter = _session(tmp_path, {"a.md": "A", "b.md": "B"})
+    (inter / "raw_extractions.json").unlink()
+    shards = inter / "raw_extractions_shards"
+    shards.mkdir()
+    (shards / "a.md.json").write_text(
+        json.dumps({"_fname": "a.md", "data": {}}), encoding="utf-8"
+    )
+    (shards / "b.md.json").write_text("{truncated", encoding="utf-8")
+
+    ctx = _ctx(inp, inter, sync=False)
+    _run_append_ingest(ctx)
+
+    # a.md was found in a readable shard; b.md's shard was unreadable so it is
+    # treated as unextracted and queued.
+    assert ctx.append_new_files == {"b.md"}

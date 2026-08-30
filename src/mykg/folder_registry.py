@@ -56,9 +56,6 @@ class FolderEntry(BaseModel):
     mirror_prefix: str = ""
     added_at: str = ""
 
-    def resolved(self) -> Path:
-        return Path(self.path)
-
 
 class Registry(BaseModel):
     """Every source folder that has fed this session, in registration order."""
