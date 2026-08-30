@@ -41,7 +41,55 @@ def _make_session_dirs(sessions_root: Path) -> tuple[str, Path, Path]:
     return name, root / "output", root / "intermediate"
 
 
-def _copy_input_files(input_dir: Path, session_root: Path, copy_config: bool = True) -> None:
+def _resolve_folder_for_copy(intermediate_dir: Path, input_dir: Path, sync: bool):
+    """Resolve (or register) ``input_dir`` in the session's folder registry (D58).
+
+    Returns ``(mirror_prefix, other_prefixes)`` for ``_copy_input_files``. An
+    unknown folder is auto-registered: a brand-new folder owns an empty subtree,
+    so a prune over it can never delete anything — which is what makes a typo'd
+    path inert rather than catastrophic, and removes any need for a cap.
+
+    Must run BEFORE the copy, since ``mirror_prefix`` is an argument to it, and
+    therefore before the pipeline's own mkdir calls — hence ``save`` creating
+    ``intermediate_dir`` itself.
+    """
+    from mykg import folder_registry as _fr
+
+    registry = _fr.load(intermediate_dir)
+    try:
+        entry = _fr.resolve(registry, input_dir)
+    except NotADirectoryError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if entry is None:
+        entry = _fr.register(registry, input_dir)
+        if entry.mirror_prefix:
+            logging.getLogger(__name__).info(
+                "registered new source folder %s under mirror prefix %r",
+                input_dir,
+                entry.mirror_prefix,
+            )
+    if sync and not _cfg().PREPROCESS_SUBDIR and _cfg().PREPROCESS_ENABLED:
+        raise click.ClickException(
+            "--sync cannot be used with the legacy in-place preprocess layout "
+            "(preprocess.subdir is empty). Converted Markdown then sits beside "
+            "your sources and is indistinguishable from it, so a prune would "
+            "delete files the pipeline generated. Set preprocess.subdir in "
+            "mykg_config.yaml."
+        )
+    _fr.save(registry, intermediate_dir)
+    others = tuple(f.mirror_prefix for f in registry.folders if f.mirror_prefix != entry.mirror_prefix)
+    return entry.mirror_prefix, others
+
+
+def _copy_input_files(
+    input_dir: Path,
+    session_root: Path,
+    copy_config: bool = True,
+    *,
+    mirror_prefix: str = "",
+    prune: bool = False,
+    other_prefixes: tuple[str, ...] | None = None,
+) -> None:
     """Copy all files from input_dir into session_root/input/, preserving subfolder structure.
 
     Only ``.md`` files and files whose suffix is in ``PREPROCESS_EXTENSIONS``
@@ -52,8 +100,24 @@ def _copy_input_files(input_dir: Path, session_root: Path, copy_config: bool = T
     that ``.venv``, ``.git``, and similar tool directories are never copied.
     ``mykg_config.yaml`` is skipped here because it is written separately below
     when ``copy_config=True``.
+
+    ``mirror_prefix`` (D58) is the subtree of ``session/input/`` this source
+    folder owns, so several folders can feed one session without their
+    same-named files overwriting each other. The first registered folder keeps
+    ``""``, which reproduces the pre-D58 flat layout exactly.
+
+    ``prune`` (D58, ``--append --sync``) additionally removes mirror files that
+    no longer exist in ``input_dir``. The walk is confined to ``mirror_prefix``
+    and skips the subtrees named in ``other_prefixes`` — that scoping is the
+    safety mechanism: reconciling one folder can never delete a file another
+    folder contributed, so no blast-radius cap is needed. (The exclusion list
+    matters because the first registered folder has an empty prefix, making
+    ``dest`` the mirror root.) All three parameters default to today's
+    behaviour.
     """
     dest = session_root / "input"
+    if mirror_prefix:
+        dest = dest / mirror_prefix
     dest.mkdir(parents=True, exist_ok=True)
     sessions_root = _sessions_root().resolve()
     config_path = _cfg().CONFIG_PATH.resolve()
@@ -77,8 +141,83 @@ def _copy_input_files(input_dir: Path, session_root: Path, copy_config: bool = T
         target = dest / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(f, target)
+
+    if prune:
+        _prune_mirror(input_dir, dest, allowed_exts, other_prefixes=other_prefixes or ())
+
     if copy_config:
         shutil.copy2(_cfg().CONFIG_PATH, session_root / "mykg_config.yaml")
+
+
+def _prune_mirror(
+    input_dir: Path,
+    dest: Path,
+    allowed_exts: set[str],
+    other_prefixes: tuple[str, ...] = (),
+) -> None:
+    """Remove mirror files under ``dest`` that no longer exist in ``input_dir`` (D58).
+
+    Only files this function could itself have created are considered — same
+    allowlist as the copy loop — so a prune can never touch anything unexpected.
+
+    ``input/<PREPROCESS_SUBDIR>/`` is excluded: machine-generated Markdown has no
+    counterpart in the user's source folder *by construction*, so a naive walk
+    would delete every converted file on every run and force a full (expensive)
+    MinerU re-conversion. ``step_preprocess`` owns that subtree and already
+    unlinks exactly the ``output_md`` of vanished sources.
+
+    Comparison is ``Path``-based on both sides: manifest-style string paths use
+    ``\\`` on Windows, so string compares would make every subdirectory file look
+    deleted.
+    """
+    subdir = _cfg().PREPROCESS_SUBDIR
+    preprocessed_root = (dest / subdir).resolve() if subdir else None
+    # The FIRST registered folder has an empty prefix, so `dest` is the mirror
+    # root and the walk would otherwise sweep every other folder's subtree —
+    # reconciling one folder would delete another's files. Exclude the subtrees
+    # owned by other registered prefixes explicitly.
+    foreign_roots = [(dest / p).resolve() for p in other_prefixes if p]
+
+    to_delete: list[Path] = []
+    for f in dest.rglob("*"):
+        if not f.is_file():
+            continue
+        if f.suffix.lower() not in allowed_exts:
+            continue
+        resolved_f = f.resolve()
+        if preprocessed_root is not None:
+            try:
+                resolved_f.relative_to(preprocessed_root)
+                continue  # machine-generated: step_preprocess owns it
+            except ValueError:
+                pass
+        owned_by_other = False
+        for root in foreign_roots:
+            try:
+                resolved_f.relative_to(root)
+                owned_by_other = True
+                break
+            except ValueError:
+                continue
+        if owned_by_other:
+            continue  # belongs to a different registered folder
+        if not (input_dir / f.relative_to(dest)).exists():
+            to_delete.append(f)
+
+    if not to_delete:
+        return
+
+    # Compute the full list first and log it before unlinking, so run.log is a
+    # complete record even if a later unlink fails.
+    log = logging.getLogger(__name__)
+    log.info(
+        "sync: removing %d file(s) from the session mirror no longer present in %s: %s",
+        len(to_delete),
+        input_dir,
+        sorted(str(p.relative_to(dest)) for p in to_delete),
+    )
+    for path in to_delete:
+        path.unlink(missing_ok=True)
 
 
 _PROFILE_META = {
@@ -642,7 +781,18 @@ def _print_next_steps(
 @click.option(
     "--append",
     is_flag=True,
-    help="Skip Pass 1, re-run only on new/modified files, then re-assemble and re-export",
+    help="Skip Pass 1 and extract only NEW files, then re-assemble and re-export. "
+    "Modified and deleted files are detected and warned about but not acted on — "
+    "add --sync to reconcile them.",
+)
+@click.option(
+    "--sync",
+    is_flag=True,
+    help="With --append: reconcile the graph against the folder — re-extract MODIFIED "
+    "files and remove DELETED ones. Scoped to the folder you name, so other folders "
+    "registered to the session are untouched. Exact deletion needs "
+    "pass2.prep_mode: per_file or pass2.batch_per_file: true; on the shipped default "
+    "a co-batched sibling may retain over-attributed nodes (D53).",
 )
 @click.option(
     "--append-with-grow-schema",
@@ -702,6 +852,7 @@ def extract_graph(
     workers,
     confidence_agg,
     append,
+    sync,
     grow_schema,
     pass1_only,
     pass2_only,
@@ -717,6 +868,12 @@ def extract_graph(
 
     if grow_schema:
         append = True
+
+    if sync and not append:
+        raise click.ClickException(
+            "--sync requires --append (or --append-with-grow-schema). Reconciliation "
+            "is meaningless on a fresh run, where the mirror is rebuilt anyway."
+        )
 
     # Run-only --profile / --model override. Must run before any _cfg() read,
     # load_adapter(), or the workers default below, so the whole config module
@@ -798,12 +955,28 @@ def extract_graph(
             )
         output_dir = session_root / "output"
         intermediate_dir = session_root / "intermediate"
-        _copy_input_files(input_dir, session_root, copy_config=not append)
+        _prefix, _others = _resolve_folder_for_copy(intermediate_dir, input_dir, sync)
+        _copy_input_files(
+            input_dir,
+            session_root,
+            copy_config=not append,
+            mirror_prefix=_prefix,
+            prune=bool(append and sync),
+            other_prefixes=_others,
+        )
         input_dir = session_root / "input"
     elif output_dir is None and intermediate_dir is None:
         session_name, output_dir, intermediate_dir = _make_session_dirs(sessions_root)
         session_root = sessions_root / session_name
-        _copy_input_files(input_dir, session_root, copy_config=not append)
+        _prefix, _others = _resolve_folder_for_copy(intermediate_dir, input_dir, sync)
+        _copy_input_files(
+            input_dir,
+            session_root,
+            copy_config=not append,
+            mirror_prefix=_prefix,
+            prune=bool(append and sync),
+            other_prefixes=_others,
+        )
         input_dir = session_root / "input"
         click.echo(f"Session: {session_name}")
     else:
@@ -899,6 +1072,7 @@ def extract_graph(
         pass2_workers=workers,
         confidence_agg=confidence_agg,
         append=append,
+        sync=sync,
         grow_schema=grow_schema,
         freeze_schema=freeze_schema,
         orphan_incremental=orphan_incremental,
@@ -910,6 +1084,12 @@ def extract_graph(
     intermediate_dir.mkdir(parents=True, exist_ok=True)
 
     import json as _json
+
+    # raw_input_folder.json is written by _resolve_folder_for_copy (D58) — it is
+    # a folder registry now, not a write-once path, so it must be able to grow
+    # when a second source folder is appended. The fallback below only covers
+    # runs that bypass session handling entirely (explicit --output-dir /
+    # --intermediate-dir), where no registry was resolved.
     raw_input_path = intermediate_dir / "raw_input_folder.json"
     if not raw_input_path.exists():
         raw_input_path.write_text(
