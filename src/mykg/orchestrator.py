@@ -73,6 +73,21 @@ class PipelineContext(BaseModel):
     # set() = ingest ran in append mode and found no changes (nothing-to-do).
     # non-empty set = ingest ran and found new/modified files.
     append_new_files: set[str] | None = None
+    # --sync (D58): reconcile the graph against the folder — re-extract modified
+    # files and remove deleted ones. Requires --append. Detection always runs;
+    # this flag gates only the actions (mirror prune, shard eviction, and the
+    # modified branch in ingest). Without it, plain --append is strictly
+    # additive and only warns about modified/deleted files.
+    sync: bool = False
+    # None = preprocess/ingest haven't run yet / not in append mode.
+    # set() = they ran and found no deletions.
+    # non-empty set = source files disappeared; their manifest entries, shards,
+    # and raw_extractions.json keys must be evicted and the graph recomputed.
+    # Keys are .md paths relative to ctx.input_dir — the same key space as
+    # file_manifest.json, raw_extractions.json, and node/edge source_files. A
+    # deleted non-md source (PDF/DOCX/HTML/TXT) is recorded here as its DERIVED
+    # .md path, since that is the only name the graph ever knew it by.
+    deleted_files: set[str] | None = None
     pass2_workers: int = Field(default_factory=lambda: _cfg.PASS2_MAX_WORKERS)
     ingest_workers: int = Field(default_factory=lambda: _cfg.INGEST_MAX_WORKERS)
     confidence_agg: str = Field(default_factory=lambda: _cfg.ASSEMBLY_CONFIDENCE_AGG)
