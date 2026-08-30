@@ -157,12 +157,32 @@ def _run_append_ingest(ctx: PipelineContext) -> None:
             }
         elif manifest[filename]["sha256"] != sha:
             modified_files.append(filename)
-            changed.add(filename)
-            manifest[filename] = {
-                "content": content,
-                "sha256": sha,
-                "token_count": _token_count(content),
-            }
+            if ctx.sync:
+                changed.add(filename)
+                manifest[filename] = {
+                    "content": content,
+                    "sha256": sha,
+                    "token_count": _token_count(content),
+                }
+            # Without --sync the entry is left ENTIRELY untouched (D58). Freezing
+            # only sha256 while refreshing content would leave a self-inconsistent
+            # entry: downstream readers (grow-schema Pass 1, build_chunk_texts,
+            # the MCP server) consume `content` without re-hashing, so chunk keys
+            # would resolve against text that never produced the stored nodes.
+            # Leaving it stale keeps manifest and raw_extractions.json agreeing,
+            # and the file re-reports as modified every run until --sync runs.
+
+    # Deleted files: in the manifest but no longer on disk. Detection always
+    # runs; only the eviction is gated on --sync (the warning below covers the
+    # unflagged case). Popping here is what makes the deletion durable — the
+    # manifest is the corpus definition every later step reads — and it also
+    # fixes the unextracted-recovery pass below for free, since a popped file
+    # is no longer iterated there.
+    deleted = set(manifest) - set(read_raw)
+    if ctx.sync:
+        for filename in deleted:
+            manifest.pop(filename, None)
+        ctx.deleted_files = (ctx.deleted_files or set()) | deleted
 
     manifest_path.write_text(json.dumps(manifest, indent=_cfg.JSON_INDENT), encoding="utf-8")
 
@@ -171,30 +191,65 @@ def _run_append_ingest(ctx: PipelineContext) -> None:
     # pass2, or when output files were deleted while the manifest was left intact.
     raw_path = ctx.intermediate_dir / "raw_extractions.json"
     unextracted: list[str] = []
+    extracted: set[str] | None = None
     if raw_path.exists():
         try:
             existing_raw: dict = json.loads(raw_path.read_text(encoding="utf-8"))
-            for filename in manifest:
-                if filename not in existing_raw and filename not in changed:
-                    unextracted.append(filename)
-                    changed.add(filename)
+            extracted = set(existing_raw)
         except (json.JSONDecodeError, OSError):
-            pass
+            extracted = None
     else:
-        # raw_extractions.json absent — every manifest file needs extraction
+        # raw_extractions.json is absent, but that does NOT mean nothing was
+        # extracted: a schema restart (Re-entry A) unlinks it while deliberately
+        # preserving the per-file shards. Treating absence as "re-extract
+        # everything" would silently re-run the whole corpus at full LLM cost on
+        # the second pass of a restart. Fall back to the shard directory, which
+        # is the real record of what has been extracted.
+        shard_dir = ctx.intermediate_dir / "raw_extractions_shards"
+        extracted = set()
+        for shard_file in shard_dir.glob("*.json") if shard_dir.is_dir() else ():
+            try:
+                shard = json.loads(shard_file.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            fname = shard.get("_fname")
+            if fname:
+                extracted.add(fname)
+
+    if extracted is not None:
         for filename in manifest:
-            if filename not in changed:
+            if filename not in extracted and filename not in changed:
                 unextracted.append(filename)
                 changed.add(filename)
 
     ctx.append_new_files = changed
 
     log.info(
-        "append_ingest: %d new file(s), %d modified file(s), %d unextracted file(s)",
+        "append_ingest: %d new file(s), %d modified file(s), %d deleted file(s), "
+        "%d unextracted file(s)",
         len(new_files),
         len(modified_files),
+        len(deleted),
         len(unextracted),
     )
+
+    # Discovery warning: detection ran, but without --sync nothing was acted on.
+    # This is what makes the flag findable at the moment it matters — a user who
+    # expected --append to pick up an edit sees exactly why it did not land.
+    # Recovery files are reported separately: they are re-extracted regardless of
+    # --sync, so calling them "modified" would contradict the rest of the message.
+    if not ctx.sync and (modified_files or deleted):
+        lines = ["file(s) in the graph no longer match the source folder:"]
+        if modified_files:
+            lines.append("  modified: %s" % ", ".join(sorted(modified_files)))
+        if deleted:
+            lines.append("  deleted:  %s" % ", ".join(sorted(deleted)))
+        lines.append("Re-run with --sync to reconcile them.")
+        log.warning(
+            "%d %s",
+            len(modified_files) + len(deleted),
+            "\n         ".join(lines),
+        )
 
     if not changed:
         log.info("Nothing to append, all files up to date")
