@@ -405,6 +405,25 @@ def _log_and_write(
         json.dumps(chunk_node_index, indent=_cfg.JSON_INDENT), encoding="utf-8"
     )
     (ctx.intermediate_dir / "raw_extractions.done").write_text("", encoding="utf-8")
+
+    # D58: keep failed_chunks.json consistent with the surviving corpus. On a
+    # deletions-only run `todo` is empty, so run_pass2 never rewrites this file
+    # and its stale entries would still name deleted files — score_orphan_candidates_v2
+    # reads them to synthesise blank-response orphans, and would try to recover a
+    # chunk whose text no longer exists. Prune by filename rather than truncating,
+    # so genuine failures for surviving files are preserved. Also guarantees the
+    # file exists, keeping pass2's four declared outputs coherent for _is_done.
+    failed_path = ctx.intermediate_dir / "failed_chunks.json"
+    surviving: list[dict] = []
+    if failed_path.exists():
+        try:
+            prior = json.loads(failed_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            prior = []
+        if isinstance(prior, list):
+            surviving = [e for e in prior if e.get("filename") in raw]
+    failed_path.write_text(json.dumps(surviving, indent=_cfg.JSON_INDENT), encoding="utf-8")
+
     ctx.raw_extractions = raw
     ctx.chunk_node_index = chunk_node_index
 
@@ -461,7 +480,11 @@ def _grow_schema_backfill(
     backfill = compute_backfill_chunks(
         added_concepts, added_properties, schema, existing_chunk, top_k
     )
-    changed = ctx.append_new_files or set()
+    # Deleted files are already absent from existing_raw once U5's eviction has
+    # run, so the `f in existing_raw` filter below excludes them. Folding them in
+    # here anyway makes the intent local rather than depending on a non-local
+    # invariant across two units (D58).
+    changed = (ctx.append_new_files or set()) | (ctx.deleted_files or set())
 
     # Never re-extract the changed files here — they are (re-)extracted in full by the
     # normal todo path against the already-grown schema.

@@ -118,7 +118,7 @@ def run_pass1_step(ctx: PipelineContext) -> None:
     # ingest step does not chunk (it only hashes), so all_chunks must be (re)built here
     # from the changed files in the manifest. Falls through to the all-files paths below
     # when not in grow-schema mode.
-    if ctx.grow_schema and ctx.append_new_files:
+    if ctx.grow_schema and ctx.append_new_files is not None:
         manifest_path = ctx.intermediate_dir / "file_manifest.json"
         if not manifest_path.exists():
             raise RuntimeError(
@@ -134,6 +134,20 @@ def run_pass1_step(ctx: PipelineContext) -> None:
             len(changed),
             len(ctx.all_chunks),
         )
+        # D58: nothing new to read means the schema cannot grow — a deletion can
+        # only ever make a locked schema over-general, which is harmless. Return
+        # BEFORE the dispatch below: run_pass1([]) yields no proposals and raises
+        # "Pass 1 produced no valid proposals" on a blocking step, halting the run
+        # with a misleading error. The guard above is `is not None` (not
+        # truthiness) precisely so this case lands here rather than falling
+        # through to the recovery branch, which would chunk the ENTIRE manifest
+        # and dispatch a full-corpus Pass 1.
+        if not ctx.all_chunks:
+            log.info(
+                "Step 2 — grow_schema: no new or modified content; "
+                "schema cannot grow, skipping locked Pass 1 (0 LLM calls)"
+            )
+            return
     # Recovery path for --from-step pass1: ingest was skipped but file_manifest.json exists.
     elif ctx.all_chunks is None:
         manifest_path = ctx.intermediate_dir / "file_manifest.json"
