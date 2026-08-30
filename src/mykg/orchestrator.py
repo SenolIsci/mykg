@@ -313,10 +313,15 @@ def _invalidate_append_downstream(
     ctx.edge_metadata = None
     ctx.raw_extractions = None
     ctx.chunk_node_index = None
+    changed = ctx.append_new_files or set()
+    deleted = ctx.deleted_files or set()
     log.info(
-        "append: invalidated pass2 and downstream outputs for %d changed file(s): %s",
-        len(ctx.append_new_files),
-        sorted(ctx.append_new_files),
+        "append: invalidated pass2 and downstream outputs for %d changed and "
+        "%d deleted file(s): changed=%s deleted=%s",
+        len(changed),
+        len(deleted),
+        sorted(changed),
+        sorted(deleted),
     )
 
 
@@ -377,7 +382,11 @@ def run(steps: list[Step], ctx: PipelineContext) -> None:
                 "preprocess",
                 "ingest",
                 *(("pass1", "schema_validate", "schema_flatten") if ctx.grow_schema else ()),
-                *(("pass2",) if ctx.append_new_files else ()),
+                *(
+                    ("pass2",)
+                    if ctx.append_new_files or (ctx.sync and ctx.deleted_files)
+                    else ()
+                ),
             )
             if _is_done(step, ctx) and not _append_force:
                 log.info("SKIP %s — outputs exist", step.name)
@@ -406,6 +415,7 @@ def run(steps: list[Step], ctx: PipelineContext) -> None:
                 and step.name != "ingest"
                 and ctx.append_new_files is not None
                 and not ctx.append_new_files
+                and not (ctx.sync and ctx.deleted_files)
             ):
                 log.info("SKIP %s — append mode: no new or modified files detected", step.name)
                 state.mark_done(step.name)
@@ -550,7 +560,13 @@ def run(steps: list[Step], ctx: PipelineContext) -> None:
             # Re-entry B: ingest found new/modified files in append mode — delete
             # pass2 and all downstream outputs so they re-run against the existing
             # schema (D26). Must happen after ingest writes the updated manifest.
-            if ctx.append and step.name == "ingest" and ctx.append_new_files:
+            # The ctx.sync guard on deleted_files is load-bearing: without it a
+            # plain --append that merely *detected* a deletion would unlink every
+            # downstream output and pay a full re-assemble plus the entire orphan
+            # sweep — on a run whose documented behaviour is warn-only (D58).
+            if ctx.append and step.name == "ingest" and (
+                ctx.append_new_files or (ctx.sync and ctx.deleted_files)
+            ):
                 _invalidate_append_downstream(steps, ctx, state)
 
             state.mark_done(step.name)
