@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from pathlib import Path
 
 from mykg import config as _cfg
 from mykg.logging import get
@@ -16,6 +17,39 @@ log = get("mykg.steps.pass2")
 
 def _fname_slug(fname: str) -> str:
     return fname.replace("/", "_").replace("\\", "_").replace(" ", "_")
+
+
+def _unlink_shard_if_owned(shard_path: Path, fname: str) -> None:
+    """Unlink a shard only when it really belongs to ``fname`` (D58).
+
+    ``_fname_slug`` maps ``/``, ``\\`` and space all to ``_``, so ``docs/a.md``
+    and a literal ``docs_a.md`` collide on one shard name. For a MODIFIED file
+    that is merely latent — the file is re-extracted either way. For a DELETED
+    one it is active data loss: unlinking blind would destroy the surviving
+    file's extraction, and nothing would ever re-create it.
+
+    Making the slug injective is not an option: it would rename every shard in
+    every existing session and silently invalidate all resumability. Instead we
+    read the shard's own ``_fname`` stamp and refuse to unlink on a mismatch,
+    turning silent corruption into a logged warning. An unreadable shard is left
+    alone for the same reason.
+    """
+    try:
+        owner = json.loads(shard_path.read_text(encoding="utf-8")).get("_fname")
+    except FileNotFoundError:
+        return
+    except (json.JSONDecodeError, OSError) as exc:
+        log.warning("  shard %s unreadable (%s) — not evicting", shard_path.name, exc)
+        return
+    if owner != fname:
+        log.warning(
+            "  shard %s belongs to %r, not deleted file %r — slug collision, not evicting",
+            shard_path.name,
+            owner,
+            fname,
+        )
+        return
+    shard_path.unlink(missing_ok=True)
 
 
 def run_schema_flatten(ctx: PipelineContext) -> None:
@@ -105,17 +139,32 @@ def _run(
     # the per-file shard + in-memory entry for every changed file so modified
     # files fall back into `todo`. New files have no shard, so eviction is a
     # harmless no-op for them; unchanged files are never in append_new_files.
-    if ctx.append and ctx.append_new_files:
-        for fname in ctx.append_new_files:
+    # D58: deleted files are evicted the same way, but only under --sync. Their
+    # shards MUST go: the shard glob above rebuilds existing_raw from whatever it
+    # finds with no manifest cross-check, so a surviving shard would re-insert the
+    # deleted file into raw_extractions.json on the very next run and the ghost
+    # would regrow. Unlike a changed file, a deleted one is in neither `todo` nor
+    # the manifest, so nothing re-extracts it — there is no backstop.
+    deleted_files = ctx.deleted_files if (ctx.append and ctx.sync) else None
+    evict = (ctx.append_new_files or set()) | (deleted_files or set())
+    if ctx.append and evict:
+        for fname in ctx.append_new_files or set():
             existing_raw.pop(fname, None)
             existing_chunk.pop(fname, None)
             slug = _fname_slug(fname)
             (shard_dir / f"{slug}.json").unlink(missing_ok=True)
             (chunk_shard_dir / f"{slug}.json").unlink(missing_ok=True)
-        # D57: also drop batch-composition shards that touch a changed file, so
-        # _load_existing_raw_batches (batch_chunks mode) can't re-inject the
-        # pre-change extraction for a batch whose (chunk_count, source_files)
-        # fingerprint still matches after the edit.
+        for fname in deleted_files or set():
+            existing_raw.pop(fname, None)
+            existing_chunk.pop(fname, None)
+            slug = _fname_slug(fname)
+            _unlink_shard_if_owned(shard_dir / f"{slug}.json", fname)
+            _unlink_shard_if_owned(chunk_shard_dir / f"{slug}.json", fname)
+        # D57/D58: also drop batch-composition shards that touch a changed OR
+        # deleted file, so _load_existing_raw_batches (batch_chunks mode) can't
+        # re-inject an extraction whose (chunk_count, source_files) fingerprint
+        # still matches — for a deletion that cached result would carry the
+        # deleted file's nodes back into the graph.
         raw_batch_shard_dir = ctx.intermediate_dir / "pass2_raw_batches"
         if raw_batch_shard_dir.exists():
             for shard_file in raw_batch_shard_dir.glob("*.json"):
@@ -123,7 +172,7 @@ def _run(
                     entry = json.loads(shard_file.read_text(encoding="utf-8"))
                 except (json.JSONDecodeError, OSError):
                     continue
-                if set(entry.get("source_files", [])) & ctx.append_new_files:
+                if set(entry.get("source_files", [])) & evict:
                     shard_file.unlink(missing_ok=True)
 
     if ctx.append and ctx.append_new_files is not None:
@@ -356,6 +405,25 @@ def _log_and_write(
         json.dumps(chunk_node_index, indent=_cfg.JSON_INDENT), encoding="utf-8"
     )
     (ctx.intermediate_dir / "raw_extractions.done").write_text("", encoding="utf-8")
+
+    # D58: keep failed_chunks.json consistent with the surviving corpus. On a
+    # deletions-only run `todo` is empty, so run_pass2 never rewrites this file
+    # and its stale entries would still name deleted files — score_orphan_candidates_v2
+    # reads them to synthesise blank-response orphans, and would try to recover a
+    # chunk whose text no longer exists. Prune by filename rather than truncating,
+    # so genuine failures for surviving files are preserved. Also guarantees the
+    # file exists, keeping pass2's four declared outputs coherent for _is_done.
+    failed_path = ctx.intermediate_dir / "failed_chunks.json"
+    surviving: list[dict] = []
+    if failed_path.exists():
+        try:
+            prior = json.loads(failed_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            prior = []
+        if isinstance(prior, list):
+            surviving = [e for e in prior if e.get("filename") in raw]
+    failed_path.write_text(json.dumps(surviving, indent=_cfg.JSON_INDENT), encoding="utf-8")
+
     ctx.raw_extractions = raw
     ctx.chunk_node_index = chunk_node_index
 
@@ -412,7 +480,11 @@ def _grow_schema_backfill(
     backfill = compute_backfill_chunks(
         added_concepts, added_properties, schema, existing_chunk, top_k
     )
-    changed = ctx.append_new_files or set()
+    # Deleted files are already absent from existing_raw once U5's eviction has
+    # run, so the `f in existing_raw` filter below excludes them. Folding them in
+    # here anyway makes the intent local rather than depending on a non-local
+    # invariant across two units (D58).
+    changed = (ctx.append_new_files or set()) | (ctx.deleted_files or set())
 
     # Never re-extract the changed files here — they are (re-)extracted in full by the
     # normal todo path against the already-grown schema.

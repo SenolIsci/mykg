@@ -87,6 +87,12 @@ class ScriptedAdapter(LLMAdapter):
 
 
 def _make_full_ctx(tmp_path: Path, adapter: LLMAdapter, *, append: bool) -> PipelineContext:
+    """Build a real PipelineContext over tmp_path.
+
+    Since D58 the append runs here also pass --sync: every scenario in this file
+    is about a MODIFIED (blanked) file, and plain --append is strictly additive.
+    Reconciling a modification is exactly what --sync gates.
+    """
     out = tmp_path / "output"
     inter = tmp_path / "intermediate"
     inp = tmp_path / "input"
@@ -101,6 +107,7 @@ def _make_full_ctx(tmp_path: Path, adapter: LLMAdapter, *, append: bool) -> Pipe
         thesaurus=None,
         review=False,
         append=append,
+        sync=append,
     )
 
 

@@ -240,14 +240,23 @@ def run_preprocess(ctx: PipelineContext) -> None:
 
     if not mineru_files and not html_files and not txt_files:
         log.info("Step 0 — no eligible non-md files to preprocess; skipping")
-        # Honor cleanup of leftover .md outputs from prior runs whose source
-        # files have been removed. Without this, deleting a PDF leaves its
-        # converted .md orphaned under input/_preprocessed/.
+        # Every prior source has vanished. Under --sync, clean up their converted
+        # .md and record the deletions; otherwise leave both the files and the
+        # manifest entries in place so mirror and graph stay consistent and the
+        # ingest warning stays actionable (D58). Carrying the prior manifest
+        # forward matters: dropping it would orphan the derived .md with no
+        # record of its provenance, making the deletion undetectable later.
         prior_sources = _load_prior_manifest(ctx.intermediate_dir).get("source_files", {})
-        for entry in prior_sources.values():
-            leftover = entry.get("output_md")
-            if leftover:
-                (ctx.input_dir / leftover).unlink(missing_ok=True)
+        deleted_sources: list[str] = []
+        deleted_derived_md: list[str] = []
+        if ctx.sync:
+            for rel, entry in prior_sources.items():
+                leftover = entry.get("output_md")
+                deleted_sources.append(rel)
+                if leftover:
+                    deleted_derived_md.append(leftover)
+                    (ctx.input_dir / leftover).unlink(missing_ok=True)
+            ctx.deleted_files = (ctx.deleted_files or set()) | set(deleted_derived_md)
         _write_sentinel(
             ctx.intermediate_dir,
             {
@@ -255,7 +264,9 @@ def run_preprocess(ctx: PipelineContext) -> None:
                 "files_found": 0,
                 "skipped": True,
                 "skipped_files": skipped_records,
-                "source_files": {},
+                "source_files": {} if ctx.sync else prior_sources,
+                "deleted_sources": sorted(deleted_sources),
+                "deleted_derived_md": sorted(deleted_derived_md),
             },
         )
         return
@@ -287,7 +298,20 @@ def run_preprocess(ctx: PipelineContext) -> None:
         if _is_unchanged(rel, hashes[src]):
             source_files[rel] = prior_sources[rel]
             skipped_unchanged += 1
+        elif rel in prior_sources and not ctx.sync:
+            # CHANGED source without --sync: converting would burn the (expensive)
+            # MinerU cost on output that ingest then declines to extract, since a
+            # modification is only reconciled under --sync. Carry the prior entry
+            # forward VERBATIM — old sha and old output_md (D58, audit M7).
+            # Writing a fresh {"sha256": NEW, "output_md": None} would poison the
+            # manifest: the cleanup loop below skips the unlink on a None
+            # output_md, so a later deletion of this source would orphan its
+            # derived .md in the mirror and become undetectable by BOTH layers.
+            source_files[rel] = prior_sources[rel]
+            skipped_unchanged += 1
         else:
+            # New source (always converted, even without --sync — an addition is
+            # what plain --append is for), or a changed source under --sync.
             bucket.append((src, rel))
             source_files[rel] = {
                 "sha256": hashes[src],
@@ -295,12 +319,25 @@ def run_preprocess(ctx: PipelineContext) -> None:
                 "size_bytes": src.stat().st_size,
             }
 
+    # Sources present in the prior manifest but gone from disk. Under --sync,
+    # unlink the derived .md and record the deletion so ingest sees it as an
+    # ordinary missing .md; otherwise carry the entry forward untouched so the
+    # mirror keeps matching the graph and nothing is silently orphaned.
+    deleted_sources: list[str] = []
+    deleted_derived_md: list[str] = []
     for rel, entry in prior_sources.items():
         if rel in source_files:
             continue
         leftover = entry.get("output_md")
-        if leftover:
-            (ctx.input_dir / leftover).unlink(missing_ok=True)
+        if ctx.sync:
+            deleted_sources.append(rel)
+            if leftover:
+                deleted_derived_md.append(leftover)
+                (ctx.input_dir / leftover).unlink(missing_ok=True)
+        else:
+            source_files[rel] = entry
+    if deleted_derived_md:
+        ctx.deleted_files = (ctx.deleted_files or set()) | set(deleted_derived_md)
 
     if skipped_unchanged:
         log.info(
@@ -410,6 +447,8 @@ def run_preprocess(ctx: PipelineContext) -> None:
             "txt_records": txt_records,
             "skipped_files": skipped_records,
             "source_files": source_files,
+            "deleted_sources": sorted(deleted_sources),
+            "deleted_derived_md": sorted(deleted_derived_md),
             "unchanged_count": skipped_unchanged,
         },
     )

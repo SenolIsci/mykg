@@ -399,22 +399,27 @@ This keeps the graph consistent — instances of a newly-added type appear in BO
 
 ### Mode Comparison
 
-| | Fresh extract | `--base-schema` | `--append` | `--append-with-grow-schema` | Orphan schema-gap restart |
-|---|---|---|---|---|---|
-| **Pass 1** | All files | All files, locked base injected | Skipped | Changed files only, locked | Skipped (schema already updated) |
-| **Schema** | Induced from scratch | Induced + locked entries preserved | Frozen (reused from prior run) | Grown: locked entries preserved, LLM may add new | Grown: new properties added by orphan pass |
-| **Pass 2** | All files | All files | New/modified files only | New/modified + surgical back-fill of old chunks | Surgical re-extraction of affected chunks only |
-| **Requires existing session** | No | No | Yes | Yes | Automatic (mid-run) |
-| **LLM cost** | O(all files) | O(all files) | O(new files) | O(new files) + bounded back-fill | O(affected chunks) |
-| **Schema source** | LLM proposals | LLM proposals + user TTL | `schema.json` (unchanged) | Session `schema.ttl` auto-loaded as locked base | `orphan_connect` LLM proposal |
-| **Can add concepts** | Yes | Yes (around locked) | No | Yes (around locked) | No |
-| **Can add properties** | Yes | Yes (around locked) | No | Yes (around locked) | Yes |
-| **Can add instances** | Yes | Yes | Yes (new files only) | Yes (new + back-filled old) | Yes (affected chunks) |
-| **Can rename/remove existing** | N/A | No (locked) | N/A (frozen) | No (locked) | No |
-| **Back-fill old files** | N/A | N/A | No | Yes, surgically | Yes, surgically |
-| **`--base-schema` compatible** | Yes | N/A | Yes | No (auto-loads session schema) | Yes |
-| **`--from-step` compatible** | Yes | Yes | Not in same command | Not in same command | N/A (automatic) |
-| **Empty delta behavior** | N/A | N/A | N/A | Collapses to plain `--append` | No restart if no new properties |
+| | Fresh extract | `--base-schema` | `--append` | `--append --sync` (= `--update`) | `--append-with-grow-schema` | Orphan schema-gap restart |
+|---|---|---|---|---|---|---|
+| **Pass 1** | All files | All files, locked base injected | Skipped | Skipped | Changed files only, locked | Skipped (schema already updated) |
+| **Schema** | Induced from scratch | Induced + locked entries preserved | Frozen (reused from prior run) | Frozen | Grown: locked entries preserved, LLM may add new | Grown: new properties added by orphan pass |
+| **Pass 2** | All files | All files | **New files only** | New + re-extracted modified files | Changed files + surgical back-fill of old chunks | Surgical re-extraction of affected chunks only |
+| **Handles deletions** | N/A (rebuilt) | N/A | **No — warns only** | **Yes** | Only with `--sync` | N/A |
+| **Handles modifications** | N/A (rebuilt) | N/A | **No — warns only** | **Yes** | Only with `--sync` | N/A |
+| **Requires existing session** | No | No | Yes | Yes | Yes | Automatic (mid-run) |
+| **LLM cost** | O(all files) | O(all files) | O(new files) | O(new + modified files) | O(changed files) + bounded back-fill | O(affected chunks) |
+| **Schema source** | LLM proposals | LLM proposals + user TTL | `schema.json` (unchanged) | `schema.json` (unchanged) | Session `schema.ttl` auto-loaded as locked base | `orphan_connect` LLM proposal |
+| **Can add concepts** | Yes | Yes (around locked) | No | No | Yes (around locked) | No |
+| **Can add properties** | Yes | Yes (around locked) | No | No | Yes (around locked) | Yes |
+| **Can add instances** | Yes | Yes | Yes (new files only) | Yes (new + modified) | Yes (changed + back-filled old) | Yes (affected chunks) |
+| **Can REMOVE instances** | N/A (rebuilt) | N/A | **No** | **Yes** (deleted files' nodes) | Only with `--sync` | No |
+| **Can rename/remove existing schema** | N/A | No (locked) | N/A (frozen) | N/A (frozen) | No (locked) | No |
+| **Back-fill old files** | N/A | N/A | No | No | Yes, surgically | Yes, surgically |
+| **`--base-schema` compatible** | Yes | N/A | Yes | Yes | No (auto-loads session schema) | Yes |
+| **`--from-step` compatible** | Yes | Yes | Not in same command | Not in same command | Not in same command | N/A (automatic) |
+| **Empty delta behavior** | N/A | N/A | N/A | Degrades to plain `--append` (no prune, no eviction) | Collapses to plain `--append`; zero Pass 1 calls | No restart if no new properties |
+
+`--update` is a convenience alias for `--append --sync`, expanded before the `--sync requires --append` validation gate (D58).
 
 ### `--append` change-detection limits
 
@@ -424,12 +429,12 @@ This keeps the graph consistent — instances of a newly-added type appear in BO
 |---|---|---|---|
 | `per_file` | Yes — its own shard is evicted and re-run | Yes | Each file is its own LLM call and its own shard; no fan-out, so nothing is smeared into a sibling |
 | `batch_chunks` + `batch_per_file: true` | Yes — its own shard is evicted and re-run | Yes | A batch never mixes files, so there is no fan-out — the file's own shard is the only one carrying its nodes |
-| `batch_chunks` (default, `batch_per_file: false`) | Yes — its own shard is evicted and re-run | **No (partial)** | The prior mixed batch fanned the file's nodes into every batch sibling's shard; siblings are unchanged, so `--append` does not re-extract them and the node can survive via a sibling shard |
+| `batch_chunks` (default, `batch_per_file: false`) | Yes — its own shard is evicted and re-run | **No (partial)** | The prior mixed batch fanned the file's nodes into every batch sibling's shard; siblings are unchanged, so neither `--append` nor `--sync` re-extracts them and the node can survive via a sibling shard |
 | `concat` | Yes — its own shard is evicted and re-run | **No (partial)** | Same over-attribution as `batch_chunks`: a multi-file virtual batch fans its result to every member shard |
 
-**Deletion is clean in all modes:** removing a source file drops its nodes on the next `--append` — the file no longer contributes and no re-extraction is needed.
+**Deletion needs `--sync` (= `--update`), and is bounded by the same fan-out.** Removing a source file drops its nodes only on `--append --sync`; plain `--append` detects the deletion and warns, but leaves the graph untouched (D58). And the completeness column above applies to deletion too: under `per_file` or `batch_per_file: true` the removal is exact, while the mixed-batch modes can leave the deleted file's nodes alive in a sibling's shard — the same over-attribution, not a separate limitation.
 
-To guarantee a modified file's old nodes are fully removed on `--append`, use `per_file` mode **or** set `batch_per_file: true` under `batch_chunks` — both keep a file's chunks out of any other file's batch, so there is nothing to smear. Only the mixed-batch modes (`batch_chunks` with `batch_per_file: false`, and `concat`) leave partial survivals; there, a subsequent full re-extract (`--from-step pass2`) clears them. Fully removing the smeared copies *without* re-extracting the whole batch would require re-attributing a mixed batch's result per file — deliberately out of scope for the shard-eviction fix.
+To guarantee a modified file's old nodes are fully removed on `--append --sync`, use `per_file` mode **or** set `batch_per_file: true` under `batch_chunks` — both keep a file's chunks out of any other file's batch, so there is nothing to smear. Only the mixed-batch modes (`batch_chunks` with `batch_per_file: false`, and `concat`) leave partial survivals; there, a subsequent full re-extract (`--from-step pass2`) clears them. Fully removing the smeared copies *without* re-extracting the whole batch would require re-attributing a mixed batch's result per file — deliberately out of scope for the shard-eviction fix.
 
 ### Assembly and Deduplication
 
@@ -605,8 +610,9 @@ The mykg skill (`/mykg`) and the mykg MCP server (`mykg mcp-serve`) are compleme
 |---|---|---|---|
 | **— Write / Pipeline Operations —** | | | |
 | Extract graph (fresh session) | **yes** — `extract-graph <dir>` | no | Skill drives the full LLM pipeline via inbox/outbox |
-| Append to session | **yes** — `--append` | no | |
-| Append + grow schema | **yes** — `--append-with-grow-schema` | no | D52 locked Pass 1 |
+| Append to session (new files) | **yes** — `--append` | no | D58: NEW files only; modified/deleted are warned about |
+| Sync: reconcile modified + deleted | **yes** — `--update` (= `--append --sync`) | no | D58 |
+| Append + grow schema | **yes** — `--append-with-grow-schema` | no | D52 locked Pass 1; add `--sync` to reconcile too |
 | Resume / continue session | **yes** — `--session <name>` | no | |
 | Re-run from step | **yes** — `--from-step <step>` | no | Includes orphan fullsweep/incremental aliases |
 | Approve schema | **yes** — `approve-schema` | no | |

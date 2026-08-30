@@ -73,6 +73,21 @@ class PipelineContext(BaseModel):
     # set() = ingest ran in append mode and found no changes (nothing-to-do).
     # non-empty set = ingest ran and found new/modified files.
     append_new_files: set[str] | None = None
+    # --sync (D58): reconcile the graph against the folder — re-extract modified
+    # files and remove deleted ones. Requires --append. Detection always runs;
+    # this flag gates only the actions (mirror prune, shard eviction, and the
+    # modified branch in ingest). Without it, plain --append is strictly
+    # additive and only warns about modified/deleted files.
+    sync: bool = False
+    # None = preprocess/ingest haven't run yet / not in append mode.
+    # set() = they ran and found no deletions.
+    # non-empty set = source files disappeared; their manifest entries, shards,
+    # and raw_extractions.json keys must be evicted and the graph recomputed.
+    # Keys are .md paths relative to ctx.input_dir — the same key space as
+    # file_manifest.json, raw_extractions.json, and node/edge source_files. A
+    # deleted non-md source (PDF/DOCX/HTML/TXT) is recorded here as its DERIVED
+    # .md path, since that is the only name the graph ever knew it by.
+    deleted_files: set[str] | None = None
     pass2_workers: int = Field(default_factory=lambda: _cfg.PASS2_MAX_WORKERS)
     ingest_workers: int = Field(default_factory=lambda: _cfg.INGEST_MAX_WORKERS)
     confidence_agg: str = Field(default_factory=lambda: _cfg.ASSEMBLY_CONFIDENCE_AGG)
@@ -298,10 +313,15 @@ def _invalidate_append_downstream(
     ctx.edge_metadata = None
     ctx.raw_extractions = None
     ctx.chunk_node_index = None
+    changed = ctx.append_new_files or set()
+    deleted = ctx.deleted_files or set()
     log.info(
-        "append: invalidated pass2 and downstream outputs for %d changed file(s): %s",
-        len(ctx.append_new_files),
-        sorted(ctx.append_new_files),
+        "append: invalidated pass2 and downstream outputs for %d changed and "
+        "%d deleted file(s): changed=%s deleted=%s",
+        len(changed),
+        len(deleted),
+        sorted(changed),
+        sorted(deleted),
     )
 
 
@@ -362,7 +382,11 @@ def run(steps: list[Step], ctx: PipelineContext) -> None:
                 "preprocess",
                 "ingest",
                 *(("pass1", "schema_validate", "schema_flatten") if ctx.grow_schema else ()),
-                *(("pass2",) if ctx.append_new_files else ()),
+                *(
+                    ("pass2",)
+                    if ctx.append_new_files or (ctx.sync and ctx.deleted_files)
+                    else ()
+                ),
             )
             if _is_done(step, ctx) and not _append_force:
                 log.info("SKIP %s — outputs exist", step.name)
@@ -391,6 +415,7 @@ def run(steps: list[Step], ctx: PipelineContext) -> None:
                 and step.name != "ingest"
                 and ctx.append_new_files is not None
                 and not ctx.append_new_files
+                and not (ctx.sync and ctx.deleted_files)
             ):
                 log.info("SKIP %s — append mode: no new or modified files detected", step.name)
                 state.mark_done(step.name)
@@ -535,7 +560,13 @@ def run(steps: list[Step], ctx: PipelineContext) -> None:
             # Re-entry B: ingest found new/modified files in append mode — delete
             # pass2 and all downstream outputs so they re-run against the existing
             # schema (D26). Must happen after ingest writes the updated manifest.
-            if ctx.append and step.name == "ingest" and ctx.append_new_files:
+            # The ctx.sync guard on deleted_files is load-bearing: without it a
+            # plain --append that merely *detected* a deletion would unlink every
+            # downstream output and pay a full re-assemble plus the entire orphan
+            # sweep — on a run whose documented behaviour is warn-only (D58).
+            if ctx.append and step.name == "ingest" and (
+                ctx.append_new_files or (ctx.sync and ctx.deleted_files)
+            ):
                 _invalidate_append_downstream(steps, ctx, state)
 
             state.mark_done(step.name)

@@ -11,7 +11,13 @@ from mykg.orchestrator import PipelineContext
 from mykg.steps.step_preprocess import run_preprocess
 
 
-def _make_ctx(tmp_path: Path) -> PipelineContext:
+def _make_ctx(tmp_path: Path, *, sync: bool = False) -> PipelineContext:
+    """Build a PipelineContext over tmp_path.
+
+    Pass ``sync=True`` for tests that exercise reconciliation of a CHANGED or
+    DELETED source. Since D58 those actions are gated behind --sync; a new
+    source is still converted unflagged, since that is an addition.
+    """
     input_dir = tmp_path / "input"
     intermediate_dir = tmp_path / "intermediate"
     output_dir = tmp_path / "output"
@@ -23,6 +29,7 @@ def _make_ctx(tmp_path: Path) -> PipelineContext:
         output_dir=output_dir,
         intermediate_dir=intermediate_dir,
         adapter=None,
+        sync=sync,
     )
 
 
@@ -281,8 +288,12 @@ def test_unchanged_source_skips_mineru(tmp_path: Path) -> None:
     ["new", "modified"],
 )
 def test_changed_source_is_reprocessed(tmp_path: Path, scenario: str) -> None:
-    """Both 'new' (no prior) and 'modified' (sha differs) re-invoke MinerU."""
-    ctx = _make_ctx(tmp_path)
+    """Both 'new' (no prior) and 'modified' (sha differs) re-invoke MinerU.
+
+    D58: a *new* source converts under plain --append (it is an addition); a
+    *modified* one is reconciliation and needs --sync.
+    """
+    ctx = _make_ctx(tmp_path, sync=(scenario == "modified"))
     pdf_bytes = b"%PDF-1.4 new bytes"
     (ctx.input_dir / "doc.pdf").write_bytes(pdf_bytes)
 
@@ -313,8 +324,8 @@ def test_changed_source_is_reprocessed(tmp_path: Path, scenario: str) -> None:
 
 
 def test_removed_source_cleans_up_output_md(tmp_path: Path) -> None:
-    """Prior manifest entry whose source file no longer exists → output is unlinked."""
-    ctx = _make_ctx(tmp_path)
+    """Prior manifest entry whose source no longer exists → output unlinked under --sync."""
+    ctx = _make_ctx(tmp_path, sync=True)
     # No source file present.
 
     import mykg.config as cfg

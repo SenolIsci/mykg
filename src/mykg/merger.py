@@ -572,6 +572,22 @@ def _namespace_shards(intermediate_dir: Path, session_alias: str) -> None:
                 shard_file.write_text(json.dumps(data, indent=_cfg.JSON_INDENT), encoding="utf-8")
 
 
+def _strip_alias(namespaced: str, alias: str) -> str:
+    """Recover the original filename from an ``{alias}/{original}`` merge key.
+
+    Splitting on the first ``/`` is wrong: it removes whatever segment happens to
+    come first, so a key that is NOT namespaced with this alias — a legacy
+    un-namespaced key carrying a subdirectory, or the other session's key — loses
+    a real path component. The truncated path then fails to resolve under
+    ``input/`` and the file is silently dropped from re-extraction.
+
+    Only the exact ``{alias}/`` prefix is removed; anything else is returned
+    unchanged.
+    """
+    prefix = f"{alias}/"
+    return namespaced[len(prefix):] if namespaced.startswith(prefix) else namespaced
+
+
 def reextract_for_merge(
     session_alias: str,
     session_path: Path,
@@ -662,12 +678,9 @@ def reextract_for_merge(
                 try:
                     sd = json.loads(sf.read_text(encoding="utf-8"))
                     namespaced_fname = sd.get("_fname", sf.stem)
-                    # Strip "session_a/" or "session_b/" prefix for pass2 keying.
-                    if "/" in namespaced_fname:
-                        plain = namespaced_fname.split("/", 1)[1]
-                    else:
-                        plain = namespaced_fname
+                    # Strip the "<alias>/" prefix for pass2 keying.
                     if namespaced_fname.startswith(f"{session_alias}/"):
+                        plain = _strip_alias(namespaced_fname, session_alias)
                         prior_extractions[plain] = sd.get("data", {})
                 except (json.JSONDecodeError, OSError) as exc:
                     log.warning("reextract_for_merge: could not read shard %s — %s", sf, exc)
@@ -676,11 +689,8 @@ def reextract_for_merge(
                 try:
                     sd = json.loads(sf.read_text(encoding="utf-8"))
                     namespaced_fname = sd.get("_fname", sf.stem)
-                    if "/" in namespaced_fname:
-                        plain = namespaced_fname.split("/", 1)[1]
-                    else:
-                        plain = namespaced_fname
                     if namespaced_fname.startswith(f"{session_alias}/"):
+                        plain = _strip_alias(namespaced_fname, session_alias)
                         prior_chunk_index[plain] = sd.get("data", {})
                 except (json.JSONDecodeError, OSError) as exc:
                     log.warning("reextract_for_merge: could not read chunk shard %s — %s", sf, exc)
@@ -698,9 +708,7 @@ def reextract_for_merge(
 
         file_contents: dict[str, str] = {}
         for namespaced_key in raw_extractions_namespaced:
-            original_fname = (
-                namespaced_key.split("/", 1)[1] if "/" in namespaced_key else namespaced_key
-            )
+            original_fname = _strip_alias(namespaced_key, session_alias)
             file_path = input_dir / original_fname
             if file_path.exists():
                 file_contents[original_fname] = file_path.read_text(encoding="utf-8")
@@ -805,10 +813,7 @@ def reextract_for_merge(
     # Load file contents from session input dir; keys match original (un-namespaced) filenames
     file_contents: dict[str, str] = {}
     for namespaced_key in raw_extractions_namespaced:
-        # Strip the "session_a/" or "session_b/" prefix
-        original_fname = (
-            namespaced_key.split("/", 1)[1] if "/" in namespaced_key else namespaced_key
-        )
+        original_fname = _strip_alias(namespaced_key, session_alias)
         file_path = input_dir / original_fname
         if file_path.exists():
             file_contents[original_fname] = file_path.read_text(encoding="utf-8")

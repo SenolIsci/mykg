@@ -123,8 +123,13 @@ def test_ingest_append_migrates_old_format_on_disk(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _make_append_ctx(tmp_path, manifest_data: dict) -> PipelineContext:
-    """Helper: create directories, write manifest and raw_extractions, return a PipelineContext."""
+def _make_append_ctx(tmp_path, manifest_data: dict, *, sync: bool = False) -> PipelineContext:
+    """Helper: create directories, write manifest and raw_extractions, return a PipelineContext.
+
+    Pass ``sync=True`` for tests that exercise reconciliation (modified or
+    deleted files). Since D58, plain ``--append`` is strictly additive: it
+    detects modified/deleted files and warns, but only ``--sync`` acts on them.
+    """
     input_dir = tmp_path / "input"
     input_dir.mkdir(exist_ok=True)
     intermediate_dir = tmp_path / "intermediate"
@@ -143,6 +148,7 @@ def _make_append_ctx(tmp_path, manifest_data: dict) -> PipelineContext:
         thesaurus=None,
         review=False,
         append=True,
+        sync=sync,
     )
 
 
@@ -168,12 +174,16 @@ def test_append_ingest_detects_new_file(tmp_path):
 
 
 def test_append_ingest_detects_modified_file(tmp_path):
-    """A file whose content changed since last run must appear in append_new_files."""
+    """A modified file must appear in append_new_files — under --sync (D58).
+
+    Plain --append is strictly additive since D58: it detects the modification
+    and warns, but only --sync re-extracts it.
+    """
     original_content = "original"
     original_sha = _sha256(original_content)
     manifest = {"notes.md": {"content": original_content, "sha256": original_sha}}
 
-    ctx = _make_append_ctx(tmp_path, manifest)
+    ctx = _make_append_ctx(tmp_path, manifest, sync=True)
     # Write a different version of the file
     (ctx.input_dir / "notes.md").write_text("completely different content")
 
