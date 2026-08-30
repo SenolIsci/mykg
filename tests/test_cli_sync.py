@@ -57,6 +57,12 @@ def _ctx_flags(tmp_path: Path, *flags: str) -> dict:
     vacuously whenever the CLI errors out before reaching `run` — `captured`
     stays empty, and comparing two empty dicts looks like a successful
     equivalence assertion.
+
+    `load_adapter` is stubbed because it resolves a real LLM provider from the
+    active config. That happens BEFORE the PipelineContext is built, so on a
+    machine with no provider credentials (CI) the command exits first and the
+    flags under test are never reached. The adapter is irrelevant here — this
+    asserts flag expansion, not extraction.
     """
     captured: dict = {}
 
@@ -75,7 +81,17 @@ def _ctx_flags(tmp_path: Path, *flags: str) -> dict:
     )
     (inter / "schema.ttl").write_text("@prefix ex: <http://e/> .", encoding="utf-8")
 
-    with patch("mykg.orchestrator.run", side_effect=spy):
+    class _StubAdapter:
+        def complete(self, *a, **k):  # pragma: no cover - never invoked
+            raise AssertionError("no LLM call should happen in a flag test")
+
+        def endpoint_label(self):
+            return "stub"
+
+    with (
+        patch("mykg.llm.config.load_adapter", return_value=_StubAdapter()),
+        patch("mykg.orchestrator.run", side_effect=spy),
+    ):
         result = CliRunner().invoke(
             cli,
             [
