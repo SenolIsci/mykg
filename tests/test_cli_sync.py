@@ -51,7 +51,13 @@ def test_sync_is_documented_in_help():
 
 
 def _ctx_flags(tmp_path: Path, *flags: str) -> dict:
-    """Invoke extract-graph with `flags` and capture the flags on the built ctx."""
+    """Invoke extract-graph with `flags` and capture the flags on the built ctx.
+
+    Asserts the spy actually fired. Without that check these tests pass
+    vacuously whenever the CLI errors out before reaching `run` — `captured`
+    stays empty, and comparing two empty dicts looks like a successful
+    equivalence assertion.
+    """
     captured: dict = {}
 
     def spy(steps, ctx):
@@ -70,7 +76,7 @@ def _ctx_flags(tmp_path: Path, *flags: str) -> dict:
     (inter / "schema.ttl").write_text("@prefix ex: <http://e/> .", encoding="utf-8")
 
     with patch("mykg.orchestrator.run", side_effect=spy):
-        CliRunner().invoke(
+        result = CliRunner().invoke(
             cli,
             [
                 "extract-graph",
@@ -82,6 +88,10 @@ def _ctx_flags(tmp_path: Path, *flags: str) -> dict:
                 str(inter),
             ],
         )
+    assert captured, (
+        "orchestrator.run was never reached, so no ctx was built — the CLI "
+        f"exited early. Output:\n{result.output}"
+    )
     return captured
 
 

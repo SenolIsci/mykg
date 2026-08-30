@@ -54,9 +54,17 @@ def test_does_not_strip_a_merely_similar_prefix():
 
 
 def _reextract_files_seen(tmp_path, namespaced_key: str, subdir: str | None) -> list[str]:
-    """Run reextract_for_merge and report which files it handed to pass2."""
+    """Run reextract_for_merge and report which files it handed to pass2.
+
+    Asserts the spy actually fired. Without that check these tests pass
+    vacuously whenever the patch target drifts — `reextract_for_merge` would
+    call the real (unpatched) extractor, `seen` would stay empty, and an
+    assertion against `[]` would look like a legitimate result rather than a
+    test that never exercised the code under test.
+    """
     from unittest.mock import patch
 
+    from mykg import merger
     from mykg.merger import reextract_for_merge
 
     session = tmp_path / "session"
@@ -72,7 +80,11 @@ def _reextract_files_seen(tmp_path, namespaced_key: str, subdir: str | None) -> 
         seen["files"] = sorted(files or {})
         return ({}, {}, [], {})
 
-    with patch("mykg.merger.run_pass2_batched", side_effect=spy):
+    # strategy="full" routes through run_pass2_batched; the surgical strategy
+    # uses run_pass2. Patching the wrong one silently skips the assertion.
+    assert hasattr(merger, "run_pass2_batched"), "patch target moved"
+
+    with patch.object(merger, "run_pass2_batched", side_effect=spy):
         reextract_for_merge(
             session_alias="session_a",
             session_path=session,
@@ -87,7 +99,12 @@ def _reextract_files_seen(tmp_path, namespaced_key: str, subdir: str | None) -> 
             config={},
             strategy="full",
         )
-    return seen.get("files", [])
+    assert "files" in seen, (
+        "run_pass2_batched was never called — reextract_for_merge either resolved "
+        "no input files or now routes through a different extractor. Either way "
+        "this test is not exercising alias stripping."
+    )
+    return seen["files"]
 
 
 def test_reextract_resolves_a_namespaced_subdirectory_file(tmp_path):
