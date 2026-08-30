@@ -319,8 +319,10 @@ Everything else (`.py`, `.json`, `.yaml`, lock files, etc.) is ignored. Hidden d
 | `--session NAME` | Resume an existing session by folder name |
 | `--from-step NAME` | Delete a step's outputs and re-run from that point |
 | `--review` | Pause after Pass 1 for manual schema review |
-| `--append` | Skip Pass 1; re-run only on new/modified files |
-| `--append-with-grow-schema` | Like `--append`, but runs a locked Pass 1 over changed files to expand the schema |
+| `--append` | Skip Pass 1; extract NEW files only. Modified and deleted files are detected and warned about — add `--sync` to act on them |
+| `--sync` | With `--append`: reconcile the graph against the folder — re-extract MODIFIED files and remove DELETED ones |
+| `--update` | Shorthand for `--append --sync` |
+| `--append-with-grow-schema` | Like `--append`, but runs a locked Pass 1 over changed files to expand the schema. Composes with `--sync` |
 | `--pass1-schema-induction-only` | Run every step before Pass 2 (through `schema_flatten`), then stop — inspect/edit the schema before extracting |
 | `--pass2-kg-extraction-only` | Skip schema induction (requires an existing schema) and extract the full corpus through `validate_graph`. Unlike `--from-step pass2`, always re-derives `flattened_schema.json` first, so a hand-edited schema is picked up |
 | `--profile NAME` | Use a different LLM profile from `mykg_config.yaml` for THIS run only (config file untouched; re-resolves provider/model/workers/timeouts from that profile) |
@@ -716,8 +718,7 @@ mykg extract-graph my_notes/ --session <name> --append --sync
 | Command | New | Modified | Deleted |
 |---|---|---|---|
 | `--append` | extracted | warn only | warn only |
-| `--append --sync` | extracted | re-extracted | **removed** |
-| `--update` | *shorthand for the row above* | | |
+| `--append --sync` *(= `--update`)* | extracted | re-extracted | **removed** |
 
 `--sync` requires `--append`, and composes with `--append-with-grow-schema`. **`--update` is shorthand for `--append --sync`:**
 
@@ -1129,6 +1130,7 @@ Examples:
 | `/mykg extract ./docs with human review` | `mykg extract-graph ./docs --review` |
 | `/mykg extract ./docs with frozen schema from ontology.ttl` | `mykg extract-graph ./docs --base-schema ontology.ttl --freeze-schema` |
 | `/mykg append the new notes in ./docs` | `mykg extract-graph ./docs --append --session <latest>` |
+| `/mykg sync the graph with ./docs` | `mykg extract-graph ./docs --update --session <latest>` |
 | `/mykg expand the schema with ./docs` | `mykg extract-graph ./docs --append-with-grow-schema --session <latest>` |
 | `/mykg resume the last session` | `mykg extract-graph --session <latest>` |
 | `/mykg approve the schema` | `mykg approve-schema --session <latest>` |

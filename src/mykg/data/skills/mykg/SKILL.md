@@ -51,8 +51,8 @@ Trigger this skill whenever the user types `/mykg <anything>`. Map the intent to
 | `/mykg extract ./docs with human review` | `mykg extract-graph ./docs --review` (**fresh session — no `--session`**) |
 | `/mykg append the new notes in ./docs` | `mykg extract-graph ./docs --append --session <auto-detect-most-recent>` (explicit reuse via `append`; NEW files only — see `--sync` below) |
 | `/mykg sync the graph with ./docs` | `mykg extract-graph ./docs --update --session <auto-detect-most-recent>` ("sync"/"reconcile"/"update" → `--update`, the shorthand for `--append --sync`) |
-| `/mykg pick up my edits in ./docs` | `mykg extract-graph ./docs --append --sync --session <auto-detect-most-recent>` (**`--sync`, not plain `--append`** — since D58 a modified file is only re-extracted under `--sync`) |
-| `/mykg remove deleted files from the graph` | `mykg extract-graph <folder> --append --sync --session <auto-detect-most-recent>` |
+| `/mykg pick up my edits in ./docs` | `mykg extract-graph ./docs --update --session <auto-detect-most-recent>` (**`--update`/`--sync`, not plain `--append`** — since D58 a modified file is only re-extracted under `--sync`) |
+| `/mykg remove deleted files from the graph` | `mykg extract-graph <folder> --update --session <auto-detect-most-recent>` |
 | `/mykg append and grow schema from ./docs` | `mykg extract-graph ./docs --append-with-grow-schema --session <auto-detect-most-recent>` (explicit reuse via `append`; locked Pass 1 runs over changed files to expand the schema) |
 | `/mykg expand the schema with new docs in ./docs` | `mykg extract-graph ./docs --append-with-grow-schema --session <auto-detect-most-recent>` ("expand schema" → `--append-with-grow-schema`) |
 | `/mykg resume the last session` | `mykg extract-graph --session <most-recent>` (explicit reuse via `resume the last session`) |

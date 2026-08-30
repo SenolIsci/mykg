@@ -75,6 +75,7 @@ Examples:
 | `/mykg ./docs` | `mykg extract-graph ./docs` (legacy positional alias) |
 | `/mykg extract ./docs with human review` | `mykg extract-graph ./docs --review` |
 | `/mykg append the new notes in ./docs` | `mykg extract-graph ./docs --append --session <latest>` |
+| `/mykg sync the graph with ./docs` | `mykg extract-graph ./docs --update --session <latest>` |
 | `/mykg resume the last session` | `mykg extract-graph --session <latest>` |
 | `/mykg approve the schema` | `mykg approve-schema --session <latest>` |
 | `/mykg make a walkthrough` | `mykg walkthrough --session <latest>` |
