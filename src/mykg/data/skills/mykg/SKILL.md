@@ -27,7 +27,7 @@ Only reuse an existing session when the user *explicitly* signals it. Explicit s
 
 - The verbs **resume**, **continue**, **redo**, **append**, **sync**, **reconcile**, **approve**, **walkthrough**.
 - A direct reference: **"the last session"**, **"the existing session"**, **"the same session"**, or a literal session name (typed as `--session <name>` or "session <name>").
-- A flag whose semantics require a session: **`--append`**, **`--sync`**, **`--from-step <step>`**.
+- A flag whose semantics require a session: **`--append`**, **`--sync`**, **`--update`**, **`--from-step <step>`**.
 - A subcommand that inherently targets a completed session: **`approve-schema`**, **`walkthrough`**.
 
 For anything else — including bare `/mykg <dir>`, `/mykg extract <dir>`, `/mykg extract more from <dir>`, "extract this folder" — pass **NO** `--session` flag. Words like "more", "again", "now", "next" are NOT explicit signals; they trigger a fresh session like every other plain extract command.
@@ -50,7 +50,7 @@ Trigger this skill whenever the user types `/mykg <anything>`. Map the intent to
 | `/mykg extract more from ./more_docs` | `mykg extract-graph ./more_docs` (**fresh session** — "more" is NOT an explicit reuse signal; this is just another extract) |
 | `/mykg extract ./docs with human review` | `mykg extract-graph ./docs --review` (**fresh session — no `--session`**) |
 | `/mykg append the new notes in ./docs` | `mykg extract-graph ./docs --append --session <auto-detect-most-recent>` (explicit reuse via `append`; NEW files only — see `--sync` below) |
-| `/mykg sync the graph with ./docs` | `mykg extract-graph ./docs --append --sync --session <auto-detect-most-recent>` ("sync"/"reconcile" → `--append --sync`) |
+| `/mykg sync the graph with ./docs` | `mykg extract-graph ./docs --update --session <auto-detect-most-recent>` ("sync"/"reconcile"/"update" → `--update`, the shorthand for `--append --sync`) |
 | `/mykg pick up my edits in ./docs` | `mykg extract-graph ./docs --append --sync --session <auto-detect-most-recent>` (**`--sync`, not plain `--append`** — since D58 a modified file is only re-extracted under `--sync`) |
 | `/mykg remove deleted files from the graph` | `mykg extract-graph <folder> --append --sync --session <auto-detect-most-recent>` |
 | `/mykg append and grow schema from ./docs` | `mykg extract-graph ./docs --append-with-grow-schema --session <auto-detect-most-recent>` (explicit reuse via `append`; locked Pass 1 runs over changed files to expand the schema) |
@@ -153,7 +153,7 @@ From the user's `/mykg <free text>` message extract:
    6. **Reuse required but missing.** If rules 2/3/4 fire but no session exists under `$SESSIONS_DIR`, fail clearly: `"No existing sessions under <SESSIONS_DIR>. Run /mykg extract <dir> first to create one."`
 
 **Never auto-detect-most-recent purely because a previous skill turn produced a session.** The previous-turn memory only matters when the *current* user message also contains one of the explicit signals in rules 1-4. A bare `/mykg ./more_docs` after a prior session must still create a fresh session.
-4. **Flags** — anything the user named that maps to a flag the cached `--help` confirms (`--review`, `--append`, `--sync`, `--from-step <step>`, `--workers <N>`, `--obsidian-vault`, `--base-schema`, `--freeze-schema`, `--thesaurus`, `--verbose`, `--confidence-agg`, `--append-with-grow-schema`, etc.). Forward verbatim.
+4. **Flags** — anything the user named that maps to a flag the cached `--help` confirms (`--review`, `--append`, `--sync`, `--update`, `--from-step <step>`, `--workers <N>`, `--obsidian-vault`, `--base-schema`, `--freeze-schema`, `--thesaurus`, `--verbose`, `--confidence-agg`, `--append-with-grow-schema`, etc.). Forward verbatim.
 
 `extract-graph` without `--append` or `--from-step` does not need a pre-existing session — it auto-creates one.
 
@@ -165,10 +165,10 @@ From the user's `/mykg <free text>` message extract:
 |---|---|---|---|---|
 | `--append` | extracted | **warn only** | **warn only** | frozen |
 | `--append-with-grow-schema` | extracted | **warn only** | **warn only** | may grow |
-| `--append --sync` | extracted | **re-extracted** | **removed** | frozen |
+| `--append --sync` (= `--update`) | extracted | **re-extracted** | **removed** | frozen |
 | `--append-with-grow-schema --sync` | extracted | **re-extracted** | **removed** | may grow |
 
-`--sync` requires `--append` (a `ClickException` otherwise). Detection always
+**`--update` is shorthand for `--append --sync`** — prefer it when the user's intent is "make the graph match the folder". `--sync` on its own requires `--append` (a `ClickException` otherwise). Detection always
 runs, so a plain `--append` that finds modified or deleted files logs a warning
 naming them and pointing at `--sync` — the graph is left untouched.
 
@@ -176,7 +176,7 @@ naming them and pointing at `--sync` — the graph is left untouched.
 files. It no longer does. If a user says their edits "aren't showing up", the
 answer is almost always `--sync`.
 
-**Intent triggers** — use `--sync` when the user says: "sync", "reconcile",
+**Intent triggers** — use `--update` (or `--append --sync`) when the user says: "update", "sync", "reconcile",
 "remove deleted", "pick up my edits", "my changes aren't showing", "make the
 graph match the folder", "clean up files I deleted".
 

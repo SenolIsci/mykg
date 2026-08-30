@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from unittest.mock import patch
 
 from click.testing import CliRunner
 
@@ -41,6 +43,86 @@ def test_sync_is_documented_in_help():
 
     assert "--sync" in result.output
     assert "MODIFIED" in result.output and "DELETED" in result.output
+
+
+# ---------------------------------------------------------------------------
+# --update: shorthand for --append --sync
+# ---------------------------------------------------------------------------
+
+
+def _ctx_flags(tmp_path: Path, *flags: str) -> dict:
+    """Invoke extract-graph with `flags` and capture the flags on the built ctx."""
+    captured: dict = {}
+
+    def spy(steps, ctx):
+        captured.update(append=ctx.append, sync=ctx.sync, grow_schema=ctx.grow_schema)
+        raise SystemExit(0)
+
+    src = tmp_path / "src"
+    src.mkdir(parents=True, exist_ok=True)
+    (src / "a.md").write_text("A", encoding="utf-8")
+    inter = tmp_path / "i"
+    inter.mkdir(parents=True, exist_ok=True)
+    # Preconditions for --append / --append-with-grow-schema.
+    (inter / "schema.json").write_text(
+        json.dumps({"concepts": [], "properties": []}), encoding="utf-8"
+    )
+    (inter / "schema.ttl").write_text("@prefix ex: <http://e/> .", encoding="utf-8")
+
+    with patch("mykg.orchestrator.run", side_effect=spy):
+        CliRunner().invoke(
+            cli,
+            [
+                "extract-graph",
+                str(src),
+                *flags,
+                "--output-dir",
+                str(tmp_path / "o"),
+                "--intermediate-dir",
+                str(inter),
+            ],
+        )
+    return captured
+
+
+def test_update_is_equivalent_to_append_plus_sync(tmp_path):
+    assert _ctx_flags(tmp_path / "a", "--update") == _ctx_flags(
+        tmp_path / "b", "--append", "--sync"
+    )
+
+
+def test_update_sets_both_flags(tmp_path):
+    flags = _ctx_flags(tmp_path, "--update")
+
+    assert flags["append"] is True
+    assert flags["sync"] is True
+
+
+def test_update_alone_does_not_trip_the_sync_gate(tmp_path):
+    """--update expands BEFORE the `--sync requires --append` check.
+
+    Expanding after it would make the shorthand fail the very validation it
+    already satisfies.
+    """
+    src = tmp_path / "src"
+    src.mkdir()
+
+    result = CliRunner().invoke(cli, ["extract-graph", str(src), "--update"])
+
+    assert "--sync requires --append" not in result.output
+
+
+def test_update_composes_with_grow_schema(tmp_path):
+    flags = _ctx_flags(tmp_path, "--update", "--append-with-grow-schema")
+
+    assert flags == {"append": True, "sync": True, "grow_schema": True}
+
+
+def test_update_is_documented_in_help():
+    result = CliRunner().invoke(cli, ["extract-graph", "--help"])
+
+    assert "--update" in result.output
+    assert "--append --sync" in result.output
 
 
 # ---------------------------------------------------------------------------

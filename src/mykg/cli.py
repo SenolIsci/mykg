@@ -795,6 +795,14 @@ def _print_next_steps(
     "a co-batched sibling may retain over-attributed nodes (D53).",
 )
 @click.option(
+    "--update",
+    "update",
+    is_flag=True,
+    help="Shorthand for --append --sync: bring in new files AND reconcile modified "
+    "and deleted ones, so the graph matches the folder. Combine with "
+    "--append-with-grow-schema to also let the schema grow.",
+)
+@click.option(
     "--append-with-grow-schema",
     "grow_schema",
     is_flag=True,
@@ -853,6 +861,7 @@ def extract_graph(
     confidence_agg,
     append,
     sync,
+    update,
     grow_schema,
     pass1_only,
     pass2_only,
@@ -865,6 +874,12 @@ def extract_graph(
     from mykg.logging import setup
     from mykg.orchestrator import PipelineContext, run
     from mykg.pipeline import STEPS
+
+    # --update is pure sugar for --append --sync. Expanded before the gate below
+    # so `--update` on its own does not trip the check it already satisfies.
+    if update:
+        append = True
+        sync = True
 
     if grow_schema:
         append = True

@@ -717,8 +717,13 @@ mykg extract-graph my_notes/ --session <name> --append --sync
 |---|---|---|---|
 | `--append` | extracted | warn only | warn only |
 | `--append --sync` | extracted | re-extracted | **removed** |
+| `--update` | *shorthand for the row above* | | |
 
-`--sync` requires `--append`, and composes with `--append-with-grow-schema`.
+`--sync` requires `--append`, and composes with `--append-with-grow-schema`. **`--update` is shorthand for `--append --sync`:**
+
+```bash
+mykg extract-graph my_notes/ --session <name> --update
+```
 
 > **⚠️ Behaviour change:** before this release, plain `--append` re-extracted
 > modified files. It no longer does — add `--sync`. If your edits stop showing
