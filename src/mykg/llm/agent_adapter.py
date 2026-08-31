@@ -63,6 +63,7 @@ class AgentAdapter(LLMAdapter):
         timeout: int,
         max_tokens: int,
         error_gate: ErrorGate | None = None,
+        temperature: float | None = None,
     ):
         self._inbox = Path(inbox_dir)
         self._outbox = Path(outbox_dir)
@@ -70,6 +71,12 @@ class AgentAdapter(LLMAdapter):
         self._timeout = int(timeout)
         self._max_tokens = int(max_tokens)
         self._error_gate = error_gate
+        # Accepted for interface uniformity but deliberately unused: the host
+        # Claude Code session that services the inbox has no temperature dial.
+        # Deliberately NOT added to TaskEnvelope — that is an on-disk contract
+        # documented in docs/agent-mode.md and the mykg SKILL.md, and a field
+        # no consumer can act on would only invite confusion.
+        self._temperature = temperature
 
         self._inbox.mkdir(parents=True, exist_ok=True)
         self._outbox.mkdir(parents=True, exist_ok=True)

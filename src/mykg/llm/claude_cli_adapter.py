@@ -22,6 +22,7 @@ class ClaudeCLIAdapter(LLMAdapter):
         model: str = "auto",
         effort: str = "auto",
         error_gate: ErrorGate | None = None,
+        temperature: float | None = None,
     ):
         if shutil.which("claude") is None:
             raise RuntimeError(
@@ -33,6 +34,11 @@ class ClaudeCLIAdapter(LLMAdapter):
         self._model = model
         self._effort = effort
         self._error_gate = error_gate
+        # Accepted for interface uniformity but deliberately unused: `claude -p`
+        # exposes no temperature flag, so there is nothing to forward it to.
+        # Same precedent as _max_tokens above, which the CLI also has no way to
+        # honour. Do not "fix" this by inventing a flag.
+        self._temperature = temperature
 
     def endpoint_label(self) -> str:
         model_part = self._model if self._model != "auto" else "default"
