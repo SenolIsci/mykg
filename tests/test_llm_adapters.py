@@ -3474,3 +3474,138 @@ def test_shipped_config_has_no_temperature_key():
     import mykg.config as _cfg
 
     assert "temperature" not in _cfg.RAW.get("llm", {})
+
+
+# ---------------------------------------------------------------------------
+# temperature — live smoke tests
+#
+# These prove the parameter is accepted by the real APIs rather than 400-ing,
+# which no amount of mock-payload assertion can establish. Each skips cleanly
+# when its key is absent, and all are excluded from default runs by -m "not live".
+# ---------------------------------------------------------------------------
+
+
+def _load_api_key(*names: str) -> str | None:
+    """First of `names` found in the environment, else in a repo-root .env."""
+    for name in names:
+        key = os.environ.get(name, "").strip()
+        if key:
+            return key
+
+    from pathlib import Path
+
+    env_file = Path(__file__).parent.parent / ".env"
+    if not env_file.exists():
+        return None
+    with open(env_file, encoding="utf-8") as fh:
+        for line in fh:
+            for name in names:
+                if line.startswith(name):
+                    _, _, val = line.partition("=")
+                    if val.strip():
+                        return val.strip()
+    return None
+
+
+_LIVE_PROMPT = ("Reply with JSON only.", 'Return exactly {"pong": true}')
+
+
+@pytest.mark.live
+def test_anthropic_live_accepts_temperature():
+    key = _load_api_key("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+    if not key:
+        pytest.skip("ANTHROPIC_API_KEY not set")
+
+    from mykg.llm.anthropic_adapter import AnthropicAdapter
+
+    adapter = AnthropicAdapter(
+        model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5"),
+        max_tokens=64,
+        timeout=120,
+        api_key=key,
+        temperature=0.0,
+    )
+    out = adapter.complete(*_LIVE_PROMPT, context_label="live_temperature")
+    assert out.strip(), "expected a non-empty response with temperature=0.0"
+
+
+@pytest.mark.live
+def test_openai_live_accepts_temperature_on_ordinary_model():
+    """A non-reasoning model actually receives the temperature."""
+    key = _load_api_key("OPENAI_API_KEY")
+    if not key:
+        pytest.skip("OPENAI_API_KEY not set")
+
+    from mykg.llm.openai_adapter import OpenAIAdapter
+
+    adapter = OpenAIAdapter(
+        model=os.environ.get("OPENAI_TEMPERATURE_MODEL", "gpt-4o-mini"),
+        max_tokens=64,
+        timeout=120,
+        api_key=key,
+        temperature=0.0,
+    )
+    out = adapter.complete(*_LIVE_PROMPT, context_label="live_temperature")
+    assert out.strip(), "expected a non-empty response with temperature=0.0"
+
+
+@pytest.mark.live
+def test_openai_live_reasoning_model_succeeds_because_temperature_is_omitted():
+    """The guard in action: a gpt-5 model would 400 if temperature were sent.
+
+    This is the case that protects mykg's shipped default profile.
+    """
+    key = _load_api_key("OPENAI_API_KEY")
+    if not key:
+        pytest.skip("OPENAI_API_KEY not set")
+
+    from mykg.llm.openai_adapter import OpenAIAdapter
+
+    adapter = OpenAIAdapter(
+        model=os.environ.get("OPENAI_REASONING_MODEL", "gpt-5-mini"),
+        max_tokens=2000,
+        timeout=180,
+        api_key=key,
+        temperature=0.0,
+    )
+    out = adapter.complete(*_LIVE_PROMPT, context_label="live_temperature_omitted")
+    assert out.strip(), "expected a non-empty response; temperature should have been omitted"
+
+
+@pytest.mark.live
+def test_openrouter_live_accepts_temperature():
+    key = _load_api_key("OPENROUTER_API_KEY", "OPENROUTER_AUTH_TOKEN")
+    if not key:
+        pytest.skip("OPENROUTER_API_KEY not set")
+
+    from mykg.llm.openrouter_adapter import OpenRouterAdapter
+
+    adapter = OpenRouterAdapter(
+        model=os.environ.get("OPENROUTER_MODEL", "openrouter/free"),
+        max_tokens=64,
+        timeout=120,
+        api_key=key,
+        temperature=0.0,
+    )
+    out = adapter.complete(*_LIVE_PROMPT, context_label="live_temperature")
+    assert out.strip(), "expected a non-empty response with temperature=0.0"
+
+
+@pytest.mark.live
+def test_gemini_live_accepts_temperature():
+    key = _load_api_key("GEMINI_API_KEY", "GOOGLE_API_KEY")
+    if not key:
+        pytest.skip("GEMINI_API_KEY not set")
+
+    from mykg.llm.gemini_adapter import GeminiAdapter
+
+    adapter = GeminiAdapter(
+        model=os.environ.get("GEMINI_MODEL", "gemini-3.7-flash"),
+        max_tokens=2000,
+        timeout=120,
+        api_key=key,
+        temperature=0.0,
+    )
+    out = adapter.complete(*_LIVE_PROMPT, context_label="live_temperature")
+    assert out.strip()
+    assert json.loads(out)["pong"] is True
