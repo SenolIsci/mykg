@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import pathlib
 import urllib.error
 from unittest.mock import MagicMock, call, patch
 
@@ -1030,19 +1031,8 @@ def test_openrouter_no_override_uses_constructor_defaults():
 
 
 def _load_openrouter_api_key() -> str | None:
-    """Load OPENROUTER_API_KEY from environment or .env file."""
-    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
-    if not key:
-        from pathlib import Path
-
-        env_file = Path(__file__).parent.parent / ".env"
-        if env_file.exists():
-            for line in env_file.read_text().splitlines():
-                if line.startswith("OPENROUTER_API_KEY"):
-                    _, _, val = line.partition("=")
-                    key = val.strip()
-                    break
-    return key or None
+    """Load OPENROUTER_API_KEY from the environment or .env.mykg."""
+    return _load_api_key("OPENROUTER_AUTH_TOKEN", "OPENROUTER_API_KEY")
 
 
 def test_openrouter_endpoint_label_includes_model_and_base_url():
@@ -2514,7 +2504,7 @@ def test_gemini_strips_code_fences():
 @pytest.mark.live
 def test_gemini_live_call_returns_json():
     """Real API call — skipped unless GEMINI_API_KEY is set."""
-    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    key = _load_api_key("GEMINI_API_KEY", "GOOGLE_API_KEY")
     if not key:
         pytest.skip("GEMINI_API_KEY not set")
 
@@ -3486,24 +3476,24 @@ def test_shipped_config_has_no_temperature_key():
 
 
 def _load_api_key(*names: str) -> str | None:
-    """First of `names` found in the environment, else in a repo-root .env."""
+    """First of `names` resolvable from the environment or .env.mykg.
+
+    Delegates to conftest's _load_key — the canonical loader already shared with
+    the healthiness suite. pytest does not load .env.mykg the way the CLI does,
+    so tests needing a real key have to read it themselves.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "_mykg_test_conftest", pathlib.Path(__file__).parent / "conftest.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
     for name in names:
-        key = os.environ.get(name, "").strip()
+        key = module._load_key(name)
         if key:
             return key
-
-    from pathlib import Path
-
-    env_file = Path(__file__).parent.parent / ".env"
-    if not env_file.exists():
-        return None
-    with open(env_file, encoding="utf-8") as fh:
-        for line in fh:
-            for name in names:
-                if line.startswith(name):
-                    _, _, val = line.partition("=")
-                    if val.strip():
-                        return val.strip()
     return None
 
 
@@ -3580,10 +3570,14 @@ def test_openrouter_live_accepts_temperature():
 
     from mykg.llm.openrouter_adapter import OpenRouterAdapter
 
+    # openrouter/free routes to whatever free model is currently available, which
+    # may be a reasoning model that spends output tokens on thinking. A 64-token
+    # budget truncates those before any JSON is emitted (finish_reason=length),
+    # so this needs the same headroom as the other reasoning-capable live tests.
     adapter = OpenRouterAdapter(
         model=os.environ.get("OPENROUTER_MODEL", "openrouter/free"),
-        max_tokens=64,
-        timeout=120,
+        max_tokens=2000,
+        timeout=180,
         api_key=key,
         temperature=0.0,
     )
