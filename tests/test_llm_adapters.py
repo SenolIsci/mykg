@@ -2896,3 +2896,199 @@ def test_anthropic_temperature_does_not_disturb_other_payload_keys():
     assert kwargs["messages"] == [{"role": "user", "content": "user"}]
     assert kwargs["timeout"] == 30
     assert kwargs["cache_control"] == {"type": "ephemeral"}
+
+
+# ---------------------------------------------------------------------------
+# temperature — OpenAI
+# ---------------------------------------------------------------------------
+
+
+def _openai_client(text: str = "ok"):
+    """A mocked OpenAI client whose chat.completions.create returns `text`."""
+    response = MagicMock()
+    response.choices[0].message.content = text
+    response.choices[0].finish_reason = "stop"
+    client = MagicMock()
+    client.chat.completions.create.return_value = response
+    return client
+
+
+def test_openai_omits_temperature_when_unset():
+    with patch("openai.OpenAI") as mock_cls:
+        mock_cls.return_value = client = _openai_client()
+
+        from mykg.llm.openai_adapter import OpenAIAdapter
+
+        adapter = OpenAIAdapter(model="gpt-4o", max_tokens=4096, timeout=30, api_key="k")
+        adapter.complete("sys", "user")
+
+    assert "temperature" not in client.chat.completions.create.call_args[1]
+
+
+def test_openai_sends_configured_temperature_on_ordinary_model():
+    with patch("openai.OpenAI") as mock_cls:
+        mock_cls.return_value = client = _openai_client()
+
+        from mykg.llm.openai_adapter import OpenAIAdapter
+
+        adapter = OpenAIAdapter(
+            model="gpt-4o", max_tokens=4096, timeout=30, api_key="k", temperature=0.0
+        )
+        adapter.complete("sys", "user")
+
+    assert client.chat.completions.create.call_args[1]["temperature"] == 0.0
+
+
+def test_openai_omits_temperature_for_reasoning_model():
+    """A gpt-5 model rejects an explicit temperature, so a configured value is dropped.
+
+    This is the case that protects mykg's shipped default profile.
+    """
+    with patch("openai.OpenAI") as mock_cls:
+        mock_cls.return_value = client = _openai_client()
+
+        from mykg.llm.openai_adapter import OpenAIAdapter
+
+        adapter = OpenAIAdapter(
+            model="gpt-5.4-mini-2026-03-17",
+            max_tokens=4096,
+            timeout=30,
+            api_key="k",
+            temperature=0.0,
+        )
+        adapter.complete("sys", "user")
+
+    kwargs = client.chat.completions.create.call_args[1]
+    assert "temperature" not in kwargs
+    # The max_completion_tokens routing for this family is unaffected.
+    assert kwargs["max_completion_tokens"] == 4096
+
+
+def test_openai_per_call_temperature_overrides_configured():
+    with patch("openai.OpenAI") as mock_cls:
+        mock_cls.return_value = client = _openai_client()
+
+        from mykg.llm.openai_adapter import OpenAIAdapter
+
+        adapter = OpenAIAdapter(
+            model="gpt-4o", max_tokens=4096, timeout=30, api_key="k", temperature=0.2
+        )
+        adapter.complete("sys", "user", temperature=0.9)
+
+    assert client.chat.completions.create.call_args[1]["temperature"] == 0.9
+
+
+def _openai_bad_request(message: str):
+    import openai
+
+    return openai.BadRequestError(
+        message=message,
+        response=MagicMock(status_code=400, headers={}),
+        body={"error": {"message": message}},
+    )
+
+
+def test_openai_recovers_when_api_rejects_temperature(caplog):
+    """An unlisted family that 400s on temperature is retried once without it."""
+    import logging
+
+    response = MagicMock()
+    response.choices[0].message.content = "recovered"
+    response.choices[0].finish_reason = "stop"
+
+    with patch("openai.OpenAI") as mock_cls:
+        mock_cls.return_value = client = MagicMock()
+        client.chat.completions.create.side_effect = [
+            _openai_bad_request("Unsupported value: 'temperature' is not supported"),
+            response,
+        ]
+
+        from mykg.llm.openai_adapter import OpenAIAdapter
+
+        adapter = OpenAIAdapter(
+            model="gpt-4o", max_tokens=4096, timeout=30, api_key="k", temperature=0.5
+        )
+        with caplog.at_level(logging.WARNING, logger="mykg.llm.openai_adapter"):
+            assert adapter.complete("sys", "user") == "recovered"
+
+    assert client.chat.completions.create.call_count == 2
+    first, second = client.chat.completions.create.call_args_list
+    assert first[1]["temperature"] == 0.5
+    assert "temperature" not in second[1]
+    assert "rejected an explicit temperature" in caplog.text
+
+
+def test_openai_temperature_rejection_is_latched():
+    """After one rejection the adapter stops sending temperature entirely."""
+    ok = MagicMock()
+    ok.choices[0].message.content = "ok"
+    ok.choices[0].finish_reason = "stop"
+
+    with patch("openai.OpenAI") as mock_cls:
+        mock_cls.return_value = client = MagicMock()
+        client.chat.completions.create.side_effect = [
+            _openai_bad_request("'temperature' is not supported with this model"),
+            ok,
+            ok,
+        ]
+
+        from mykg.llm.openai_adapter import OpenAIAdapter
+
+        adapter = OpenAIAdapter(
+            model="gpt-4o", max_tokens=4096, timeout=30, api_key="k", temperature=0.5
+        )
+        adapter.complete("sys", "user")
+        adapter.complete("sys", "user")
+
+    # 2 calls for the first complete() (reject + retry), 1 for the second.
+    assert client.chat.completions.create.call_count == 3
+    assert "temperature" not in client.chat.completions.create.call_args_list[2][1]
+
+
+def test_openai_unrelated_bad_request_still_raises():
+    """The temperature branch must not swallow other 400s."""
+    import openai
+
+    with patch("openai.OpenAI") as mock_cls:
+        mock_cls.return_value = client = MagicMock()
+        client.chat.completions.create.side_effect = _openai_bad_request(
+            "Invalid value for 'messages'"
+        )
+
+        from mykg.llm.openai_adapter import OpenAIAdapter
+
+        adapter = OpenAIAdapter(
+            model="gpt-4o", max_tokens=4096, timeout=30, api_key="k", temperature=0.5
+        )
+        with pytest.raises(openai.BadRequestError):
+            adapter.complete("sys", "user")
+
+    assert client.chat.completions.create.call_count == 1
+
+
+def test_openai_max_tokens_swap_still_carries_temperature():
+    """The pre-existing max_tokens fallback keeps sending the configured temperature."""
+    ok = MagicMock()
+    ok.choices[0].message.content = "ok"
+    ok.choices[0].finish_reason = "stop"
+
+    with patch("openai.OpenAI") as mock_cls:
+        mock_cls.return_value = client = MagicMock()
+        client.chat.completions.create.side_effect = [
+            _openai_bad_request(
+                "Unsupported parameter: 'max_tokens' is not supported; use "
+                "'max_completion_tokens' instead"
+            ),
+            ok,
+        ]
+
+        from mykg.llm.openai_adapter import OpenAIAdapter
+
+        adapter = OpenAIAdapter(
+            model="gpt-4o", max_tokens=4096, timeout=30, api_key="k", temperature=0.3
+        )
+        assert adapter.complete("sys", "user") == "ok"
+
+    second = client.chat.completions.create.call_args_list[1][1]
+    assert second["max_completion_tokens"] == 4096
+    assert second["temperature"] == 0.3

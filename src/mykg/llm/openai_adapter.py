@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import openai
 
 from mykg.llm.adapter import LLMAdapter
+from mykg.llm.temperature import resolve_temperature
 from mykg.llm.retry import (
     log_context_overflow,
     log_truncated_output,
@@ -43,9 +44,11 @@ class OpenAIAdapter(LLMAdapter):
         retry_429_max: int = 5,
         retry_429_base_delay: float = 2.0,
         error_gate: ErrorGate | None = None,
+        temperature: float | None = None,
     ):
         self._model = model
         self._max_tokens = max_tokens
+        self._temperature = temperature
         self._retry_429_max = retry_429_max
         self._retry_429_base_delay = retry_429_base_delay
         self._error_gate = error_gate
@@ -63,6 +66,10 @@ class OpenAIAdapter(LLMAdapter):
         self._client = openai.OpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
         self._use_max_completion_tokens = _uses_max_completion_tokens(model)
         self._fallback_warned = False
+        # Latched once the API tells us this model rejects an explicit temperature,
+        # so a whole run does not pay a failed request per call to rediscover it.
+        self._temperature_rejected = False
+        self._temperature_warned = False
 
     def endpoint_label(self) -> str:
         url = self._base_url or "https://api.openai.com"
@@ -75,6 +82,7 @@ class OpenAIAdapter(LLMAdapter):
         effective_max_tokens: int,
         effective_timeout: int,
         use_completion_key: bool,
+        temperature: float | None = None,
     ):
         token_key = "max_completion_tokens" if use_completion_key else "max_tokens"
         kwargs = {
@@ -86,6 +94,8 @@ class OpenAIAdapter(LLMAdapter):
             "timeout": effective_timeout,
             token_key: effective_max_tokens,
         }
+        if temperature is not None:
+            kwargs["temperature"] = temperature
         return self._client.chat.completions.create(**kwargs)
 
     def complete(
@@ -99,6 +109,11 @@ class OpenAIAdapter(LLMAdapter):
     ) -> str:
         effective_max_tokens = max_tokens if max_tokens is not None else self._max_tokens
         effective_timeout = timeout if timeout is not None else self._timeout
+        configured_temperature = temperature if temperature is not None else self._temperature
+        # None here means "omit". Reasoning families (o-series, gpt-5) 400 on an
+        # explicit temperature, so a configured value is dropped for them rather
+        # than failing the call — mykg's default profile ships a gpt-5 model.
+        effective_temperature = resolve_temperature(configured_temperature, self._model)
 
         def _call() -> str:
             t0 = time.monotonic()
@@ -109,6 +124,7 @@ class OpenAIAdapter(LLMAdapter):
                     effective_max_tokens,
                     effective_timeout,
                     use_completion_key=self._use_max_completion_tokens,
+                    temperature=None if self._temperature_rejected else effective_temperature,
                 )
             except openai.BadRequestError as exc:
                 # Defensive fallback: an unknown future model family may also reject
@@ -133,6 +149,32 @@ class OpenAIAdapter(LLMAdapter):
                         effective_max_tokens,
                         effective_timeout,
                         use_completion_key=True,
+                        temperature=None if self._temperature_rejected else effective_temperature,
+                    )
+                elif (
+                    effective_temperature is not None
+                    and not self._temperature_rejected
+                    and "temperature" in msg
+                ):
+                    # Defensive fallback mirroring the max_tokens swap above: a model
+                    # family not covered by resolve_temperature's prefix list may also
+                    # reject an explicit temperature. Drop it and retry once, then
+                    # latch so the rest of the run omits it without a failed request.
+                    if not self._temperature_warned:
+                        _log.warning(
+                            "OpenAI model %r rejected an explicit temperature; "
+                            "omitting it for this adapter.",
+                            self._model,
+                        )
+                        self._temperature_warned = True
+                    self._temperature_rejected = True
+                    resp = self._create_with_token_param(
+                        system,
+                        user,
+                        effective_max_tokens,
+                        effective_timeout,
+                        use_completion_key=self._use_max_completion_tokens,
+                        temperature=None,
                     )
                 else:
                     if looks_like_context_exceeded(exc):
