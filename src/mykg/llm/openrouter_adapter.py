@@ -15,6 +15,7 @@ from mykg.llm.retry import (
     looks_like_context_exceeded,
     retry_on_rate_limit,
 )
+from mykg.llm.temperature import resolve_temperature
 from mykg.logging import record_llm_call
 
 if TYPE_CHECKING:
@@ -32,9 +33,11 @@ class OpenRouterAdapter(LLMAdapter):
         retry_429_max: int = 5,
         retry_429_base_delay: float = 2.0,
         error_gate: ErrorGate | None = None,
+        temperature: float | None = None,
     ):
         self._model = model
         self._max_tokens = max_tokens
+        self._temperature = temperature
         self._retry_429_max = retry_429_max
         self._retry_429_base_delay = retry_429_base_delay
         self._error_gate = error_gate
@@ -74,19 +77,27 @@ class OpenRouterAdapter(LLMAdapter):
     ) -> str:
         effective_max_tokens = max_tokens if max_tokens is not None else self._max_tokens
         effective_timeout = timeout if timeout is not None else self._timeout
+        configured_temperature = temperature if temperature is not None else self._temperature
+        # OpenRouter addresses upstream models as vendor/model, so resolve_temperature
+        # strips the vendor segment before matching families that reject the parameter
+        # (openai/gpt-5-mini would otherwise slip past the prefix check).
+        effective_temperature = resolve_temperature(configured_temperature, self._model)
 
         def _call() -> str:
             t0 = time.monotonic()
 
             def _do_request() -> tuple[str, object, str | None]:
-                resp = self._client.chat.completions.create(
-                    model=self._model,
-                    max_tokens=effective_max_tokens,
-                    messages=[
+                kwargs = {
+                    "model": self._model,
+                    "max_tokens": effective_max_tokens,
+                    "messages": [
                         {"role": "system", "content": system},
                         {"role": "user", "content": user},
                     ],
-                )
+                }
+                if effective_temperature is not None:
+                    kwargs["temperature"] = effective_temperature
+                resp = self._client.chat.completions.create(**kwargs)
                 usage = resp.usage
                 raw = resp.choices[0].message.content or "" if resp.choices else ""
                 choice_finish_reason = resp.choices[0].finish_reason if resp.choices else None

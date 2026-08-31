@@ -8,13 +8,13 @@ from typing import TYPE_CHECKING
 import openai
 
 from mykg.llm.adapter import LLMAdapter
-from mykg.llm.temperature import resolve_temperature
 from mykg.llm.retry import (
     log_context_overflow,
     log_truncated_output,
     looks_like_context_exceeded,
     retry_on_rate_limit,
 )
+from mykg.llm.temperature import resolve_temperature
 from mykg.logging import record_llm_call
 
 if TYPE_CHECKING:

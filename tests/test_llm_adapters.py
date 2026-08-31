@@ -3092,3 +3092,81 @@ def test_openai_max_tokens_swap_still_carries_temperature():
     second = client.chat.completions.create.call_args_list[1][1]
     assert second["max_completion_tokens"] == 4096
     assert second["temperature"] == 0.3
+
+
+# ---------------------------------------------------------------------------
+# temperature — OpenRouter
+# ---------------------------------------------------------------------------
+
+
+def test_openrouter_omits_temperature_when_unset():
+    with patch("openai.OpenAI") as mock_cls:
+        mock_cls.return_value = client = _openai_client()
+
+        from mykg.llm.openrouter_adapter import OpenRouterAdapter
+
+        adapter = OpenRouterAdapter(
+            model="openrouter/free", max_tokens=4096, timeout=30, api_key="k"
+        )
+        adapter.complete("sys", "user")
+
+    assert "temperature" not in client.chat.completions.create.call_args[1]
+
+
+def test_openrouter_sends_configured_temperature():
+    with patch("openai.OpenAI") as mock_cls:
+        mock_cls.return_value = client = _openai_client()
+
+        from mykg.llm.openrouter_adapter import OpenRouterAdapter
+
+        adapter = OpenRouterAdapter(
+            model="anthropic/claude-sonnet-4-5",
+            max_tokens=4096,
+            timeout=30,
+            api_key="k",
+            temperature=0.0,
+        )
+        adapter.complete("sys", "user")
+
+    assert client.chat.completions.create.call_args[1]["temperature"] == 0.0
+
+
+def test_openrouter_omits_temperature_for_namespaced_reasoning_model():
+    """openai/gpt-5-mini must be caught despite the vendor prefix."""
+    with patch("openai.OpenAI") as mock_cls:
+        mock_cls.return_value = client = _openai_client()
+
+        from mykg.llm.openrouter_adapter import OpenRouterAdapter
+
+        adapter = OpenRouterAdapter(
+            model="openai/gpt-5-mini",
+            max_tokens=4096,
+            timeout=30,
+            api_key="k",
+            temperature=0.0,
+        )
+        adapter.complete("sys", "user")
+
+    assert "temperature" not in client.chat.completions.create.call_args[1]
+
+
+def test_openrouter_temperature_preserves_other_payload_keys():
+    with patch("openai.OpenAI") as mock_cls:
+        mock_cls.return_value = client = _openai_client()
+
+        from mykg.llm.openrouter_adapter import OpenRouterAdapter
+
+        adapter = OpenRouterAdapter(
+            model="openrouter/free",
+            max_tokens=4096,
+            timeout=30,
+            api_key="k",
+            temperature=0.4,
+        )
+        adapter.complete("sys", "user")
+
+    kwargs = client.chat.completions.create.call_args[1]
+    assert kwargs["model"] == "openrouter/free"
+    assert kwargs["max_tokens"] == 4096
+    assert kwargs["messages"][0] == {"role": "system", "content": "sys"}
+    assert kwargs["temperature"] == 0.4
