@@ -3170,3 +3170,112 @@ def test_openrouter_temperature_preserves_other_payload_keys():
     assert kwargs["max_tokens"] == 4096
     assert kwargs["messages"][0] == {"role": "system", "content": "sys"}
     assert kwargs["temperature"] == 0.4
+
+
+# ---------------------------------------------------------------------------
+# temperature — Gemini
+# ---------------------------------------------------------------------------
+
+
+def _gemini_config_of(client):
+    """The GenerateContentConfig passed to the mocked generate_content call."""
+    return client.models.generate_content.call_args[1]["config"]
+
+
+def test_gemini_temperature_unset_is_dropped_from_the_request():
+    """The SDK omits a None temperature from the serialized payload."""
+    with patch("google.genai.Client") as mock_cls:
+        mock_cls.return_value = client = _gemini_client(_gemini_response(text='{"a": 1}'))
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(model="gemini-3.7-flash", max_tokens=100, timeout=10, api_key="k")
+        adapter.complete("sys", "user")
+
+    config = _gemini_config_of(client)
+    assert config.temperature is None
+    assert "temperature" not in config.model_dump(exclude_none=True)
+
+
+def test_gemini_sends_configured_temperature():
+    with patch("google.genai.Client") as mock_cls:
+        mock_cls.return_value = client = _gemini_client(_gemini_response(text='{"a": 1}'))
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(
+            model="gemini-3.7-flash",
+            max_tokens=100,
+            timeout=10,
+            api_key="k",
+            temperature=0.3,
+        )
+        adapter.complete("sys", "user")
+
+    assert _gemini_config_of(client).temperature == 0.3
+
+
+def test_gemini_sends_zero_temperature():
+    """0.0 must survive into the serialized request, not be treated as unset."""
+    with patch("google.genai.Client") as mock_cls:
+        mock_cls.return_value = client = _gemini_client(_gemini_response(text='{"a": 1}'))
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(
+            model="gemini-3.7-flash",
+            max_tokens=100,
+            timeout=10,
+            api_key="k",
+            temperature=0.0,
+        )
+        adapter.complete("sys", "user")
+
+    config = _gemini_config_of(client)
+    assert config.temperature == 0.0
+    assert "temperature" in config.model_dump(exclude_none=True)
+
+
+def test_gemini_per_call_temperature_overrides_configured():
+    with patch("google.genai.Client") as mock_cls:
+        mock_cls.return_value = client = _gemini_client(_gemini_response(text='{"a": 1}'))
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(
+            model="gemini-3.7-flash",
+            max_tokens=100,
+            timeout=10,
+            api_key="k",
+            temperature=0.3,
+        )
+        adapter.complete("sys", "user", temperature=0.9)
+
+    assert _gemini_config_of(client).temperature == 0.9
+
+
+def test_gemini_temperature_does_not_disturb_thinking_or_timeout():
+    """The new _build_config parameter must not perturb the existing config."""
+    with patch("google.genai.Client") as mock_cls:
+        mock_cls.return_value = client = _gemini_client(_gemini_response(text='{"a": 1}'))
+
+        from mykg.llm.gemini_adapter import GeminiAdapter
+
+        adapter = GeminiAdapter(
+            model="gemini-3.7-flash",
+            max_tokens=100,
+            timeout=10,
+            api_key="k",
+            thinking_level="low",
+            temperature=0.2,
+        )
+        adapter.complete("sys", "user")
+
+    config = _gemini_config_of(client)
+    assert config.temperature == 0.2
+    assert config.max_output_tokens == 100
+    assert config.system_instruction == "sys"
+    assert config.response_mime_type == "application/json"
+    # The SDK coerces the string to a ThinkingLevel enum.
+    assert str(config.thinking_config.thinking_level.value).lower() == "low"
+    assert config.http_options.timeout == 10_000

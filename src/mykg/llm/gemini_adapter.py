@@ -106,11 +106,13 @@ class GeminiAdapter(LLMAdapter):
         retry_429_max: int = 5,
         retry_429_base_delay: float = 2.0,
         error_gate: ErrorGate | None = None,
+        temperature: float | None = None,
     ):
         self._model = model
         self._max_tokens = max_tokens
         self._timeout = timeout
         self._thinking_level = thinking_level
+        self._temperature = temperature
         self._retry_429_max = retry_429_max
         self._retry_429_base_delay = retry_429_base_delay
         self._error_gate = error_gate
@@ -130,7 +132,11 @@ class GeminiAdapter(LLMAdapter):
         return f"gemini / {self._model} @ https://generativelanguage.googleapis.com"
 
     def _build_config(
-        self, system: str, max_output_tokens: int, timeout_s: int
+        self,
+        system: str,
+        max_output_tokens: int,
+        timeout_s: int,
+        temperature: float | None = None,
     ) -> genai_types.GenerateContentConfig:
         # The system prompt carries the run-stable prefix (flattened schema +
         # instructions). Passing it as system_instruction is what lets Gemini's
@@ -146,6 +152,11 @@ class GeminiAdapter(LLMAdapter):
             max_output_tokens=max_output_tokens,
             response_mime_type="application/json",
             thinking_config=thinking,
+            # A None temperature is dropped from the serialized request by the
+            # SDK (verified: model_dump(exclude_none=True) omits it), so unlike
+            # the other adapters no explicit conditional is needed here. A
+            # configured 0.0 is retained.
+            temperature=temperature,
             # HttpOptions.timeout is in MILLISECONDS, while every mykg timeout
             # config value is in seconds.
             http_options=genai_types.HttpOptions(timeout=timeout_s * 1000),
@@ -162,6 +173,7 @@ class GeminiAdapter(LLMAdapter):
     ) -> str:
         effective_max_tokens = max_tokens if max_tokens is not None else self._max_tokens
         effective_timeout = timeout if timeout is not None else self._timeout
+        effective_temperature = temperature if temperature is not None else self._temperature
 
         def _call() -> str:
             t0 = time.monotonic()
@@ -169,7 +181,12 @@ class GeminiAdapter(LLMAdapter):
                 resp = self._client.models.generate_content(
                     model=self._model,
                     contents=user,
-                    config=self._build_config(system, effective_max_tokens, effective_timeout),
+                    config=self._build_config(
+                        system,
+                        effective_max_tokens,
+                        effective_timeout,
+                        effective_temperature,
+                    ),
                 )
             except genai_errors.APIError as exc:
                 status = _status_of(exc)
