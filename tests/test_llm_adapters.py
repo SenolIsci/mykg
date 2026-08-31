@@ -3609,3 +3609,114 @@ def test_gemini_live_accepts_temperature():
     out = adapter.complete(*_LIVE_PROMPT, context_label="live_temperature")
     assert out.strip()
     assert json.loads(out)["pong"] is True
+
+
+def test_openai_recovers_when_a_single_400_names_both_parameters():
+    """A 400 naming max_tokens AND temperature must be fixed in one retry.
+
+    Handling these as mutually exclusive branches meant the max_tokens retry
+    re-sent the still-rejected temperature; that second error was raised from
+    inside the except block, escaped uncaught, and left nothing latched — so
+    every subsequent call repeated the same doomed sequence.
+    """
+    ok = MagicMock()
+    ok.choices[0].message.content = "ok"
+    ok.choices[0].finish_reason = "stop"
+
+    both = (
+        "Unsupported parameter: 'max_tokens' is not supported; use "
+        "'max_completion_tokens' instead. Also 'temperature' is not supported."
+    )
+
+    with patch("openai.OpenAI") as mock_cls:
+        mock_cls.return_value = client = MagicMock()
+        client.chat.completions.create.side_effect = [_openai_bad_request(both), ok]
+
+        from mykg.llm.openai_adapter import OpenAIAdapter
+
+        adapter = OpenAIAdapter(
+            model="gpt-4o", max_tokens=4096, timeout=30, api_key="k", temperature=0.5
+        )
+        assert adapter.complete("sys", "user") == "ok"
+
+    assert client.chat.completions.create.call_count == 2
+    retry = client.chat.completions.create.call_args_list[1][1]
+    assert retry["max_completion_tokens"] == 4096
+    assert "temperature" not in retry
+    assert adapter._temperature_rejected is True
+
+
+def test_openai_incidental_temperature_mention_does_not_latch():
+    """A top_p/temperature conflict is not a rejection; the value must survive."""
+    import openai
+
+    with patch("openai.OpenAI") as mock_cls:
+        mock_cls.return_value = client = MagicMock()
+        client.chat.completions.create.side_effect = _openai_bad_request(
+            "temperature and top_p cannot both be specified"
+        )
+
+        from mykg.llm.openai_adapter import OpenAIAdapter
+
+        adapter = OpenAIAdapter(
+            model="gpt-4o", max_tokens=4096, timeout=30, api_key="k", temperature=0.5
+        )
+        with pytest.raises(openai.BadRequestError):
+            adapter.complete("sys", "user")
+
+    assert client.chat.completions.create.call_count == 1
+    assert adapter._temperature_rejected is False
+
+
+def test_openrouter_recovers_when_model_rejects_temperature(caplog):
+    """OpenRouter proxies reasoning models beyond the openai/* families."""
+    import logging
+
+    ok = MagicMock()
+    ok.choices[0].message.content = "ok"
+    ok.choices[0].finish_reason = "stop"
+
+    with patch("openai.OpenAI") as mock_cls:
+        mock_cls.return_value = client = MagicMock()
+        client.chat.completions.create.side_effect = [
+            _openai_bad_request("'temperature' is not supported with this model"),
+            ok,
+            ok,
+        ]
+
+        from mykg.llm.openrouter_adapter import OpenRouterAdapter
+
+        adapter = OpenRouterAdapter(
+            model="deepseek/deepseek-r1",
+            max_tokens=4096,
+            timeout=30,
+            api_key="k",
+            temperature=0.0,
+        )
+        with caplog.at_level(logging.WARNING, logger="mykg.llm.openrouter_adapter"):
+            assert adapter.complete("sys", "user") == "ok"
+        # Latched: the next call omits temperature without a failed request.
+        adapter.complete("sys", "user")
+
+    assert client.chat.completions.create.call_count == 3
+    assert "temperature" not in client.chat.completions.create.call_args_list[1][1]
+    assert "temperature" not in client.chat.completions.create.call_args_list[2][1]
+    assert "rejected an explicit temperature" in caplog.text
+
+
+def test_openrouter_unrelated_bad_request_still_raises():
+    import openai
+
+    with patch("openai.OpenAI") as mock_cls:
+        mock_cls.return_value = client = MagicMock()
+        client.chat.completions.create.side_effect = _openai_bad_request("Invalid 'messages'")
+
+        from mykg.llm.openrouter_adapter import OpenRouterAdapter
+
+        adapter = OpenRouterAdapter(
+            model="openrouter/free", max_tokens=4096, timeout=30, api_key="k", temperature=0.0
+        )
+        with pytest.raises(openai.BadRequestError):
+            adapter.complete("sys", "user")
+
+    assert client.chat.completions.create.call_count == 1

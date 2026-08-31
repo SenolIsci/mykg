@@ -91,3 +91,39 @@ def test_no_model_supplied_trusts_the_configured_value():
     """Adapters with no per-model concern (e.g. ollama) call without a model."""
     assert resolve_temperature(0.0) == 0.0
     assert resolve_temperature(0.5) == 0.5
+
+
+# --- rejects_temperature ---------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "msg",
+    [
+        "Unsupported value: 'temperature' does not support 0.0",
+        "Only the default (1) value is supported for temperature",
+        "'temperature' is not supported with this model",
+        "Unsupported parameter: temperature",
+    ],
+)
+def test_rejection_messages_are_detected(msg):
+    from mykg.llm.temperature import rejects_temperature
+
+    assert rejects_temperature(msg) is True
+
+
+@pytest.mark.parametrize(
+    "msg",
+    [
+        # Mentions temperature but is not rejecting it — the configured value is
+        # still valid and must not be discarded for the rest of the run.
+        "temperature and top_p cannot both be specified",
+        "temperature must be between 0 and 2",
+        "Invalid value for 'messages'",
+        "context_length_exceeded: too many tokens",
+        "",
+    ],
+)
+def test_non_rejection_messages_are_ignored(msg):
+    from mykg.llm.temperature import rejects_temperature
+
+    assert rejects_temperature(msg) is False

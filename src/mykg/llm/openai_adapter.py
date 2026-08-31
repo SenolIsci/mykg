@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from typing import TYPE_CHECKING
 
@@ -14,7 +15,7 @@ from mykg.llm.retry import (
     looks_like_context_exceeded,
     retry_on_rate_limit,
 )
-from mykg.llm.temperature import resolve_temperature
+from mykg.llm.temperature import rejects_temperature, resolve_temperature
 from mykg.logging import record_llm_call
 
 if TYPE_CHECKING:
@@ -68,8 +69,11 @@ class OpenAIAdapter(LLMAdapter):
         self._fallback_warned = False
         # Latched once the API tells us this model rejects an explicit temperature,
         # so a whole run does not pay a failed request per call to rediscover it.
+        # One adapter instance is shared across pass2.max_workers threads
+        # (Invariant 12), so the latch and its one-time warning are guarded.
         self._temperature_rejected = False
         self._temperature_warned = False
+        self._fallback_lock = threading.Lock()
 
     def endpoint_label(self) -> str:
         url = self._base_url or "https://api.openai.com"
@@ -127,56 +131,46 @@ class OpenAIAdapter(LLMAdapter):
                     temperature=None if self._temperature_rejected else effective_temperature,
                 )
             except openai.BadRequestError as exc:
-                # Defensive fallback: an unknown future model family may also reject
-                # max_tokens. If the API explicitly says so, swap once and remember.
+                # A single 400 can name BOTH parameters, so these are handled as
+                # independent adjustments retried together rather than as mutually
+                # exclusive branches — retrying with one still-rejected parameter
+                # would raise a second error from inside this handler, escaping
+                # uncaught and leaving nothing latched.
                 msg = str(getattr(exc, "message", "") or exc)
-                if (
-                    not self._use_max_completion_tokens
-                    and "max_tokens" in msg
-                    and "max_completion_tokens" in msg
-                ):
-                    if not self._fallback_warned:
-                        _log.warning(
-                            "OpenAI model %r rejected max_tokens; "
-                            "switching to max_completion_tokens for this adapter.",
-                            self._model,
-                        )
-                        self._fallback_warned = True
-                    self._use_max_completion_tokens = True
-                    resp = self._create_with_token_param(
-                        system,
-                        user,
-                        effective_max_tokens,
-                        effective_timeout,
-                        use_completion_key=True,
-                        temperature=None if self._temperature_rejected else effective_temperature,
-                    )
-                elif (
-                    effective_temperature is not None
-                    and not self._temperature_rejected
-                    and "temperature" in msg
-                ):
-                    # Defensive fallback mirroring the max_tokens swap above: a model
-                    # family not covered by resolve_temperature's prefix list may also
-                    # reject an explicit temperature. Drop it and retry once, then
-                    # latch so the rest of the run omits it without a failed request.
-                    if not self._temperature_warned:
-                        _log.warning(
-                            "OpenAI model %r rejected an explicit temperature; "
-                            "omitting it for this adapter.",
-                            self._model,
-                        )
-                        self._temperature_warned = True
-                    self._temperature_rejected = True
-                    resp = self._create_with_token_param(
-                        system,
-                        user,
-                        effective_max_tokens,
-                        effective_timeout,
-                        use_completion_key=self._use_max_completion_tokens,
-                        temperature=None,
-                    )
-                else:
+                retry = False
+
+                with self._fallback_lock:
+                    if (
+                        not self._use_max_completion_tokens
+                        and "max_tokens" in msg
+                        and "max_completion_tokens" in msg
+                    ):
+                        if not self._fallback_warned:
+                            _log.warning(
+                                "OpenAI model %r rejected max_tokens; "
+                                "switching to max_completion_tokens for this adapter.",
+                                self._model,
+                            )
+                            self._fallback_warned = True
+                        self._use_max_completion_tokens = True
+                        retry = True
+
+                    if (
+                        effective_temperature is not None
+                        and not self._temperature_rejected
+                        and rejects_temperature(msg)
+                    ):
+                        if not self._temperature_warned:
+                            _log.warning(
+                                "OpenAI model %r rejected an explicit temperature; "
+                                "omitting it for this adapter.",
+                                self._model,
+                            )
+                            self._temperature_warned = True
+                        self._temperature_rejected = True
+                        retry = True
+
+                if not retry:
                     if looks_like_context_exceeded(exc):
                         log_context_overflow("openai", self._model, context_label, exc)
                         record_llm_call(
@@ -191,6 +185,15 @@ class OpenAIAdapter(LLMAdapter):
                             error=f"context_length_exceeded: {exc}",
                         )
                     raise
+
+                resp = self._create_with_token_param(
+                    system,
+                    user,
+                    effective_max_tokens,
+                    effective_timeout,
+                    use_completion_key=self._use_max_completion_tokens,
+                    temperature=None if self._temperature_rejected else effective_temperature,
+                )
             usage = resp.usage
             raw = resp.choices[0].message.content or "" if resp.choices else ""
             # finish_reason == "length" means output was truncated at the token cap —
