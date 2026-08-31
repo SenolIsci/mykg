@@ -399,27 +399,29 @@ This keeps the graph consistent — instances of a newly-added type appear in BO
 
 ### Mode Comparison
 
-| | Fresh extract | `--base-schema` | `--append` | `--append --sync` (= `--update`) | `--append-with-grow-schema` | Orphan schema-gap restart |
-|---|---|---|---|---|---|---|
-| **Pass 1** | All files | All files, locked base injected | Skipped | Skipped | Changed files only, locked | Skipped (schema already updated) |
-| **Schema** | Induced from scratch | Induced + locked entries preserved | Frozen (reused from prior run) | Frozen | Grown: locked entries preserved, LLM may add new | Grown: new properties added by orphan pass |
-| **Pass 2** | All files | All files | **New files only** | New + re-extracted modified files | Changed files + surgical back-fill of old chunks | Surgical re-extraction of affected chunks only |
-| **Handles deletions** | N/A (rebuilt) | N/A | **No — warns only** | **Yes** | Only with `--sync` | N/A |
-| **Handles modifications** | N/A (rebuilt) | N/A | **No — warns only** | **Yes** | Only with `--sync` | N/A |
-| **Requires existing session** | No | No | Yes | Yes | Yes | Automatic (mid-run) |
-| **LLM cost** | O(all files) | O(all files) | O(new files) | O(new + modified files) | O(changed files) + bounded back-fill | O(affected chunks) |
-| **Schema source** | LLM proposals | LLM proposals + user TTL | `schema.json` (unchanged) | `schema.json` (unchanged) | Session `schema.ttl` auto-loaded as locked base | `orphan_connect` LLM proposal |
-| **Can add concepts** | Yes | Yes (around locked) | No | No | Yes (around locked) | No |
-| **Can add properties** | Yes | Yes (around locked) | No | No | Yes (around locked) | Yes |
-| **Can add instances** | Yes | Yes | Yes (new files only) | Yes (new + modified) | Yes (changed + back-filled old) | Yes (affected chunks) |
-| **Can REMOVE instances** | N/A (rebuilt) | N/A | **No** | **Yes** (deleted files' nodes) | Only with `--sync` | No |
-| **Can rename/remove existing schema** | N/A | No (locked) | N/A (frozen) | N/A (frozen) | No (locked) | No |
-| **Back-fill old files** | N/A | N/A | No | No | Yes, surgically | Yes, surgically |
-| **`--base-schema` compatible** | Yes | N/A | Yes | Yes | No (auto-loads session schema) | Yes |
-| **`--from-step` compatible** | Yes | Yes | Not in same command | Not in same command | Not in same command | N/A (automatic) |
-| **Empty delta behavior** | N/A | N/A | N/A | Degrades to plain `--append` (no prune, no eviction) | Collapses to plain `--append`; zero Pass 1 calls | No restart if no new properties |
+| | Fresh extract | `--base-schema` | `--append` | `--append --sync` (= `--update`) | `--append-with-grow-schema` | `--append-with-grow-schema --sync` | Orphan schema-gap restart |
+|---|---|---|---|---|---|---|---|
+| **Pass 1** | All files | All files, locked base injected | Skipped | Skipped | Changed files only, locked | Changed files only, locked | Skipped (schema already updated) |
+| **Schema** | Induced from scratch | Induced + locked entries preserved | Frozen (reused from prior run) | Frozen | Grown: locked entries preserved, LLM may add new | Grown: locked entries preserved, LLM may add new | Grown: new properties added by orphan pass |
+| **Pass 2** | All files | All files | **New files only** | New + re-extracted modified files | Changed files + surgical back-fill of old chunks | New + re-extracted modified + surgical back-fill | Surgical re-extraction of affected chunks only |
+| **Handles deletions** | N/A (rebuilt) | N/A | **No — warns only** | **Yes** | Only with `--sync` | **Yes** | N/A |
+| **Handles modifications** | N/A (rebuilt) | N/A | **No — warns only** | **Yes** | Only with `--sync` | **Yes** | N/A |
+| **Requires existing session** | No | No | Yes | Yes | Yes | Yes | Automatic (mid-run) |
+| **LLM cost** | O(all files) | O(all files) | O(new files) | O(new + modified files) | O(changed files) + bounded back-fill | O(new + modified files) + bounded back-fill | O(affected chunks) |
+| **Schema source** | LLM proposals | LLM proposals + user TTL | `schema.json` (unchanged) | `schema.json` (unchanged) | Session `schema.ttl` auto-loaded as locked base | Session `schema.ttl` auto-loaded as locked base | `orphan_connect` LLM proposal |
+| **Can add concepts** | Yes | Yes (around locked) | No | No | Yes (around locked) | Yes (around locked) | No |
+| **Can add properties** | Yes | Yes (around locked) | No | No | Yes (around locked) | Yes (around locked) | Yes |
+| **Can add instances** | Yes | Yes | Yes (new files only) | Yes (new + modified) | Yes (changed + back-filled old) | Yes (new + modified + back-filled old) | Yes (affected chunks) |
+| **Can REMOVE instances** | N/A (rebuilt) | N/A | **No** | **Yes** (deleted files' nodes) | Only with `--sync` | **Yes** (deleted files' nodes) | No |
+| **Can rename/remove existing schema** | N/A | No (locked) | N/A (frozen) | N/A (frozen) | No (locked) | No (locked) | No |
+| **Back-fill old files** | N/A | N/A | No | No | Yes, surgically | Yes, surgically | Yes, surgically |
+| **`--base-schema` compatible** | Yes | N/A | Yes | Yes | No (auto-loads session schema) | No (auto-loads session schema) | Yes |
+| **`--from-step` compatible** | Yes | Yes | Not in same command | Not in same command | Not in same command | Not in same command | N/A (automatic) |
+| **Empty delta behavior** | N/A | N/A | N/A | Degrades to plain `--append` (no prune, no eviction) | Collapses to plain `--append`; zero Pass 1 calls | Degrades to plain `--append-with-grow-schema`; zero Pass 1 calls | No restart if no new properties |
 
-`--update` is a convenience alias for `--append --sync`, expanded before the `--sync requires --append` validation gate (D58).
+`--update` is a convenience alias for `--append --sync`, expanded before the `--sync requires --append` validation gate (D58). `--append-with-grow-schema` already implies `--append`, so the last column needs only those two flags.
+
+The three flags are **orthogonal axes**: `--append` decides *which files* are processed, `--sync` decides *whether existing entries are reconciled* (modified re-extracted, deleted removed), and `-with-grow-schema` decides *whether the schema may grow*. The last column is the one to reach for when new vocabulary arrives in a document that was **edited** rather than added — the locked Pass 1 sees only new files unless `--sync` widens it to modified ones too.
 
 ### `--append` change-detection limits
 
