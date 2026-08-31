@@ -11,11 +11,16 @@ class LLMAdapter(ABC):
         context_label: str = "",
         max_tokens: int | None = None,
         timeout: int | None = None,
+        temperature: float | None = None,
     ) -> str:
         """Make a single LLM call. Returns raw response string (expected JSON).
 
         max_tokens: per-call override; None means use the adapter's configured default.
         timeout: per-call override in seconds; None means use the adapter's configured default.
+        temperature: per-call override; None means use the adapter's configured default.
+            The adapter default is itself None unless mykg_config.yaml sets llm.temperature,
+            and a resolved None means the parameter is omitted from the provider payload
+            entirely (rather than sent as an explicit null or a hardcoded value).
         """
 
     @abstractmethod

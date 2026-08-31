@@ -72,6 +72,7 @@ class SequentialMockAdapter(LLMAdapter):
         context_label: str = "",
         max_tokens: int | None = None,
         timeout: int | None = None,
+        temperature: float | None = None,
     ) -> str:
         self._call_count += 1
         if self._call_count == 1:

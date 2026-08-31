@@ -60,6 +60,7 @@ class MockAdapter(LLMAdapter):
         context_label: str = "",
         max_tokens: int | None = None,
         timeout: int | None = None,
+        temperature: float | None = None,
     ) -> str:
         return self._response
 
@@ -134,6 +135,7 @@ class RecordingAdapter(LLMAdapter):
         context_label: str = "",
         max_tokens: int | None = None,
         timeout: int | None = None,
+        temperature: float | None = None,
     ) -> str:
         self.user_prompts.append(user)
         return self._response
@@ -299,7 +301,7 @@ def test_run_pass2_respects_max_workers():
     calls = []
 
     class TrackingAdapter(LLMAdapter):
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
             calls.append(1)
             return json.dumps(VALID_EXTRACTION)
 
@@ -315,7 +317,7 @@ def test_run_pass2_parallel_workers():
     """run_pass2 with max_workers=2 still produces results for all files."""
 
     class FastAdapter(LLMAdapter):
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
             return json.dumps(VALID_EXTRACTION)
 
         def endpoint_label(self) -> str:
@@ -357,7 +359,7 @@ def test_chunk_retry_on_validation_failure():
     calls = []
 
     class RetryAdapter(LLMAdapter):
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
             calls.append(user)
             if len(calls) == 1:
                 return bad
@@ -437,7 +439,7 @@ def test_skip_files_excludes_already_done_files():
     """Files in skip_files must not be submitted to the executor."""
 
     class TrackingAdapter(LLMAdapter):
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
             return json.dumps(VALID_EXTRACTION)
 
         def endpoint_label(self) -> str:
@@ -463,7 +465,7 @@ def test_on_file_done_called_once_per_file():
         done_calls.append(fname)
 
     class FastAdapter(LLMAdapter):
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
             return json.dumps(VALID_EXTRACTION)
 
         def endpoint_label(self) -> str:
@@ -483,7 +485,7 @@ def test_partial_restart_skips_done_files():
         done_calls.append(fname)
 
     class FastAdapter(LLMAdapter):
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
             return json.dumps(VALID_EXTRACTION)
 
         def endpoint_label(self) -> str:
@@ -507,7 +509,7 @@ def test_blank_response_writes_failed_chunks(tmp_path):
     """A chunk that returns blank twice writes an entry to failed_chunks.json."""
 
     class BlankAdapter(LLMAdapter):
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
             return ""  # always blank
 
         def endpoint_label(self) -> str:

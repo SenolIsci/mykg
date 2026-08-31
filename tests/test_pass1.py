@@ -39,6 +39,7 @@ class MockAdapter(LLMAdapter):
         context_label: str = "",
         max_tokens: int | None = None,
         timeout: int | None = None,
+        temperature: float | None = None,
     ) -> str:
         return self._response
 
@@ -65,6 +66,7 @@ class SequenceAdapter(LLMAdapter):
         context_label: str = "",
         max_tokens: int | None = None,
         timeout: int | None = None,
+        temperature: float | None = None,
     ) -> str:
         with self._lock:
             self.calls.append((system, user))
@@ -208,6 +210,7 @@ def test_run_pass1_parallel_skips_failed_batch():
             context_label: str = "",
             max_tokens: int | None = None,
             timeout: int | None = None,
+            temperature: float | None = None,
         ) -> str:
             if "Alice" in user:
                 return INVALID_JSON
@@ -235,6 +238,7 @@ def test_run_pass1_proposal_order_deterministic():
             context_label: str = "",
             max_tokens: int | None = None,
             timeout: int | None = None,
+            temperature: float | None = None,
         ) -> str:
             return PROPOSAL_A if "Alice" in user else PROPOSAL_B
 
@@ -295,7 +299,7 @@ def test_run_pass1_writes_batch_selection_before_dispatch(tmp_path):
     seen_before_dispatch = {}
 
     class RecordingAdapter(LLMAdapter):
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
             selection_path = tmp_path / "pass1_batch_selection.json"
             seen_before_dispatch["exists"] = selection_path.exists()
             return VALID_PROPOSAL
@@ -346,7 +350,7 @@ def test_run_pass1_resumes_from_matching_shards(tmp_path):
     call_count = {"n": 0}
 
     class CountingAdapter(LLMAdapter):
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
             call_count["n"] += 1
             return VALID_PROPOSAL
 
@@ -393,7 +397,7 @@ def test_run_pass1_does_not_resume_when_chunks_differ(tmp_path):
     call_count = {"n": 0}
 
     class CountingAdapter(LLMAdapter):
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
             call_count["n"] += 1
             return VALID_PROPOSAL
 
@@ -447,7 +451,7 @@ def test_run_pass1_ignores_corrupted_selection_file(tmp_path):
     call_count = {"n": 0}
 
     class CountingAdapter(LLMAdapter):
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
             call_count["n"] += 1
             return VALID_PROPOSAL
 
@@ -481,7 +485,7 @@ def test_run_pass1_ignores_selection_with_different_batch_count(tmp_path):
     call_count = {"n": 0}
 
     class CountingAdapter(LLMAdapter):
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
             call_count["n"] += 1
             return VALID_PROPOSAL
 
@@ -515,7 +519,7 @@ def test_merge_proposals_from_step_reuses_shards_without_llm_dispatch(tmp_path):
         """Any LLM call is a bug in this test — merge_proposals mode must
         never dispatch Pass 1 batches."""
 
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
             if "rdfs ontology expert" in system.lower() and "extract a schema" in system.lower():
                 raise AssertionError("Pass 1 LLM dispatch must be skipped in merge_proposals mode")
             return "not json {"  # harmonize/quality-review fall back to unchanged schema

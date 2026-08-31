@@ -46,6 +46,7 @@ class ClaudeCLIAdapter(LLMAdapter):
         context_label: str = "",
         max_tokens: int | None = None,
         timeout: int | None = None,
+        temperature: float | None = None,
     ) -> str:
         t0 = time.monotonic()
         effective_timeout = timeout if timeout is not None else self._timeout
