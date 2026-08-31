@@ -715,16 +715,30 @@ the graph untouched. Add `--sync` to act on them:
 mykg extract-graph my_notes/ --session <name> --append --sync
 ```
 
-| Command | New | Modified | Deleted |
-|---|---|---|---|
-| `--append` | extracted | warn only | warn only |
-| `--append --sync` *(= `--update`)* | extracted | re-extracted | **removed** |
+**All four combinations**, and what each does with the three kinds of change:
 
-`--sync` requires `--append`, and composes with `--append-with-grow-schema`. **`--update` is shorthand for `--append --sync`:**
+| Command | New files | Modified files | Deleted files | Schema |
+|---|---|---|---|---|
+| `--append` | extracted | warn only | warn only | frozen |
+| `--append-with-grow-schema` | extracted | warn only | warn only | may grow |
+| `--append --sync` *(= `--update`)* | extracted | **re-extracted** | **removed** | frozen |
+| `--append-with-grow-schema --sync` | extracted | **re-extracted** | **removed** | may grow |
+
+The three flags are orthogonal axes: **`--append`** decides *which files* are
+processed, **`--sync`** decides *whether existing entries are reconciled*, and
+**`-with-grow-schema`** decides *whether the schema may grow*.
+
+`--sync` requires `--append`. `--append-with-grow-schema` already implies
+`--append`, so the last row needs only the two flags shown. **`--update` is
+shorthand for `--append --sync`:**
 
 ```bash
 mykg extract-graph my_notes/ --session <name> --update
 ```
+
+Reach for the fourth row when the new vocabulary lives in a document you
+**edited** rather than one you added — without `--sync`, the locked Pass 1 only
+sees new files, so a concept introduced by an edit never reaches the LLM.
 
 > **⚠️ Behaviour change:** before the release 0.4.3, plain `--append` re-extracted
 > modified files. It no longer does — add `--sync`. If your edits stop showing
