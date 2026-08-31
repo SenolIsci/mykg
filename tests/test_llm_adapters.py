@@ -3279,3 +3279,86 @@ def test_gemini_temperature_does_not_disturb_thinking_or_timeout():
     # The SDK coerces the string to a ThinkingLevel enum.
     assert str(config.thinking_config.thinking_level.value).lower() == "low"
     assert config.http_options.timeout == 10_000
+
+
+# ---------------------------------------------------------------------------
+# temperature — Ollama
+# ---------------------------------------------------------------------------
+
+
+def _ollama_options(temperature=None, **overrides):
+    """Run a mocked Ollama call and return the decoded options sub-dict."""
+    mock_response = MagicMock()
+    mock_response.read.return_value = json.dumps({"response": "hello"}).encode()
+
+    kwargs = {
+        "model": "gemma4:31b",
+        "base_url": "http://localhost:11434",
+        "timeout": 120,
+        "stream": False,
+        "max_tokens": 8096,
+        "context_window": 64000,
+    }
+    kwargs.update(overrides)
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+
+        from mykg.llm.ollama_adapter import OllamaAdapter
+
+        OllamaAdapter(**kwargs).complete("sys", "user")
+
+    body = json.loads(mock_urlopen.call_args[0][0].data.decode("utf-8"))
+    return body
+
+
+def test_ollama_omits_temperature_when_unset():
+    """Unset -> Ollama applies the model's own default from the modelfile."""
+    assert "temperature" not in _ollama_options()["options"]
+
+
+def test_ollama_sends_configured_temperature_inside_options():
+    """Ollama takes sampling params in the options sub-dict, not at the top level."""
+    body = _ollama_options(temperature=0.2)
+    assert body["options"]["temperature"] == 0.2
+    assert "temperature" not in body
+
+
+def test_ollama_sends_zero_temperature():
+    assert _ollama_options(temperature=0.0)["options"]["temperature"] == 0.0
+
+
+def test_ollama_temperature_preserves_existing_options():
+    """num_ctx and num_predict must survive the options-dict refactor."""
+    options = _ollama_options(temperature=0.4)["options"]
+    assert options["num_ctx"] == 64000
+    assert options["num_predict"] == 8096
+    assert options["temperature"] == 0.4
+
+
+def test_ollama_payload_keeps_non_ascii_unescaped():
+    """ensure_ascii=False keeps prompts compact (Invariant 20b)."""
+    mock_response = MagicMock()
+    mock_response.read.return_value = json.dumps({"response": "ok"}).encode()
+
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+
+        from mykg.llm.ollama_adapter import OllamaAdapter
+
+        adapter = OllamaAdapter(
+            model="gemma4:31b",
+            base_url="http://localhost:11434",
+            timeout=120,
+            stream=False,
+            max_tokens=8096,
+            context_window=64000,
+        )
+        adapter.complete("sys", "réunion München 15 µm")
+
+    data = mock_urlopen.call_args[0][0].data
+    assert "réunion".encode() in data
+    assert b"\\u00e9" not in data
+    assert json.loads(data.decode("utf-8"))["prompt"].endswith("réunion München 15 µm")
