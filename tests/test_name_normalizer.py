@@ -300,7 +300,7 @@ def test_batching_splits_on_budget(monkeypatch):
 
     calls = []
 
-    def fake_complete(system, user):
+    def fake_complete(system, user, **kwargs):  # noqa: ARG001
         payload = json.loads(user)
         calls.append(list(payload.keys()))
         return json.dumps({})  # empty result is fine for split test
@@ -365,3 +365,44 @@ def test_json_parse_error_in_one_batch_continues(monkeypatch):
     norm_map, errors = run_name_normalization(inventory, adapter)
     assert any("JSON parse error" in e for e in errors)
     assert "Organization" in norm_map  # second batch still contributed
+
+
+def test_normalization_retries_a_blank_response(monkeypatch):
+    """Routed through llm_complete_with_retry, a blank response is retried.
+
+    Before this, a blank response silently dropped an entire batch of names
+    from the alias map with no retry and no context in the logs.
+    """
+    from unittest.mock import MagicMock, patch
+
+    from mykg.llm.adapter import LLMAdapter
+
+    adapter = MagicMock(spec=LLMAdapter)
+    adapter.complete.side_effect = [
+        "",
+        json.dumps({"Person": {"Alice": "Alice Smith"}}),
+    ]
+    inventory = {"Person": ["Alice", "Alice Smith"]}
+
+    with patch("mykg.llm.retry._cfg.LLM_RETRY_MAX_RETRIES", 2):
+        norm_map, errors = run_name_normalization(inventory, adapter)
+
+    assert adapter.complete.call_count == 2
+    assert norm_map == {"Person": {"Alice": "Alice Smith"}}
+    assert errors == []
+
+
+def test_normalization_passes_a_context_label(monkeypatch):
+    """Every other LLM call site is labelled; this one now is too."""
+    from unittest.mock import MagicMock, patch
+
+    from mykg.llm.adapter import LLMAdapter
+
+    adapter = MagicMock(spec=LLMAdapter)
+    adapter.complete.return_value = json.dumps({})
+
+    with patch("mykg.llm.retry._cfg.LLM_RETRY_MAX_RETRIES", 0):
+        run_name_normalization({"Person": ["Alice", "Alice Smith"]}, adapter)
+
+    label = adapter.complete.call_args[1]["context_label"]
+    assert "normalize_names" in label

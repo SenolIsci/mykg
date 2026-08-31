@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from mykg import config as _cfg
 from mykg.ids import _canonical
 from mykg.llm.adapter import LLMAdapter
+from mykg.llm.retry import llm_complete_with_retry
 from mykg.logging import get
 from mykg.prompts import load_prompt
 
@@ -195,9 +196,17 @@ def run_name_normalization(
 
     merged_map: dict[str, dict[str, str]] = {}
     all_errors: list[str] = []
-    for batch in batches:
+    for idx, batch in enumerate(batches):
         user_text = json.dumps(batch, ensure_ascii=False)
-        raw = adapter.complete(NORMALIZE_SYSTEM_PROMPT, user_text)
+        # Routed through the retry wrapper like every other LLM call site: a
+        # blank response here would otherwise silently drop a whole batch of
+        # names from the alias map with no retry and no context in the logs.
+        raw = llm_complete_with_retry(
+            adapter,
+            NORMALIZE_SYSTEM_PROMPT,
+            user_text,
+            context_label=f"normalize_names batch {idx + 1}/{len(batches)}",
+        )
         try:
             llm_output = json.loads(raw)
         except (json.JSONDecodeError, ValueError) as exc:
