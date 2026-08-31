@@ -2789,3 +2789,110 @@ def test_config_gemini_thinking_level_defaults_when_key_absent():
         adapter = load_adapter(_raw=raw)
 
     assert adapter._thinking_level == "low"
+
+
+# ---------------------------------------------------------------------------
+# temperature — Anthropic
+# ---------------------------------------------------------------------------
+
+
+def _anthropic_client(text: str = "ok"):
+    """A mocked anthropic client whose messages.create returns a text block."""
+    block = MagicMock()
+    block.text = text
+    response = MagicMock()
+    response.content = [block]
+    client = MagicMock()
+    client.messages.create.return_value = response
+    return client
+
+
+def test_anthropic_omits_temperature_when_unset():
+    """No configured temperature -> the key is absent from the payload entirely."""
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_cls.return_value = client = _anthropic_client()
+
+        from mykg.llm.anthropic_adapter import AnthropicAdapter
+
+        adapter = AnthropicAdapter(
+            model="claude-sonnet-4-5", max_tokens=4096, timeout=30, api_key="k"
+        )
+        adapter.complete("sys", "user")
+
+    assert "temperature" not in client.messages.create.call_args[1]
+
+
+def test_anthropic_sends_configured_temperature():
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_cls.return_value = client = _anthropic_client()
+
+        from mykg.llm.anthropic_adapter import AnthropicAdapter
+
+        adapter = AnthropicAdapter(
+            model="claude-sonnet-4-5",
+            max_tokens=4096,
+            timeout=30,
+            api_key="k",
+            temperature=0.2,
+        )
+        adapter.complete("sys", "user")
+
+    assert client.messages.create.call_args[1]["temperature"] == 0.2
+
+
+def test_anthropic_sends_zero_temperature():
+    """0.0 is a real value, not an omission — a falsy check here would drop it."""
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_cls.return_value = client = _anthropic_client()
+
+        from mykg.llm.anthropic_adapter import AnthropicAdapter
+
+        adapter = AnthropicAdapter(
+            model="claude-sonnet-4-5",
+            max_tokens=4096,
+            timeout=30,
+            api_key="k",
+            temperature=0.0,
+        )
+        adapter.complete("sys", "user")
+
+    assert client.messages.create.call_args[1]["temperature"] == 0.0
+
+
+def test_anthropic_per_call_temperature_overrides_configured():
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_cls.return_value = client = _anthropic_client()
+
+        from mykg.llm.anthropic_adapter import AnthropicAdapter
+
+        adapter = AnthropicAdapter(
+            model="claude-sonnet-4-5",
+            max_tokens=4096,
+            timeout=30,
+            api_key="k",
+            temperature=0.2,
+        )
+        adapter.complete("sys", "user", temperature=0.9)
+
+    assert client.messages.create.call_args[1]["temperature"] == 0.9
+
+
+def test_anthropic_temperature_does_not_disturb_other_payload_keys():
+    """Converting the call to a kwargs dict must preserve the existing payload."""
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_cls.return_value = client = _anthropic_client()
+
+        from mykg.llm.anthropic_adapter import AnthropicAdapter
+
+        adapter = AnthropicAdapter(
+            model="claude-sonnet-4-5", max_tokens=4096, timeout=30, api_key="k"
+        )
+        adapter.complete("sys", "user")
+
+    kwargs = client.messages.create.call_args[1]
+    assert kwargs["model"] == "claude-sonnet-4-5"
+    assert kwargs["max_tokens"] == 4096
+    assert kwargs["system"] == "sys"
+    assert kwargs["messages"] == [{"role": "user", "content": "user"}]
+    assert kwargs["timeout"] == 30
+    assert kwargs["cache_control"] == {"type": "ephemeral"}
