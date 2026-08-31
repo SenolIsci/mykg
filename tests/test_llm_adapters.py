@@ -3362,3 +3362,115 @@ def test_ollama_payload_keeps_non_ascii_unescaped():
     assert "réunion".encode() in data
     assert b"\\u00e9" not in data
     assert json.loads(data.decode("utf-8"))["prompt"].endswith("réunion München 15 µm")
+
+
+# ---------------------------------------------------------------------------
+# temperature — load_adapter wiring
+# ---------------------------------------------------------------------------
+
+
+_TEMP_PROVIDER_CASES = [
+    ("openai", {"model": "gpt-4o", "max_output_tokens": 4096, "timeout": 30}, "openai.OpenAI"),
+    (
+        "anthropic",
+        {"model": "claude-sonnet-4-5", "max_output_tokens": 4096, "timeout": 30},
+        "anthropic.Anthropic",
+    ),
+    (
+        "openrouter",
+        {"model": "openrouter/free", "max_output_tokens": 4096, "timeout": 30},
+        "openai.OpenAI",
+    ),
+    (
+        "gemini",
+        {"model": "gemini-3.7-flash", "max_output_tokens": 4096, "timeout": 30},
+        "google.genai.Client",
+    ),
+    (
+        "ollama",
+        {
+            "model": "gemma4:31b",
+            "max_output_tokens": 4096,
+            "timeout": 30,
+            "base_url": "http://localhost:11434",
+            "stream": False,
+            "context_window": 64000,
+        },
+        None,
+    ),
+]
+
+
+@pytest.mark.parametrize("provider,llm,patch_target", _TEMP_PROVIDER_CASES)
+def test_load_adapter_defaults_temperature_to_none(provider, llm, patch_target, monkeypatch):
+    """A config with no temperature key builds fine and omits the parameter.
+
+    This is the guard on the shipped mykg_config.yaml files, which intentionally
+    do not carry the key: existing users must see no behaviour change at all.
+    """
+    for var in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY"):
+        monkeypatch.setenv(var, "test-key")
+
+    from mykg.llm.config import load_adapter
+
+    raw = {"provider": provider, "llm": llm}
+    if patch_target:
+        with patch(patch_target):
+            adapter = load_adapter(_raw=raw)
+    else:
+        adapter = load_adapter(_raw=raw)
+
+    assert adapter._temperature is None
+
+
+@pytest.mark.parametrize("provider,llm,patch_target", _TEMP_PROVIDER_CASES)
+def test_load_adapter_passes_configured_temperature(provider, llm, patch_target, monkeypatch):
+    for var in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY"):
+        monkeypatch.setenv(var, "test-key")
+
+    from mykg.llm.config import load_adapter
+
+    raw = {"provider": provider, "llm": {**llm, "temperature": 0.0}}
+    if patch_target:
+        with patch(patch_target):
+            adapter = load_adapter(_raw=raw)
+    else:
+        adapter = load_adapter(_raw=raw)
+
+    # 0.0 must survive the whole config path, not be lost to a falsy check.
+    assert adapter._temperature == 0.0
+
+
+def test_load_adapter_claude_cli_accepts_temperature():
+    from mykg.llm.config import load_adapter
+
+    raw = {
+        "provider": "claude-cli",
+        "llm": {"model": "sonnet", "max_output_tokens": 4096, "timeout": 30, "temperature": 0.3},
+    }
+    with patch("shutil.which", return_value="/usr/bin/claude"):
+        adapter = load_adapter(_raw=raw)
+    assert adapter._temperature == 0.3
+
+
+def test_load_adapter_agent_accepts_temperature(tmp_path):
+    from mykg.llm.config import load_adapter
+
+    raw = {
+        "provider": "agent",
+        "llm": {"model": "claude", "max_output_tokens": 4096, "timeout": 30, "temperature": 0.4},
+        "agent": {"inbox_dir": "in", "outbox_dir": "out", "poll_interval_seconds": 0.1},
+    }
+    adapter = load_adapter(_raw=raw, intermediate_dir=tmp_path)
+    assert adapter._temperature == 0.4
+
+
+def test_shipped_config_has_no_temperature_key():
+    """The two shipped YAML files intentionally omit llm.temperature.
+
+    Adding it would change extraction behaviour for every existing user; the
+    key is opt-in. If this fails, that decision was reversed by accident.
+    """
+    import mykg.config as _cfg
+
+    assert "temperature" not in _cfg.RAW.get("llm", {})
