@@ -215,26 +215,6 @@ The wizard walks you through three prompts:
 
 Switch provider by setting `profile:` at the top of [`mykg_config.yaml`](mykg_config.yaml).
 
-**Sampling temperature.** myKG sends `temperature: 0.0` on every LLM call, so
-the same corpus induces the same schema and yields the same nodes and edges run
-over run. Extraction is a structured-output task, not a creative one — provider
-defaults (typically ~1.0) work against reproducibility.
-
-Two cases fall outside this, and in both the provider's own sampling applies:
-
-- **Models that reject an explicit temperature** — OpenAI's o-series and gpt-5
-  reasoning families — have it omitted automatically and use their own fixed
-  sampling.
-- **`claude-cli` and `agent`** have no temperature control at all: `claude -p`
-  exposes no such flag, and the host Claude Code session servicing the agent
-  inbox has no sampling dial. These two profiles accept the setting and ignore
-  it, so extraction on them is **not** reproducible in the sense above.
-
-> Changed in 0.4.5 — earlier versions sent no temperature at all and inherited
-> each provider's default. If you were relying on that, extraction output will
-> shift. To restore the old behaviour, set an explicit empty `temperature:` in
-> the active profile's `llm:` block; a `null` value means "send nothing".
-
 ### API Keys
 
 myKG reads API keys from environment variables. Set them by exporting directly or by creating a `.env.mykg` file in your project directory (loaded automatically on startup).
@@ -313,6 +293,34 @@ A `429` surfaces in the log as a retry warning like:
 Lower these (e.g. from `8` down to `2`–`4`) in the active profile to reduce concurrent requests. This is especially likely on `openrouter-free` (free-tier models have very low per-minute caps), on `gemini` with a free-tier key (5 requests/minute/model — drop `pass1`/`pass2`/`orphan_pass` to `1`–`2`), and on lower-tier `anthropic-claude`/`openai` accounts. `llm.retry_429_max` / `llm.retry_429_base_delay` control automatic backoff on a 429, but a persistent 429 is a signal to reduce `max_workers`, not just retry harder. `claude-cli` is unaffected — it is serial by design (`max_workers: 1`); it doesn't hit API rate limits since there's no API call. `agent-claude-code` is not API rate-limited either (no API key involved), but it is not serial — its default profile sets `pass1`/`pass2`/`orphan_pass` `max_workers` > 1 (configurable, like any other profile), since the skill dispatches multiple subagents per wave.
 
 **Also check your quota/credits.** Some providers return `429` when your account has exhausted its token quota or spending balance, not only for request cadence. If lowering `max_workers` doesn't help and the 429s persist from the very first call, **check that your account still has available tokens/credits** (e.g. the OpenAI/Anthropic billing dashboard, or your OpenRouter balance). No `max_workers` value will clear a 429 caused by a depleted balance — top up or switch to a profile with quota (e.g. `ollama-local` for local inference, or `claude-cli` which bills via your Claude Pro/Max plan instead of the API).
+
+
+### Non-Reproducible Extraction (Different Graph Each Run)
+
+If the same corpus produces a different schema or a different set of nodes and
+edges on each run, sampling temperature is the usual cause.
+
+myKG sends `temperature: 0.0` on every LLM call so extraction is repeatable —
+it is a structured-output task, not a creative one, and provider defaults
+(typically ~1.0) work against that. Two cases fall outside it, and in both the
+provider's own sampling applies:
+
+- **Models that reject an explicit temperature** — OpenAI's o-series and gpt-5
+  reasoning families — have it omitted automatically and use their own fixed
+  sampling.
+- **`claude-cli` and `agent`** have no temperature control at all: `claude -p`
+  exposes no such flag, and the host Claude Code session servicing the agent
+  inbox has no sampling dial. These two profiles accept the setting and ignore
+  it, so extraction on them is **not** reproducible in the sense above.
+
+If you need reproducibility, switch to a profile whose provider exposes
+temperature (`anthropic-claude`, `openai` on a non-reasoning model, `gemini`,
+`ollama-local`, `openrouter-free`).
+
+> Changed in 0.4.5 — earlier versions sent no temperature at all and inherited
+> each provider's default. If you were relying on that, extraction output will
+> shift. To restore the old behaviour, set an explicit empty `temperature:` in
+> the active profile's `llm:` block; a `null` value means "send nothing".
 
 
 ## Extract Pipeline
