@@ -3940,7 +3940,7 @@ def test_unconfigured_reasoning_model_still_omits(monkeypatch):
     assert "temperature" not in kwargs
 
 
-def test_shipped_default_profile_resolves_the_zero_default():
+def test_shipped_default_profile_resolves_the_zero_default(monkeypatch):
     """End-to-end on whatever profile the shipped config actually selects.
 
     The wire assertion is conditional on the active model, deliberately: pinning
@@ -3949,12 +3949,15 @@ def test_shipped_default_profile_resolves_the_zero_default():
     catch. What holds for every profile is that the default resolves to 0.0 and
     that the payload agrees with the guard's verdict for that model.
     """
-    import os
-
-    os.environ.setdefault("OPENAI_API_KEY", "test-key")
-    os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
-    os.environ.setdefault("OPENROUTER_API_KEY", "test-key")
-    os.environ.setdefault("GEMINI_API_KEY", "test-key")
+    # monkeypatch, not os.environ: a leaked fake key would make a later live
+    # test attempt a real call with "test-key" instead of skipping cleanly.
+    for var in (
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "OPENROUTER_API_KEY",
+        "GEMINI_API_KEY",
+    ):
+        monkeypatch.setenv(var, "test-key")
 
     from mykg.llm.config import load_adapter
     from mykg.llm.temperature import DEFAULT_TEMPERATURE, temperature_unsupported

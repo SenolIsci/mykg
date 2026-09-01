@@ -218,9 +218,17 @@ Switch provider by setting `profile:` at the top of [`mykg_config.yaml`](mykg_co
 **Sampling temperature.** myKG sends `temperature: 0.0` on every LLM call, so
 the same corpus induces the same schema and yields the same nodes and edges run
 over run. Extraction is a structured-output task, not a creative one — provider
-defaults (typically ~1.0) work against reproducibility. Models that reject an
-explicit temperature (OpenAI's o-series and gpt-5 reasoning families) have it
-omitted automatically, and use their own fixed sampling instead.
+defaults (typically ~1.0) work against reproducibility.
+
+Two cases fall outside this, and in both the provider's own sampling applies:
+
+- **Models that reject an explicit temperature** — OpenAI's o-series and gpt-5
+  reasoning families — have it omitted automatically and use their own fixed
+  sampling.
+- **`claude-cli` and `agent`** have no temperature control at all: `claude -p`
+  exposes no such flag, and the host Claude Code session servicing the agent
+  inbox has no sampling dial. These two profiles accept the setting and ignore
+  it, so extraction on them is **not** reproducible in the sense above.
 
 > Changed in 0.4.5 — earlier versions sent no temperature at all and inherited
 > each provider's default. If you were relying on that, extraction output will
