@@ -707,9 +707,9 @@ not a hardcoded rule**. Provider lineups change faster than mykg releases, so
 `llm.temperature_unsupported_prefixes` in the active profile replaces the
 built-in list without a code change (Invariant 7), and an explicitly empty list
 disables the check. Only the `openai` and `openrouter` adapters consult it —
-the others have no family that rejects the parameter. Like `thinking_level`, it
-is read but never shipped as an active key; both `openai` and `openrouter`
-profiles carry an explanatory comment only.
+the others have no family that rejects the parameter. The shipped
+`mykg_config.yaml` files are left untouched, without even a comment: this knob
+is documented here, in the contributor docs, and nowhere a user would meet it.
 
 It is reachable three ways, in increasing order of scope: a per-call argument to
 `complete()` / `llm_complete_with_retry()`, an adapter constructor argument, and

@@ -3873,3 +3873,25 @@ def test_shipped_config_has_no_temperature_prefix_key():
     import mykg.config as _cfg
 
     assert "temperature_unsupported_prefixes" not in _cfg.RAW.get("llm", {})
+
+
+def test_shipped_yaml_files_never_mention_temperature():
+    """The shipped configs must not mention temperature at all — not as a key,
+    and not as a comment either.
+
+    Both files are the user's first contact with mykg's configuration surface,
+    and this knob is deliberately internal. A comment is still an invitation, so
+    the check is on the raw text rather than the parsed mapping.
+    """
+    from pathlib import Path
+
+    repo_root = Path(__file__).parent.parent
+    shipped = [repo_root / "mykg_config.yaml", repo_root / "src" / "mykg" / "data" / "mykg_config.yaml"]
+
+    for path in shipped:
+        assert path.exists(), f"{path} is missing"
+        text = path.read_text(encoding="utf-8")
+        assert "temperature" not in text.lower(), (
+            f"{path.name} mentions temperature; the shipped configs are left "
+            "untouched by design — document the knob in docs/architecture.md instead"
+        )
