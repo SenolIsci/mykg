@@ -292,26 +292,6 @@ A `429` surfaces in the log as a retry warning like:
 
 Lower these (e.g. from `8` down to `2`–`4`) in the active profile to reduce concurrent requests. This is especially likely on `openrouter-free` (free-tier models have very low per-minute caps), on `gemini` with a free-tier key (5 requests/minute/model — drop `pass1`/`pass2`/`orphan_pass` to `1`–`2`), and on lower-tier `anthropic-claude`/`openai` accounts. `llm.retry_429_max` / `llm.retry_429_base_delay` control automatic backoff on a 429, but a persistent 429 is a signal to reduce `max_workers`, not just retry harder. `claude-cli` is unaffected — it is serial by design (`max_workers: 1`); it doesn't hit API rate limits since there's no API call. `agent-claude-code` is not API rate-limited either (no API key involved), but it is not serial — its default profile sets `pass1`/`pass2`/`orphan_pass` `max_workers` > 1 (configurable, like any other profile), since the skill dispatches multiple subagents per wave.
 
-### Sampling temperature (optional)
-
-`llm.temperature` controls sampling determinism. It is **not present in the
-shipped profiles**, so out of the box every provider uses its own default and
-nothing about extraction changes. Add it to a profile's `llm:` block to pin it:
-
-```yaml
-    llm:
-      model: claude-sonnet-4-5
-      temperature: 0.0   # deterministic extraction
-```
-
-An unset key is omitted from the provider request entirely rather than sent as
-a null. OpenAI reasoning models (o1/o3/o4, gpt-5) reject an explicit
-temperature, so it is dropped for them automatically — including the
-vendor-namespaced `openai/gpt-5-*` names OpenRouter uses — which means setting
-the key never breaks the shipped `openai` profile. `claude-cli` and
-`agent-claude-code` accept the key and ignore it; neither backend has a
-temperature dial.
-
 **Also check your quota/credits.** Some providers return `429` when your account has exhausted its token quota or spending balance, not only for request cadence. If lowering `max_workers` doesn't help and the 429s persist from the very first call, **check that your account still has available tokens/credits** (e.g. the OpenAI/Anthropic billing dashboard, or your OpenRouter balance). No `max_workers` value will clear a 429 caused by a depleted balance — top up or switch to a profile with quota (e.g. `ollama-local` for local inference, or `claude-cli` which bills via your Claude Pro/Max plan instead of the API).
 
 

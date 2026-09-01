@@ -3482,8 +3482,10 @@ def test_load_adapter_agent_accepts_temperature(tmp_path):
 def test_shipped_config_has_no_temperature_key():
     """The two shipped YAML files intentionally omit llm.temperature.
 
-    Adding it would change extraction behaviour for every existing user; the
-    key is opt-in. If this fails, that decision was reversed by accident.
+    Temperature is an internal knob, not a user-facing setting: it is absent
+    from the shipped profiles and from the README. Adding it here would both
+    change extraction behaviour for every existing user and promote it to
+    public API. If this fails, that decision was reversed by accident.
     """
     import mykg.config as _cfg
 

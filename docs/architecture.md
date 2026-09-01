@@ -694,22 +694,28 @@ The pipeline is fully decoupled from any specific LLM provider. A single abstrac
 | Claude CLI | Uses the `claude -p` subprocess; no API key; billing via Claude Pro/Max plan; serial only |
 | Agent (Claude Code skill) | LLM answers produced by a Claude Code skill via filesystem inbox/outbox; pipeline is otherwise unchanged. See [`docs/agent-mode.md`](agent-mode.md) |
 
-All provider parameters — model, context window, token limits, timeout, temperature, base URL — are set in `mykg_config.yaml`. There are no hardcoded defaults in adapter code. A 429 rate-limit response is treated as a misconfiguration signal (reduce worker count), not a transient error to silently retry indefinitely.
+All provider parameters — model, context window, token limits, timeout, base URL — are set in `mykg_config.yaml`. There are no hardcoded defaults in adapter code. A 429 rate-limit response is treated as a misconfiguration signal (reduce worker count), not a transient error to silently retry indefinitely.
 
 #### Sampling temperature
 
-`llm.temperature` is optional and **absent from the shipped profiles**, so by
-default every provider applies its own default and payloads are unchanged. Set
-it in a profile's `llm:` block to pin sampling — `0.0` is the usual choice for
-deterministic extraction.
+Temperature is an **internal knob, not a documented user-facing setting**. It is
+absent from the shipped profiles and from the README, so every provider applies
+its own default and payloads are unchanged from before it existed.
+
+It is reachable three ways, in increasing order of scope: a per-call argument to
+`complete()` / `llm_complete_with_retry()`, an adapter constructor argument, and
+— as an undocumented escape hatch — an `llm.temperature` key if one is present
+in the active profile. The last exists because the factory reads the `llm:`
+block uniformly; it is deliberately not advertised, so treat it as unsupported
+rather than as public API.
 
 An unset value is omitted from the request entirely rather than sent as a null,
-which is what lets one key work across providers with very different support:
+which is what lets one code path serve providers with very different support:
 
 | Provider | Temperature |
 |---|---|
 | Anthropic | Honoured (0.0–1.0) |
-| OpenAI | Honoured, except reasoning families (o1/o3/o4, gpt-5), which reject an explicit value — it is omitted for them automatically, so the shipped `openai` profile keeps working if the key is set. If an unlisted model rejects it at runtime, the adapter warns once, retries without it, and omits it for the rest of the run |
+| OpenAI | Honoured, except reasoning families (o1/o3/o4, gpt-5), which reject an explicit value — it is omitted for them automatically, so the shipped `openai` profile (a gpt-5 model) keeps working even if a temperature is supplied. If an unlisted model rejects it at runtime, the adapter warns once, retries without it, and omits it for the rest of the run |
 | OpenRouter | Honoured; vendor-namespaced reasoning models (`openai/gpt-5-*`) are recognised and omitted like their bare equivalents |
 | Gemini | Honoured |
 | Ollama | Honoured, sent inside the `options` object |
