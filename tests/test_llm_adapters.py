@@ -1030,6 +1030,21 @@ def test_openrouter_no_override_uses_constructor_defaults():
 # ---------------------------------------------------------------------------
 
 
+def _skip_if_quota_exhausted(exc: BaseException) -> None:
+    """Skip rather than fail when the account is out of quota, not the code.
+
+    A live test exists to prove the provider accepts our request shape. A 429
+    for an exhausted free-tier allowance says nothing about that — it reports
+    the state of the account — so failing on it is a false negative that makes
+    the suite unusable on free keys. Genuine rejections (400 on an unsupported
+    parameter, auth errors) still fail loudly.
+    """
+    msg = str(exc).lower()
+    markers = ("resource_exhausted", "exceeded your current quota", "quota exceeded")
+    if any(marker in msg for marker in markers):
+        pytest.skip(f"provider quota exhausted, not a code failure: {str(exc)[:120]}")
+
+
 def _load_openrouter_api_key() -> str | None:
     """Load OPENROUTER_API_KEY from the environment or .env.mykg."""
     return _load_api_key("OPENROUTER_AUTH_TOKEN", "OPENROUTER_API_KEY")
@@ -1184,9 +1199,14 @@ def test_openrouter_live_call_respects_timeout():
     from mykg.llm.openrouter_adapter import OpenRouterAdapter
 
     # --- normal call: should succeed within a generous timeout ---
+    # openrouter/free routes to whatever free model is currently available. A
+    # reasoning model spends output tokens on thinking, so a 64-token budget
+    # truncates it before any visible text (finish_reason=length) and this
+    # assertion fails intermittently for reasons unrelated to the timeout under
+    # test. The tight-timeout adapter below keeps its small budget on purpose.
     adapter = OpenRouterAdapter(
         model=model,
-        max_tokens=64,
+        max_tokens=2000,
         timeout=120,
         api_key=api_key,
     )
@@ -2516,7 +2536,11 @@ def test_gemini_live_call_returns_json():
         timeout=120,
         api_key=key,
     )
-    out = adapter.complete("Reply with JSON only.", 'Return {"pong": true}')
+    try:
+        out = adapter.complete("Reply with JSON only.", 'Return {"pong": true}')
+    except Exception as exc:  # noqa: BLE001 - re-raised unless it is a quota 429
+        _skip_if_quota_exhausted(exc)
+        raise
     assert out.strip()
     assert json.loads(out)["pong"] is True
 
@@ -3515,7 +3539,11 @@ def test_anthropic_live_accepts_temperature():
         api_key=key,
         temperature=0.0,
     )
-    out = adapter.complete(*_LIVE_PROMPT, context_label="live_temperature")
+    try:
+        out = adapter.complete(*_LIVE_PROMPT, context_label="live_temperature")
+    except Exception as exc:  # noqa: BLE001 - re-raised unless it is a quota 429
+        _skip_if_quota_exhausted(exc)
+        raise
     assert out.strip(), "expected a non-empty response with temperature=0.0"
 
 
@@ -3535,7 +3563,11 @@ def test_openai_live_accepts_temperature_on_ordinary_model():
         api_key=key,
         temperature=0.0,
     )
-    out = adapter.complete(*_LIVE_PROMPT, context_label="live_temperature")
+    try:
+        out = adapter.complete(*_LIVE_PROMPT, context_label="live_temperature")
+    except Exception as exc:  # noqa: BLE001 - re-raised unless it is a quota 429
+        _skip_if_quota_exhausted(exc)
+        raise
     assert out.strip(), "expected a non-empty response with temperature=0.0"
 
 
@@ -3558,7 +3590,11 @@ def test_openai_live_reasoning_model_succeeds_because_temperature_is_omitted():
         api_key=key,
         temperature=0.0,
     )
-    out = adapter.complete(*_LIVE_PROMPT, context_label="live_temperature_omitted")
+    try:
+        out = adapter.complete(*_LIVE_PROMPT, context_label="live_temperature_omitted")
+    except Exception as exc:  # noqa: BLE001 - re-raised unless it is a quota 429
+        _skip_if_quota_exhausted(exc)
+        raise
     assert out.strip(), "expected a non-empty response; temperature should have been omitted"
 
 
@@ -3581,7 +3617,11 @@ def test_openrouter_live_accepts_temperature():
         api_key=key,
         temperature=0.0,
     )
-    out = adapter.complete(*_LIVE_PROMPT, context_label="live_temperature")
+    try:
+        out = adapter.complete(*_LIVE_PROMPT, context_label="live_temperature")
+    except Exception as exc:  # noqa: BLE001 - re-raised unless it is a quota 429
+        _skip_if_quota_exhausted(exc)
+        raise
     assert out.strip(), "expected a non-empty response with temperature=0.0"
 
 
@@ -3600,7 +3640,11 @@ def test_gemini_live_accepts_temperature():
         api_key=key,
         temperature=0.0,
     )
-    out = adapter.complete(*_LIVE_PROMPT, context_label="live_temperature")
+    try:
+        out = adapter.complete(*_LIVE_PROMPT, context_label="live_temperature")
+    except Exception as exc:  # noqa: BLE001 - re-raised unless it is a quota 429
+        _skip_if_quota_exhausted(exc)
+        raise
     assert out.strip()
     assert json.loads(out)["pong"] is True
 

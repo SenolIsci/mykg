@@ -127,3 +127,56 @@ def test_non_rejection_messages_are_ignored(msg):
     from mykg.llm.temperature import rejects_temperature
 
     assert rejects_temperature(msg) is False
+
+
+# --- live-test quota guard --------------------------------------------------
+#
+# The live tests skip on an exhausted provider allowance, since that reports the
+# state of the account rather than of the code. This pins that the guard does
+# not also swallow genuine rejections.
+
+
+def _quota_guard_skips(msg: str) -> bool:
+    import importlib.util
+    from pathlib import Path
+
+    import _pytest.outcomes as outcomes
+
+    spec = importlib.util.spec_from_file_location(
+        "_mykg_live_tests", Path(__file__).parent / "test_llm_adapters.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    try:
+        module._skip_if_quota_exhausted(Exception(msg))
+        return False
+    except outcomes.Skipped:
+        return True
+
+
+@pytest.mark.parametrize(
+    "msg",
+    [
+        "429 RESOURCE_EXHAUSTED",
+        "You exceeded your current quota, please check your plan",
+        "Quota exceeded for metric: generate_content_free_tier_requests",
+    ],
+)
+def test_quota_exhaustion_skips(msg):
+    assert _quota_guard_skips(msg) is True
+
+
+@pytest.mark.parametrize(
+    "msg",
+    [
+        # A rejected temperature is exactly what the live tests exist to catch.
+        "400 Unsupported value: 'temperature' is not supported",
+        "401 Unauthorized: invalid api key",
+        # A cadence 429 is a real signal (Invariant 13), not an account limit.
+        "429 rate limit exceeded, slow down",
+        "context_length_exceeded",
+        "Invalid value for 'messages'",
+    ],
+)
+def test_genuine_failures_are_not_skipped(msg):
+    assert _quota_guard_skips(msg) is False
