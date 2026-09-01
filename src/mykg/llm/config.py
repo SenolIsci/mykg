@@ -11,6 +11,36 @@ if TYPE_CHECKING:
     from mykg.llm.error_gate import ErrorGate
 
 
+def _temperature_prefixes(section: dict) -> tuple[str, ...] | None:
+    """Model-name prefixes that reject an explicit temperature, or None for the default.
+
+    Internal, deliberately absent from the shipped profiles — the same
+    read-but-not-shipped pattern as `thinking_level`. It exists so a provider's
+    model lineup changing does not require a mykg release (Invariant 7).
+
+    An explicitly empty list is honoured as "send temperature to everything",
+    which is why this returns a tuple rather than falling back on falsiness.
+    """
+    raw = section.get("temperature_unsupported_prefixes")
+    if raw is None:
+        return None
+    # An explicit list is required. A bare string would prefix-match per
+    # character; a mapping would silently degrade to its keys; a scalar would
+    # raise a bare TypeError naming neither the key nor the file.
+    if not isinstance(raw, list):
+        raise ValueError(
+            "llm.temperature_unsupported_prefixes in mykg_config.yaml must be a "
+            f"list of model-name prefixes, got {type(raw).__name__}: {raw!r}"
+        )
+    # Drop null entries as well as blanks — a trailing "- " in YAML parses as
+    # None, and str(None) would otherwise become the literal prefix "none".
+    return tuple(
+        str(item).strip().lower()
+        for item in raw
+        if item is not None and str(item).strip()
+    )
+
+
 def load_adapter(
     _raw: dict | None = None,
     error_gate: ErrorGate | None = None,
@@ -84,6 +114,7 @@ def load_adapter(
             retry_429_base_delay=section.get("retry_429_base_delay", _cfg.LLM_RETRY_429_BASE_DELAY),
             error_gate=error_gate,
             temperature=section.get("temperature"),
+            temperature_unsupported_prefixes=_temperature_prefixes(section),
         )
 
     if provider == "openai":
@@ -99,6 +130,7 @@ def load_adapter(
             retry_429_base_delay=section.get("retry_429_base_delay", _cfg.LLM_RETRY_429_BASE_DELAY),
             error_gate=error_gate,
             temperature=section.get("temperature"),
+            temperature_unsupported_prefixes=_temperature_prefixes(section),
         )
 
     if provider == "gemini":

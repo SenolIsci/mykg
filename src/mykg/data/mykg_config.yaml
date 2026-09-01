@@ -28,6 +28,14 @@ profiles:
   #      batch_token_target = 32000  (manually reduced further from 64000 to shrink per-batch blast radius on failure)
   #      window_tokens      = batch_token_target / 5 = 6400
   #      overlap_tokens     = window_tokens × 0.10 = 640
+  #
+  # Reasoning models (o-series, gpt-5) reject an explicit temperature and return
+  # 400 "Only the default (1) value is supported". The adapter detects them by
+  # model-name prefix and omits the parameter automatically. That built-in list
+  # can be overridden per profile with an `llm.temperature_unsupported_prefixes`
+  # key (a list of lowercase prefixes, matched after any vendor/ segment is
+  # stripped) if a provider ships a family mykg does not yet know about. An
+  # empty list disables the check. Internal — most users never need this.
   # ---------------------------------------------------------------------------
     provider: openrouter
     llm_retry:
@@ -565,6 +573,14 @@ profiles:
   #      batch_token_target = 32000  (conservative for reliable JSON output)
   #      window_tokens      = batch_token_target / 4 = 8000
   #      overlap_tokens     = window_tokens × 0.10 = 800
+  #
+  # Reasoning models (o-series, gpt-5) reject an explicit temperature and return
+  # 400 "Only the default (1) value is supported". The adapter detects them by
+  # model-name prefix and omits the parameter automatically. That built-in list
+  # can be overridden per profile with an `llm.temperature_unsupported_prefixes`
+  # key (a list of lowercase prefixes, matched after any vendor/ segment is
+  # stripped) if a provider ships a family mykg does not yet know about. An
+  # empty list disables the check. Internal — most users never need this.
   # ---------------------------------------------------------------------------
     provider: openai
     llm_retry:

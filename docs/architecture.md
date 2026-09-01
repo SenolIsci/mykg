@@ -702,6 +702,15 @@ Temperature is an **internal knob, not a documented user-facing setting**. It is
 absent from the shipped profiles and from the README, so every provider applies
 its own default and payloads are unchanged from before it existed.
 
+The set of model families that reject an explicit temperature is a **default,
+not a hardcoded rule**. Provider lineups change faster than mykg releases, so
+`llm.temperature_unsupported_prefixes` in the active profile replaces the
+built-in list without a code change (Invariant 7), and an explicitly empty list
+disables the check. Only the `openai` and `openrouter` adapters consult it —
+the others have no family that rejects the parameter. Like `thinking_level`, it
+is read but never shipped as an active key; both `openai` and `openrouter`
+profiles carry an explanatory comment only.
+
 It is reachable three ways, in increasing order of scope: a per-call argument to
 `complete()` / `llm_complete_with_retry()`, an adapter constructor argument, and
 — as an undocumented escape hatch — an `llm.temperature` key if one is present
@@ -715,7 +724,7 @@ which is what lets one code path serve providers with very different support:
 | Provider | Temperature |
 |---|---|
 | Anthropic | Honoured (0.0–1.0) |
-| OpenAI | Honoured, except reasoning families (o1/o3/o4, gpt-5), which reject an explicit value — it is omitted for them automatically, so the shipped `openai` profile (a gpt-5 model) keeps working even if a temperature is supplied. If an unlisted model rejects it at runtime, the adapter warns once, retries without it, and omits it for the rest of the run |
+| OpenAI | Honoured, except reasoning families (o1/o3/o4, gpt-5 by default), which reject an explicit value — it is omitted for them automatically, so the shipped `openai` profile (a gpt-5 model) keeps working even if a temperature is supplied. The prefix list is a default, not a hardcoded rule: `llm.temperature_unsupported_prefixes` in the active profile replaces it, and an empty list disables the check. If an unlisted model rejects it at runtime, the adapter warns once, retries without it, and omits it for the rest of the run |
 | OpenRouter | Honoured; vendor-namespaced reasoning models (`openai/gpt-5-*`) are recognised and omitted like their bare equivalents |
 | Gemini | Honoured |
 | Ollama | Honoured, sent inside the `options` object |

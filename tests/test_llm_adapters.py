@@ -3793,3 +3793,83 @@ def test_openrouter_unrelated_bad_request_still_raises():
             adapter.complete("sys", "user")
 
     assert client.chat.completions.create.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# temperature — configurable unsupported-prefix list
+# ---------------------------------------------------------------------------
+
+
+def _openai_wire(raw: dict) -> dict:
+    """Run one mocked call through load_adapter and return the request kwargs."""
+    with patch("openai.OpenAI") as mock_cls:
+        mock_cls.return_value = client = _openai_client()
+        from mykg.llm.config import load_adapter
+
+        load_adapter(_raw=raw).complete("sys", "user")
+    return client.chat.completions.create.call_args[1]
+
+
+def _openai_raw(**llm) -> dict:
+    base = {"model": "gpt-5-mini", "max_output_tokens": 100, "timeout": 30, "temperature": 0.0}
+    return {"provider": "openai", "llm": {**base, **llm}}
+
+
+def test_shipped_config_uses_the_default_prefix_list(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    assert "temperature" not in _openai_wire(_openai_raw())
+
+
+def test_config_can_disable_the_prefix_guard(monkeypatch):
+    """An empty list means the endpoint accepts temperature on every model."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    kwargs = _openai_wire(_openai_raw(temperature_unsupported_prefixes=[]))
+    assert kwargs["temperature"] == 0.0
+
+
+def test_config_can_add_a_family_mykg_does_not_know(monkeypatch):
+    """The point of the knob: a new rejecting family needs no code change."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    kwargs = _openai_wire(_openai_raw(model="gpt-4o", temperature_unsupported_prefixes=["gpt-4o"]))
+    assert "temperature" not in kwargs
+
+
+def test_config_prefixes_are_normalised(monkeypatch):
+    """Case and stray whitespace in YAML must not defeat the match."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    kwargs = _openai_wire(_openai_raw(temperature_unsupported_prefixes=["  GPT-5 "]))
+    assert "temperature" not in kwargs
+
+
+def test_a_string_prefix_list_is_rejected(monkeypatch):
+    """`prefixes: gpt-5` in YAML would otherwise match per-character."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    with pytest.raises(ValueError, match="must be a list"):
+        _openai_wire(_openai_raw(temperature_unsupported_prefixes="gpt-5"))
+
+
+def test_openrouter_honours_configured_prefixes(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    raw = {
+        "provider": "openrouter",
+        "llm": {
+            "model": "deepseek/deepseek-r1",
+            "max_output_tokens": 100,
+            "timeout": 30,
+            "temperature": 0.0,
+            "temperature_unsupported_prefixes": ["deepseek-r1"],
+        },
+    }
+    with patch("openai.OpenAI") as mock_cls:
+        mock_cls.return_value = client = _openai_client()
+        from mykg.llm.config import load_adapter
+
+        load_adapter(_raw=raw).complete("sys", "user")
+    assert "temperature" not in client.chat.completions.create.call_args[1]
+
+
+def test_shipped_config_has_no_temperature_prefix_key():
+    """The knob is internal: readable, but never shipped as an active key."""
+    import mykg.config as _cfg
+
+    assert "temperature_unsupported_prefixes" not in _cfg.RAW.get("llm", {})

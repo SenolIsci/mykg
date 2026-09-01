@@ -5,6 +5,7 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import httpx
@@ -38,10 +39,12 @@ class OpenRouterAdapter(LLMAdapter):
         retry_429_base_delay: float = 2.0,
         error_gate: ErrorGate | None = None,
         temperature: float | None = None,
+        temperature_unsupported_prefixes: Sequence[str] | None = None,
     ):
         self._model = model
         self._max_tokens = max_tokens
         self._temperature = temperature
+        self._temperature_unsupported_prefixes = temperature_unsupported_prefixes
         # One adapter instance is shared across worker threads (Invariant 12).
         self._temperature_rejected = False
         self._temperature_warned = False
@@ -89,7 +92,9 @@ class OpenRouterAdapter(LLMAdapter):
         # OpenRouter addresses upstream models as vendor/model, so resolve_temperature
         # strips the vendor segment before matching families that reject the parameter
         # (openai/gpt-5-mini would otherwise slip past the prefix check).
-        effective_temperature = resolve_temperature(configured_temperature, self._model)
+        effective_temperature = resolve_temperature(
+            configured_temperature, self._model, self._temperature_unsupported_prefixes
+        )
 
         def _call() -> str:
             t0 = time.monotonic()

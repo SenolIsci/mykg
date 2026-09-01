@@ -4,6 +4,7 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import openai
@@ -46,10 +47,12 @@ class OpenAIAdapter(LLMAdapter):
         retry_429_base_delay: float = 2.0,
         error_gate: ErrorGate | None = None,
         temperature: float | None = None,
+        temperature_unsupported_prefixes: Sequence[str] | None = None,
     ):
         self._model = model
         self._max_tokens = max_tokens
         self._temperature = temperature
+        self._temperature_unsupported_prefixes = temperature_unsupported_prefixes
         self._retry_429_max = retry_429_max
         self._retry_429_base_delay = retry_429_base_delay
         self._error_gate = error_gate
@@ -117,7 +120,9 @@ class OpenAIAdapter(LLMAdapter):
         # None here means "omit". Reasoning families (o-series, gpt-5) 400 on an
         # explicit temperature, so a configured value is dropped for them rather
         # than failing the call — mykg's default profile ships a gpt-5 model.
-        effective_temperature = resolve_temperature(configured_temperature, self._model)
+        effective_temperature = resolve_temperature(
+            configured_temperature, self._model, self._temperature_unsupported_prefixes
+        )
 
         def _call() -> str:
             t0 = time.monotonic()

@@ -9,10 +9,17 @@ all, and users who simply have no opinion and want the provider default.
 
 from __future__ import annotations
 
-# Model-name prefixes whose families reject an explicit temperature parameter.
+from collections.abc import Sequence
+
+# Default model-name prefixes whose families reject an explicit temperature.
 # OpenAI reasoning models (o-series, gpt-5) return 400 unsupported_parameter:
-# "Only the default (1) value is supported". Naming mirrors the existing
-# _NEW_TOKEN_PARAM_PREFIXES convention in openai_adapter.py.
+# "Only the default (1) value is supported".
+#
+# This is a DEFAULT, not a hardcoded rule: provider model lineups change faster
+# than mykg releases, so `llm.temperature_unsupported_prefixes` in the active
+# profile overrides it without a code change (Invariant 7). The key is
+# deliberately absent from the shipped profiles — see the comment beside
+# `thinking_level`, the same read-but-not-shipped pattern.
 #
 # This matters for mykg's shipped default profile, which is `openai` on a gpt-5
 # model: without this guard a user who sets llm.temperature would break the
@@ -24,7 +31,15 @@ from __future__ import annotations
 # over-sending fails the request outright, and only the former is recoverable
 # — the adapters' BadRequestError fallbacks can stop sending a rejected
 # temperature, but nothing can retroactively apply one that was never sent.
-_TEMPERATURE_UNSUPPORTED_PREFIXES = ("o1", "o1-", "o3", "o3-", "o4", "o4-", "gpt-5")
+DEFAULT_TEMPERATURE_UNSUPPORTED_PREFIXES: tuple[str, ...] = (
+    "o1",
+    "o1-",
+    "o3",
+    "o3-",
+    "o4",
+    "o4-",
+    "gpt-5",
+)
 
 
 def _bare_model_name(model: str) -> str:
@@ -37,15 +52,40 @@ def _bare_model_name(model: str) -> str:
     return model.rsplit("/", 1)[-1].strip().lower()
 
 
-def temperature_unsupported(model: str) -> bool:
-    """True if `model` rejects an explicit temperature parameter."""
+def temperature_unsupported(
+    model: str, prefixes: Sequence[str] | None = None
+) -> bool:
+    """True if `model` rejects an explicit temperature parameter.
+
+    `prefixes` overrides the built-in list; None uses the default. An explicitly
+    empty sequence disables the check entirely, which is a legitimate way to say
+    "this endpoint accepts temperature on everything" — so the check is
+    `is None`, not a falsy test.
+    """
     if not model:
         return False
+    if prefixes is None:
+        prefixes = DEFAULT_TEMPERATURE_UNSUPPORTED_PREFIXES
+    # A bare str is a Sequence[str], and startswith() would then match one
+    # character at a time — "gpt-5" would flag "gpt-4o" via its leading "g".
+    # The adapter constructors are importable, so guard here too, not only in
+    # load_adapter.
+    if isinstance(prefixes, str):
+        raise TypeError(
+            "prefixes must be a sequence of model-name prefixes, not a bare "
+            f"string: {prefixes!r}"
+        )
+    if not prefixes:
+        return False
     name = _bare_model_name(model)
-    return name.startswith(_TEMPERATURE_UNSUPPORTED_PREFIXES)
+    return name.startswith(tuple(prefixes))
 
 
-def resolve_temperature(configured: float | None, model: str = "") -> float | None:
+def resolve_temperature(
+    configured: float | None,
+    model: str = "",
+    prefixes: Sequence[str] | None = None,
+) -> float | None:
     """Return the temperature to send, or None to omit the parameter entirely.
 
     Resolves to None when nothing is configured, or when the target model
@@ -55,7 +95,7 @@ def resolve_temperature(configured: float | None, model: str = "") -> float | No
     """
     if configured is None:
         return None
-    if temperature_unsupported(model):
+    if temperature_unsupported(model, prefixes):
         return None
     return configured
 

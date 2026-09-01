@@ -180,3 +180,77 @@ def test_quota_exhaustion_skips(msg):
 )
 def test_genuine_failures_are_not_skipped(msg):
     assert _quota_guard_skips(msg) is False
+
+
+# --- configurable prefix list ----------------------------------------------
+#
+# The list is a DEFAULT, not a hardcoded rule: provider model lineups change
+# faster than mykg releases, so a profile can override it (Invariant 7).
+
+
+def test_none_prefixes_uses_the_built_in_default():
+    assert temperature_unsupported("gpt-5-mini", None) is True
+    assert temperature_unsupported("gpt-4o", None) is False
+
+
+def test_custom_prefixes_replace_the_default_entirely():
+    """An override is a replacement, not an addition — gpt-5 is no longer matched."""
+    assert temperature_unsupported("gpt-5-mini", ["claude-4"]) is False
+    assert temperature_unsupported("claude-4-opus", ["claude-4"]) is True
+
+
+def test_empty_prefixes_disables_the_check():
+    """A deliberate empty list means 'this endpoint accepts temperature on
+    everything' — it must not silently fall back to the default."""
+    assert temperature_unsupported("gpt-5-mini", []) is False
+    assert resolve_temperature(0.0, "gpt-5-mini", []) == 0.0
+
+
+def test_custom_prefixes_still_strip_the_vendor_segment():
+    assert temperature_unsupported("openai/gpt-6-mini", ["gpt-6"]) is True
+
+
+def test_resolve_honours_custom_prefixes():
+    # A family the built-in list does not know about.
+    assert resolve_temperature(0.0, "newvendor-r1", ["newvendor"]) is None
+    # And one it does, now excluded by an override.
+    assert resolve_temperature(0.0, "gpt-5-mini", ["newvendor"]) == 0.0
+
+
+# --- prefix-list input validation (found in code review) --------------------
+
+
+def test_bare_string_prefixes_rejected_at_the_helper_boundary():
+    """A str is a Sequence[str]; startswith() would match per character, so
+    "gpt-5" would flag "gpt-4o" via its leading "g". The adapter constructors
+    are importable, so the guard cannot live only in load_adapter."""
+    with pytest.raises(TypeError, match="not a bare string"):
+        temperature_unsupported("gpt-4o", "gpt-5")
+
+
+def test_null_yaml_entries_do_not_become_a_none_prefix():
+    """A trailing "- " in YAML parses as None; str(None) would otherwise create
+    the literal prefix "none" and silently strip temperature from any model
+    whose name starts with it."""
+    from mykg.llm.config import _temperature_prefixes
+
+    parsed = {"temperature_unsupported_prefixes": ["gpt-5", None]}
+    assert _temperature_prefixes(parsed) == ("gpt-5",)
+    assert temperature_unsupported("none-of-your-business", ("gpt-5",)) is False
+
+
+@pytest.mark.parametrize("bad", [5, True, {"gpt-5": True}, "gpt-5"])
+def test_non_list_prefix_config_is_rejected_with_a_useful_message(bad):
+    """Every wrong shape gets one error naming the key and the file, rather
+    than a bare TypeError (int) or silent degradation to keys (mapping)."""
+    from mykg.llm.config import _temperature_prefixes
+
+    with pytest.raises(ValueError, match="must be a list"):
+        _temperature_prefixes({"temperature_unsupported_prefixes": bad})
+
+
+def test_prefix_entries_are_normalised():
+    from mykg.llm.config import _temperature_prefixes
+
+    got = _temperature_prefixes({"temperature_unsupported_prefixes": ["  GPT-5 ", "O3", ""]})
+    assert got == ("gpt-5", "o3")
