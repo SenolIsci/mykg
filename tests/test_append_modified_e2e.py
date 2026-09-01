@@ -61,7 +61,7 @@ class ScriptedAdapter(LLMAdapter):
         # Mutated between the fresh run and the append run.
         self.a_nodes: list[dict] = [_A_NODE]
 
-    def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+    def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
         label = context_label or ""
         if label.startswith("pass1 batch") or label in (
             "schema_harmonize",

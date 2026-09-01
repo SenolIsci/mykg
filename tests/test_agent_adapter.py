@@ -153,3 +153,47 @@ def test_atomic_write_via_tmp_rename(tmp_path):
     assert saw_final.is_set()
     # No .tmp file should be left behind.
     assert not list(inbox_dir.glob("*.tmp"))
+
+
+# ---------------------------------------------------------------------------
+# temperature — accepted for interface uniformity, deliberately unused
+# ---------------------------------------------------------------------------
+
+
+def test_agent_temperature_is_not_written_to_the_envelope(tmp_path):
+    """TaskEnvelope is an on-disk contract (docs/agent-mode.md); temperature
+    must not leak into it, since no consumer could act on it."""
+    adapter = _make_adapter(tmp_path, timeout=10, temperature=0.2)
+
+    system, user = "sys", "user"
+    task_id = AgentAdapter._make_task_id(system, user, "")
+    captured: dict = {}
+
+    def responder():
+        inbox_file = tmp_path / "agent_inbox" / f"{task_id}.task.json"
+        for _ in range(200):
+            if inbox_file.exists():
+                break
+            time.sleep(0.02)
+        else:
+            pytest.fail("inbox file never appeared")
+        captured.update(json.loads(inbox_file.read_text()))
+        _write_answer_atomic(tmp_path / "agent_outbox", task_id, "ok")
+
+    t = threading.Thread(target=responder, daemon=True)
+    t.start()
+    assert adapter.complete(system, user, temperature=0.9) == "ok"
+    t.join(timeout=5)
+
+    assert captured, "the adapter never wrote a task envelope"
+    assert "temperature" not in captured
+    # The envelope's documented fields are untouched.
+    assert captured["max_tokens"] == 1000
+    assert captured["timeout_seconds"] == 10
+
+
+def test_agent_task_id_is_unaffected_by_temperature(tmp_path):
+    """Temperature must not enter the cache key, or every run would miss."""
+    a = _make_adapter(tmp_path / "a", temperature=None)
+    b = _make_adapter(tmp_path / "b", temperature=0.7)
+    assert a._make_task_id("sys", "user", "lbl") == b._make_task_id("sys", "user", "lbl")

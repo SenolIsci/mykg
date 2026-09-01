@@ -96,6 +96,7 @@ class GrowSchemaMockAdapter(LLMAdapter):
         context_label: str = "",
         max_tokens: int | None = None,
         timeout: int | None = None,
+        temperature: float | None = None,
     ) -> str:
         # Harmonize / quality cleanup passes — return invalid JSON so the pipeline
         # keeps the merged schema unchanged (documented fallback behavior).

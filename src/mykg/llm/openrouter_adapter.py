@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import concurrent.futures
+import logging
 import os
+import threading
 import time
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import httpx
@@ -15,7 +18,10 @@ from mykg.llm.retry import (
     looks_like_context_exceeded,
     retry_on_rate_limit,
 )
+from mykg.llm.temperature import rejects_temperature, resolve_temperature
 from mykg.logging import record_llm_call
+
+_log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from mykg.llm.error_gate import ErrorGate
@@ -32,9 +38,17 @@ class OpenRouterAdapter(LLMAdapter):
         retry_429_max: int = 5,
         retry_429_base_delay: float = 2.0,
         error_gate: ErrorGate | None = None,
+        temperature: float | None = None,
+        temperature_unsupported_prefixes: Sequence[str] | None = None,
     ):
         self._model = model
         self._max_tokens = max_tokens
+        self._temperature = temperature
+        self._temperature_unsupported_prefixes = temperature_unsupported_prefixes
+        # One adapter instance is shared across worker threads (Invariant 12).
+        self._temperature_rejected = False
+        self._temperature_warned = False
+        self._temperature_lock = threading.Lock()
         self._retry_429_max = retry_429_max
         self._retry_429_base_delay = retry_429_base_delay
         self._error_gate = error_gate
@@ -70,22 +84,56 @@ class OpenRouterAdapter(LLMAdapter):
         context_label: str = "",
         max_tokens: int | None = None,
         timeout: int | None = None,
+        temperature: float | None = None,
     ) -> str:
         effective_max_tokens = max_tokens if max_tokens is not None else self._max_tokens
         effective_timeout = timeout if timeout is not None else self._timeout
+        configured_temperature = temperature if temperature is not None else self._temperature
+        # OpenRouter addresses upstream models as vendor/model, so resolve_temperature
+        # strips the vendor segment before matching families that reject the parameter
+        # (openai/gpt-5-mini would otherwise slip past the prefix check).
+        effective_temperature = resolve_temperature(
+            configured_temperature, self._model, self._temperature_unsupported_prefixes
+        )
 
         def _call() -> str:
             t0 = time.monotonic()
 
             def _do_request() -> tuple[str, object, str | None]:
-                resp = self._client.chat.completions.create(
-                    model=self._model,
-                    max_tokens=effective_max_tokens,
-                    messages=[
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": user},
-                    ],
-                )
+                def _build(with_temperature: bool) -> dict:
+                    kwargs = {
+                        "model": self._model,
+                        "max_tokens": effective_max_tokens,
+                        "messages": [
+                            {"role": "system", "content": system},
+                            {"role": "user", "content": user},
+                        ],
+                    }
+                    if with_temperature and effective_temperature is not None:
+                        kwargs["temperature"] = effective_temperature
+                    return kwargs
+
+                send_temperature = not self._temperature_rejected
+                try:
+                    resp = self._client.chat.completions.create(**_build(send_temperature))
+                except openai.BadRequestError as exc:
+                    # OpenRouter proxies many upstream reasoning models beyond the
+                    # openai/* families resolve_temperature knows about (deepseek-r1,
+                    # qwq, ...). If one rejects an explicit temperature, drop it and
+                    # retry once, then latch for the rest of the run.
+                    msg = str(getattr(exc, "message", "") or exc)
+                    if not (send_temperature and rejects_temperature(msg)):
+                        raise
+                    with self._temperature_lock:
+                        if not self._temperature_warned:
+                            _log.warning(
+                                "OpenRouter model %r rejected an explicit temperature; "
+                                "omitting it for this adapter.",
+                                self._model,
+                            )
+                            self._temperature_warned = True
+                        self._temperature_rejected = True
+                    resp = self._client.chat.completions.create(**_build(False))
                 usage = resp.usage
                 raw = resp.choices[0].message.content or "" if resp.choices else ""
                 choice_finish_reason = resp.choices[0].finish_reason if resp.choices else None

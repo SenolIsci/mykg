@@ -107,7 +107,7 @@ def test_partial_recover_prior_node_not_in_output_nodes():
 
 def test_pass2_failed_chunk_recorded(tmp_path):
     class BlankAdapter(LLMAdapter):
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
             return ""
 
         def endpoint_label(self) -> str:
@@ -272,7 +272,7 @@ def test_run_pass2_stateful_chunks_carries_prior_nodes(monkeypatch):
     calls = []
 
     class Adapter(LLMAdapter):
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
             calls.append(user)
             return json.dumps(
                 {
@@ -302,7 +302,7 @@ def test_run_pass2_skip_files():
     """skip_files removes those entries from processing."""
 
     class Adapter(LLMAdapter):
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
             return json.dumps({"nodes": [], "edges": []})
 
         def endpoint_label(self) -> str:
@@ -320,7 +320,7 @@ def test_run_pass2_on_file_done_callback():
     """on_file_done callback receives per-file results."""
 
     class Adapter(LLMAdapter):
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
             return json.dumps({"nodes": [], "edges": []})
 
         def endpoint_label(self) -> str:
@@ -347,7 +347,7 @@ def test_run_pass2_surgical_reextract_chunks(monkeypatch):
     """reextract_chunks confines processing to specific 1-based chunk indices."""
 
     class Adapter(LLMAdapter):
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
             return json.dumps(
                 {
                     "nodes": [
@@ -415,7 +415,7 @@ def test_extract_chunk_returns_none_on_blank_retry():
     from mykg.pass2 import _extract_chunk
 
     class BlankAdapter(LLMAdapter):
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
             return ""
 
         def endpoint_label(self) -> str:

@@ -91,6 +91,7 @@ def llm_complete_with_retry(
     context_label: str = "",
     max_tokens: int | None = None,
     timeout: int | None = None,
+    temperature: float | None = None,
 ) -> str:
     """Call adapter.complete(), retrying up to LLM_RETRY_MAX_RETRIES times on empty response.
 
@@ -99,6 +100,7 @@ def llm_complete_with_retry(
 
     max_tokens: per-call override forwarded to the adapter; None means use adapter default.
     timeout: per-call override in seconds forwarded to the adapter; None means use adapter default.
+    temperature: per-call override forwarded to the adapter; None means use adapter default.
     """
     max_retries = _cfg.LLM_RETRY_MAX_RETRIES
     label = f" [{context_label}]" if context_label else ""
@@ -109,6 +111,7 @@ def llm_complete_with_retry(
             context_label=context_label,
             max_tokens=max_tokens,
             timeout=timeout,
+            temperature=temperature,
         )
         if raw.strip():
             return raw

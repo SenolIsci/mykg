@@ -61,7 +61,7 @@ class ScriptedAdapter(LLMAdapter):
     def __init__(self) -> None:
         self.pass1_calls = 0
 
-    def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+    def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
         label = context_label or ""
         if label.startswith("pass1 batch"):
             self.pass1_calls += 1

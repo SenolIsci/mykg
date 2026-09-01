@@ -31,12 +31,14 @@ class OllamaAdapter(LLMAdapter):
         retry_429_max: int = 5,
         retry_429_base_delay: float = 2.0,
         error_gate: ErrorGate | None = None,
+        temperature: float | None = None,
     ):
         self._model = model
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._stream = stream
         self._max_tokens = max_tokens
+        self._temperature = temperature
         self._context_window = context_window
         self._retry_429_max = retry_429_max
         self._retry_429_base_delay = retry_429_base_delay
@@ -52,24 +54,34 @@ class OllamaAdapter(LLMAdapter):
         context_label: str = "",
         max_tokens: int | None = None,
         timeout: int | None = None,
+        temperature: float | None = None,
     ) -> str:
         effective_max_tokens = max_tokens if max_tokens is not None else self._max_tokens
         effective_timeout = timeout if timeout is not None else self._timeout
+        effective_temperature = temperature if temperature is not None else self._temperature
+
+        options: dict[str, object] = {
+            # num_ctx sizes the model's context window (prompt + output).
+            # Without it Ollama silently falls back to a small default
+            # (often 4096), truncating large Pass 1 prompts to ~1 output
+            # token. Set it from the profile's configured context_window.
+            "num_ctx": self._context_window,
+            "num_predict": effective_max_tokens,
+        }
+        # Omitted when unset so Ollama applies the model's own default, rather
+        # than mykg pinning a value the modelfile did not ask for.
+        if effective_temperature is not None:
+            options["temperature"] = effective_temperature
+
         payload = json.dumps(
             {
                 "model": self._model,
                 "prompt": f"<system>\n{system}\n</system>\n\n{user}",
                 "stream": self._stream,
-                "options": {
-                    # num_ctx sizes the model's context window (prompt + output).
-                    # Without it Ollama silently falls back to a small default
-                    # (often 4096), truncating large Pass 1 prompts to ~1 output
-                    # token. Set it from the profile's configured context_window.
-                    "num_ctx": self._context_window,
-                    "num_predict": effective_max_tokens,
-                },
-            }
-        ).encode()
+                "options": options,
+            },
+            ensure_ascii=False,
+        ).encode("utf-8")
 
         req = urllib.request.Request(
             f"{self._base_url}/api/generate",

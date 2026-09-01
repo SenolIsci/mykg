@@ -16,7 +16,7 @@ class MockAdapter(LLMAdapter):
     def __init__(self, response: str = '{"nodes": [], "edges": []}'):
         self._response = response
 
-    def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+    def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
         return self._response
 
     def endpoint_label(self) -> str:
@@ -410,7 +410,7 @@ class TrackingAdapter(LLMAdapter):
         # text in per_file mode) and the context_label (chunk-scoped in pass2).
         self.calls: list[dict[str, str]] = []
 
-    def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+    def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
         self.calls.append({"user": user, "context_label": context_label})
         return self._response
 

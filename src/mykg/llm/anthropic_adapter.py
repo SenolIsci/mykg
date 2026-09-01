@@ -30,9 +30,11 @@ class AnthropicAdapter(LLMAdapter):
         retry_429_max: int = 5,
         retry_429_base_delay: float = 2.0,
         error_gate: ErrorGate | None = None,
+        temperature: float | None = None,
     ):
         self._model = model
         self._max_tokens = max_tokens
+        self._temperature = temperature
         self._retry_429_max = retry_429_max
         self._retry_429_base_delay = retry_429_base_delay
         self._error_gate = error_gate
@@ -61,24 +63,32 @@ class AnthropicAdapter(LLMAdapter):
         context_label: str = "",
         max_tokens: int | None = None,
         timeout: int | None = None,
+        temperature: float | None = None,
     ) -> str:
         effective_max_tokens = max_tokens if max_tokens is not None else self._max_tokens
         effective_timeout = timeout if timeout is not None else self._timeout
+        effective_temperature = temperature if temperature is not None else self._temperature
 
         def _call() -> str:
             t0 = time.monotonic()
             try:
-                message = self._client.messages.create(
-                    model=self._model,
-                    max_tokens=effective_max_tokens,
-                    system=system,
-                    messages=[{"role": "user", "content": user}],
-                    timeout=effective_timeout,
+                kwargs = {
+                    "model": self._model,
+                    "max_tokens": effective_max_tokens,
+                    "system": system,
+                    "messages": [{"role": "user", "content": user}],
+                    "timeout": effective_timeout,
                     # Top-level auto-caching: caches the last cacheable block (the
                     # run-stable system prompt) so repeated Pass-2 chunk calls in a
                     # run pay ~0.1x cache reads instead of full-price re-processing.
-                    cache_control={"type": "ephemeral"},
-                )
+                    "cache_control": {"type": "ephemeral"},
+                }
+                # Omitted entirely when unset, rather than sent as null. Anthropic
+                # accepts 0.0-1.0 and rejects temperature alongside top_p, which
+                # mykg never sends — so no further guard is needed here.
+                if effective_temperature is not None:
+                    kwargs["temperature"] = effective_temperature
+                message = self._client.messages.create(**kwargs)
             except anthropic.APIStatusError as exc:
                 if looks_like_context_exceeded(exc):
                     log_context_overflow("anthropic", self._model, context_label, exc)

@@ -11,6 +11,7 @@ class _Adapter(LLMAdapter):
 
     def __init__(self, responses: list[str]) -> None:
         self._responses = iter(responses)
+        self.calls: list[dict] = []
 
     def complete(
         self,
@@ -19,7 +20,11 @@ class _Adapter(LLMAdapter):
         context_label: str = "",
         max_tokens: int | None = None,
         timeout: int | None = None,
+        temperature: float | None = None,
     ) -> str:
+        self.calls.append(
+            {"max_tokens": max_tokens, "timeout": timeout, "temperature": temperature}
+        )
         return next(self._responses)
 
     def endpoint_label(self) -> str:
@@ -67,7 +72,10 @@ def test_exactly_max_retries_plus_one_calls_made():
     calls = []
 
     class CountingAdapter(LLMAdapter):
-        def complete(self, system, user, context_label="", max_tokens=None, timeout=None):
+        def complete(
+            self, system, user, context_label="", max_tokens=None, timeout=None,
+            temperature=None,
+        ):
             calls.append(1)
             return ""
 
@@ -97,3 +105,28 @@ def test_no_retry_needed_no_warning(caplog):
         with caplog.at_level(logging.WARNING, logger="mykg.llm.retry"):
             llm_complete_with_retry(adapter, "sys", "user")
     assert caplog.text == ""
+
+
+def test_temperature_is_forwarded_to_adapter():
+    """llm_complete_with_retry forwards temperature like max_tokens/timeout."""
+    adapter = _Adapter(["ok"])
+    with patch("mykg.llm.retry._cfg.LLM_RETRY_MAX_RETRIES", 0):
+        llm_complete_with_retry(adapter, "sys", "user", temperature=0.2)
+    assert adapter.calls[0]["temperature"] == 0.2
+
+
+def test_temperature_defaults_to_none():
+    """Omitting temperature forwards None, i.e. 'use the adapter default'."""
+    adapter = _Adapter(["ok"])
+    with patch("mykg.llm.retry._cfg.LLM_RETRY_MAX_RETRIES", 0):
+        llm_complete_with_retry(adapter, "sys", "user")
+    assert adapter.calls[0]["temperature"] is None
+
+
+def test_temperature_forwarded_on_every_retry():
+    """A retried empty response must not silently drop the temperature override."""
+    adapter = _Adapter(["", "", "ok"])
+    with patch("mykg.llm.retry._cfg.LLM_RETRY_MAX_RETRIES", 3):
+        assert llm_complete_with_retry(adapter, "sys", "user", temperature=0.0) == "ok"
+    assert len(adapter.calls) == 3
+    assert all(c["temperature"] == 0.0 for c in adapter.calls)

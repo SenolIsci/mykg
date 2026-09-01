@@ -696,6 +696,41 @@ The pipeline is fully decoupled from any specific LLM provider. A single abstrac
 
 All provider parameters — model, context window, token limits, timeout, base URL — are set in `mykg_config.yaml`. There are no hardcoded defaults in adapter code. A 429 rate-limit response is treated as a misconfiguration signal (reduce worker count), not a transient error to silently retry indefinitely.
 
+#### Sampling temperature
+
+Temperature is an **internal knob, not a documented user-facing setting**. It is
+absent from the shipped profiles and from the README, so every provider applies
+its own default and payloads are unchanged from before it existed.
+
+The set of model families that reject an explicit temperature is a **default,
+not a hardcoded rule**. Provider lineups change faster than mykg releases, so
+`llm.temperature_unsupported_prefixes` in the active profile replaces the
+built-in list without a code change (Invariant 7), and an explicitly empty list
+disables the check. Only the `openai` and `openrouter` adapters consult it —
+the others have no family that rejects the parameter. The shipped
+`mykg_config.yaml` files are left untouched, without even a comment: this knob
+is documented here, in the contributor docs, and nowhere a user would meet it.
+
+It is reachable three ways, in increasing order of scope: a per-call argument to
+`complete()` / `llm_complete_with_retry()`, an adapter constructor argument, and
+— as an undocumented escape hatch — an `llm.temperature` key if one is present
+in the active profile. The last exists because the factory reads the `llm:`
+block uniformly; it is deliberately not advertised, so treat it as unsupported
+rather than as public API.
+
+An unset value is omitted from the request entirely rather than sent as a null,
+which is what lets one code path serve providers with very different support:
+
+| Provider | Temperature |
+|---|---|
+| Anthropic | Honoured (0.0–1.0) |
+| OpenAI | Honoured, except reasoning families (o1/o3/o4, gpt-5 by default), which reject an explicit value — it is omitted for them automatically, so the shipped `openai` profile (a gpt-5 model) keeps working even if a temperature is supplied. The prefix list is a default, not a hardcoded rule: `llm.temperature_unsupported_prefixes` in the active profile replaces it, and an empty list disables the check. If an unlisted model rejects it at runtime, the adapter warns once, retries without it, and omits it for the rest of the run |
+| OpenRouter | Honoured; vendor-namespaced reasoning models (`openai/gpt-5-*`) are recognised and omitted like their bare equivalents |
+| Gemini | Honoured |
+| Ollama | Honoured, sent inside the `options` object |
+| Claude CLI | Accepted and ignored — `claude -p` exposes no temperature flag |
+| Agent (Claude Code skill) | Accepted and ignored — the host session has no temperature dial; deliberately not added to the task envelope |
+
 ### Agent provider — adapter that polls a filesystem
 
 The Agent provider is the seventh `LLMAdapter` subclass, not a fork of the orchestrator. The 12 pipeline steps, all 14 LLM call sites, every `prompts/*.txt` template, and the `ThreadPoolExecutor` parallelism in `pass1` / `pass2` / `orphan_connect` are unchanged. Only the implementation of `LLMAdapter.complete(system, user) → str` differs: instead of making an HTTP request, it writes a JSON task envelope to disk and polls for the response. This keeps the entire correctness story of mykg's deterministic pipeline — re-entry, sentinel-based completion checks, retry-once + LLM feedback — applicable verbatim to agent mode.
