@@ -3563,12 +3563,26 @@ def test_openai_live_accepts_temperature_on_ordinary_model():
         api_key=key,
         temperature=0.0,
     )
+
+    # The mirror of the reasoning-model test below: here the value must actually
+    # be transmitted, not merely accepted.
+    sent: list[dict] = []
+    original = adapter._client.chat.completions.create
+
+    def _spy(**kwargs):
+        sent.append(kwargs)
+        return original(**kwargs)
+
+    adapter._client.chat.completions.create = _spy
+
     try:
         out = adapter.complete(*_LIVE_PROMPT, context_label="live_temperature")
     except Exception as exc:  # noqa: BLE001 - re-raised unless it is a quota 429
         _skip_if_quota_exhausted(exc)
         raise
+
     assert out.strip(), "expected a non-empty response with temperature=0.0"
+    assert sent[0].get("temperature") == 0.0, "temperature was not sent to a standard model"
 
 
 @pytest.mark.live
@@ -3590,12 +3604,31 @@ def test_openai_live_reasoning_model_succeeds_because_temperature_is_omitted():
         api_key=key,
         temperature=0.0,
     )
+
+    # Success alone is a weak assertion — it would also pass if OpenAI silently
+    # started accepting temperature on this family. Record what actually went
+    # over the wire so the omission itself is what is verified.
+    sent: list[dict] = []
+    original = adapter._client.chat.completions.create
+
+    def _spy(**kwargs):
+        sent.append(kwargs)
+        return original(**kwargs)
+
+    adapter._client.chat.completions.create = _spy
+
     try:
         out = adapter.complete(*_LIVE_PROMPT, context_label="live_temperature_omitted")
     except Exception as exc:  # noqa: BLE001 - re-raised unless it is a quota 429
         _skip_if_quota_exhausted(exc)
         raise
+
     assert out.strip(), "expected a non-empty response; temperature should have been omitted"
+    assert sent, "the adapter never issued a request"
+    assert "temperature" not in sent[0], (
+        "temperature reached a reasoning model; it returns 400 "
+        "\"Only the default (1) value is supported\" for an explicit value"
+    )
 
 
 @pytest.mark.live
