@@ -215,6 +215,18 @@ The wizard walks you through three prompts:
 
 Switch provider by setting `profile:` at the top of [`mykg_config.yaml`](mykg_config.yaml).
 
+**Sampling temperature.** myKG sends `temperature: 0.0` on every LLM call, so
+the same corpus induces the same schema and yields the same nodes and edges run
+over run. Extraction is a structured-output task, not a creative one — provider
+defaults (typically ~1.0) work against reproducibility. Models that reject an
+explicit temperature (OpenAI's o-series and gpt-5 reasoning families) have it
+omitted automatically, and use their own fixed sampling instead.
+
+> Changed in 0.4.5 — earlier versions sent no temperature at all and inherited
+> each provider's default. If you were relying on that, extraction output will
+> shift. To restore the old behaviour, set an explicit empty `temperature:` in
+> the active profile's `llm:` block; a `null` value means "send nothing".
+
 ### API Keys
 
 myKG reads API keys from environment variables. Set them by exporting directly or by creating a `.env.mykg` file in your project directory (loaded automatically on startup).

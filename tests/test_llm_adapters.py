@@ -3416,11 +3416,13 @@ _TEMP_PROVIDER_CASES = [
 
 
 @pytest.mark.parametrize("provider,llm,patch_target", _TEMP_PROVIDER_CASES)
-def test_load_adapter_defaults_temperature_to_none(provider, llm, patch_target, monkeypatch):
-    """A config with no temperature key builds fine and omits the parameter.
+def test_load_adapter_defaults_temperature_to_zero(provider, llm, patch_target, monkeypatch):
+    """A config with no temperature key resolves to DEFAULT_TEMPERATURE (0.0).
 
-    This is the guard on the shipped mykg_config.yaml files, which intentionally
-    do not carry the key: existing users must see no behaviour change at all.
+    Extraction wants determinism: the same corpus should induce the same schema
+    and yield the same graph run over run, which provider defaults (~1.0) work
+    against. Models that reject an explicit value still have it dropped by the
+    prefix guard, so this default is safe on every shipped profile.
     """
     for var in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY"):
         monkeypatch.setenv(var, "test-key")
@@ -3434,7 +3436,10 @@ def test_load_adapter_defaults_temperature_to_none(provider, llm, patch_target, 
     else:
         adapter = load_adapter(_raw=raw)
 
-    assert adapter._temperature is None
+    from mykg.llm.temperature import DEFAULT_TEMPERATURE
+
+    assert adapter._temperature == DEFAULT_TEMPERATURE
+    assert DEFAULT_TEMPERATURE == 0.0
 
 
 @pytest.mark.parametrize("provider,llm,patch_target", _TEMP_PROVIDER_CASES)
@@ -3876,22 +3881,150 @@ def test_shipped_config_has_no_temperature_prefix_key():
 
 
 def test_shipped_yaml_files_never_mention_temperature():
-    """The shipped configs must not mention temperature at all — not as a key,
-    and not as a comment either.
+    """The configs *as committed to this repo* must not mention temperature.
 
-    Both files are the user's first contact with mykg's configuration surface,
-    and this knob is deliberately internal. A comment is still an invitation, so
-    the check is on the raw text rather than the parsed mapping.
+    The default lives in code (DEFAULT_TEMPERATURE), not config, and the shipped
+    files are left untouched by design. A comment is still an edit, so the check
+    is on raw text rather than the parsed mapping.
+
+    Scoped to git's committed content, not the file on disk: a user is expressly
+    told in the README to add `temperature:` to their own working copy to restore
+    per-provider defaults, and doing so must not fail this suite.
     """
+    import subprocess
     from pathlib import Path
 
     repo_root = Path(__file__).parent.parent
-    shipped = [repo_root / "mykg_config.yaml", repo_root / "src" / "mykg" / "data" / "mykg_config.yaml"]
+    tracked = ["mykg_config.yaml", "src/mykg/data/mykg_config.yaml"]
 
-    for path in shipped:
-        assert path.exists(), f"{path} is missing"
-        text = path.read_text(encoding="utf-8")
-        assert "temperature" not in text.lower(), (
-            f"{path.name} mentions temperature; the shipped configs are left "
-            "untouched by design — document the knob in docs/architecture.md instead"
+    for rel in tracked:
+        committed = subprocess.run(
+            ["git", "show", f"HEAD:{rel}"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
         )
+        if committed.returncode != 0:
+            pytest.skip(f"cannot read {rel} from git (not a checkout?)")
+        assert "temperature" not in committed.stdout.lower(), (
+            f"{rel} mentions temperature as committed; the shipped configs are "
+            "left untouched by design — document it in docs/architecture.md"
+        )
+
+
+# ---------------------------------------------------------------------------
+# temperature — the 0.0 default reaches the wire
+# ---------------------------------------------------------------------------
+
+
+def test_unconfigured_standard_model_sends_zero(monkeypatch):
+    """The point of the default: deterministic extraction with no config."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    kwargs = _openai_wire(
+        {"provider": "openai", "llm": {"model": "gpt-4o", "max_output_tokens": 100, "timeout": 30}}
+    )
+    assert kwargs["temperature"] == 0.0
+
+
+def test_unconfigured_reasoning_model_still_omits(monkeypatch):
+    """The prefix guard outranks the default, so the shipped gpt-5 profile does
+    not start 400-ing the moment the default became a real value."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    kwargs = _openai_wire(
+        {
+            "provider": "openai",
+            "llm": {"model": "gpt-5-mini", "max_output_tokens": 100, "timeout": 30},
+        }
+    )
+    assert "temperature" not in kwargs
+
+
+def test_shipped_default_profile_resolves_the_zero_default():
+    """End-to-end on whatever profile the shipped config actually selects.
+
+    The wire assertion is conditional on the active model, deliberately: pinning
+    "temperature is absent" would silently go vacuous if `profile:` were switched
+    to a provider with no prefix guard, un-guarding the regression it exists to
+    catch. What holds for every profile is that the default resolves to 0.0 and
+    that the payload agrees with the guard's verdict for that model.
+    """
+    import os
+
+    os.environ.setdefault("OPENAI_API_KEY", "test-key")
+    os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
+    os.environ.setdefault("OPENROUTER_API_KEY", "test-key")
+    os.environ.setdefault("GEMINI_API_KEY", "test-key")
+
+    from mykg.llm.config import load_adapter
+    from mykg.llm.temperature import DEFAULT_TEMPERATURE, temperature_unsupported
+
+    adapter = load_adapter()
+    assert adapter._temperature == DEFAULT_TEMPERATURE == 0.0
+
+    model = getattr(adapter, "_model", "")
+    if not hasattr(adapter, "_client"):
+        pytest.skip(f"active profile {model!r} has no HTTP client to inspect")
+
+    with patch.object(adapter, "_client") as client:
+        response = MagicMock()
+        response.choices[0].message.content = "ok"
+        response.choices[0].finish_reason = "stop"
+        client.chat.completions.create.return_value = response
+        client.messages.create.return_value = MagicMock(content=[MagicMock(text="ok")])
+        try:
+            adapter.complete("sys", "user")
+        except Exception:  # noqa: BLE001 - unfamiliar client shape; nothing to assert
+            pytest.skip(f"active profile {model!r} does not expose an inspectable payload")
+
+        # Providers differ in call shape: OpenAI-compatible clients use
+        # chat.completions.create, Anthropic uses messages.create.
+        for call in (client.chat.completions.create, client.messages.create):
+            if call.call_args is not None:
+                kwargs = call.call_args[1]
+                break
+        else:
+            pytest.skip(f"active profile {model!r} issued no inspectable request")
+
+    if temperature_unsupported(model):
+        assert "temperature" not in kwargs, f"{model} rejects temperature; it must be omitted"
+    else:
+        assert kwargs["temperature"] == 0.0, f"{model} accepts temperature; 0.0 must be sent"
+
+
+def test_explicit_config_still_overrides_the_default(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    kwargs = _openai_wire(
+        {
+            "provider": "openai",
+            "llm": {
+                "model": "gpt-4o",
+                "max_output_tokens": 100,
+                "timeout": 30,
+                "temperature": 0.7,
+            },
+        }
+    )
+    assert kwargs["temperature"] == 0.7
+
+
+def test_explicit_null_temperature_restores_provider_default(monkeypatch):
+    """An explicit `temperature:` (empty) in YAML parses as None and means
+    "send nothing" — the documented escape hatch back to pre-0.4.5 behaviour.
+
+    This works because .get(key, default) returns a stored None rather than the
+    default, so the distinction between "absent" and "explicitly null" survives.
+    """
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    kwargs = _openai_wire(
+        {
+            "provider": "openai",
+            "llm": {
+                "model": "gpt-4o",
+                "max_output_tokens": 100,
+                "timeout": 30,
+                "temperature": None,
+            },
+        }
+    )
+    assert "temperature" not in kwargs

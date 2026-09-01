@@ -11,6 +11,17 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+# Sampling temperature applied when a profile does not set `llm.temperature`.
+#
+# 0.0 rather than "omit and let the provider decide": knowledge-graph extraction
+# wants the same corpus to induce the same schema and yield the same nodes and
+# edges run over run, and provider defaults (~1.0 for most chat models) actively
+# work against that. Set `llm.temperature` in a profile to override; models that
+# reject an explicit value still have it dropped by the prefix guard below, so
+# this default is safe on every shipped profile including the gpt-5 one.
+DEFAULT_TEMPERATURE: float = 0.0
+
+
 # Default model-name prefixes whose families reject an explicit temperature.
 # OpenAI reasoning models (o-series, gpt-5) return 400 unsupported_parameter:
 # "Only the default (1) value is supported".

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import mykg.config as _cfg
 from mykg.llm.adapter import LLMAdapter
+from mykg.llm.temperature import DEFAULT_TEMPERATURE
 
 if TYPE_CHECKING:
     from mykg.llm.error_gate import ErrorGate
@@ -75,7 +76,7 @@ def load_adapter(
             retry_429_max=section.get("retry_429_max", _cfg.LLM_RETRY_429_MAX),
             retry_429_base_delay=section.get("retry_429_base_delay", _cfg.LLM_RETRY_429_BASE_DELAY),
             error_gate=error_gate,
-            temperature=section.get("temperature"),
+            temperature=section.get("temperature", DEFAULT_TEMPERATURE),
         )
 
     if provider == "anthropic":
@@ -94,7 +95,7 @@ def load_adapter(
             retry_429_max=section.get("retry_429_max", _cfg.LLM_RETRY_429_MAX),
             retry_429_base_delay=section.get("retry_429_base_delay", _cfg.LLM_RETRY_429_BASE_DELAY),
             error_gate=error_gate,
-            temperature=section.get("temperature"),
+            temperature=section.get("temperature", DEFAULT_TEMPERATURE),
         )
 
     if provider == "openrouter":
@@ -113,7 +114,7 @@ def load_adapter(
             retry_429_max=section.get("retry_429_max", _cfg.LLM_RETRY_429_MAX),
             retry_429_base_delay=section.get("retry_429_base_delay", _cfg.LLM_RETRY_429_BASE_DELAY),
             error_gate=error_gate,
-            temperature=section.get("temperature"),
+            temperature=section.get("temperature", DEFAULT_TEMPERATURE),
             temperature_unsupported_prefixes=_temperature_prefixes(section),
         )
 
@@ -129,7 +130,7 @@ def load_adapter(
             retry_429_max=section.get("retry_429_max", _cfg.LLM_RETRY_429_MAX),
             retry_429_base_delay=section.get("retry_429_base_delay", _cfg.LLM_RETRY_429_BASE_DELAY),
             error_gate=error_gate,
-            temperature=section.get("temperature"),
+            temperature=section.get("temperature", DEFAULT_TEMPERATURE),
             temperature_unsupported_prefixes=_temperature_prefixes(section),
         )
 
@@ -149,7 +150,7 @@ def load_adapter(
             retry_429_max=section.get("retry_429_max", _cfg.LLM_RETRY_429_MAX),
             retry_429_base_delay=section.get("retry_429_base_delay", _cfg.LLM_RETRY_429_BASE_DELAY),
             error_gate=error_gate,
-            temperature=section.get("temperature"),
+            temperature=section.get("temperature", DEFAULT_TEMPERATURE),
         )
 
     if provider == "claude-cli":
@@ -161,7 +162,7 @@ def load_adapter(
             model=section.get("model", "auto"),
             effort=section.get("effort", "auto"),
             error_gate=error_gate,
-            temperature=section.get("temperature"),
+            temperature=section.get("temperature", DEFAULT_TEMPERATURE),
         )
 
     if provider == "agent":
@@ -193,7 +194,7 @@ def load_adapter(
             timeout=section["timeout"],
             max_tokens=section["max_output_tokens"],
             error_gate=error_gate,
-            temperature=section.get("temperature"),
+            temperature=section.get("temperature", DEFAULT_TEMPERATURE),
         )
 
     raise ValueError(f"Unknown provider in mykg_config.yaml: {provider!r}")
