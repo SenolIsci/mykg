@@ -703,6 +703,11 @@ myKG sends **`temperature: 0.0`** on every call by default
 structured-output task: the same corpus should induce the same schema and yield
 the same graph run over run, and provider defaults (~1.0) work against that.
 
+The default is resolved for all seven adapters, but only five can act on it.
+`claude-cli` and `agent` accept and discard it (see the table below), so the
+reproducibility guarantee does not extend to those two profiles — a caveat worth
+stating plainly rather than leaving implicit in the table.
+
 The key stays absent from the shipped profiles — the default lives in code, not
 config. A profile may override it, and an explicit `temperature:` (null) means
 "send nothing", restoring each provider's own default.

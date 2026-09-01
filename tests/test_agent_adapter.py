@@ -197,3 +197,19 @@ def test_agent_task_id_is_unaffected_by_temperature(tmp_path):
     a = _make_adapter(tmp_path / "a", temperature=None)
     b = _make_adapter(tmp_path / "b", temperature=0.7)
     assert a._make_task_id("sys", "user", "lbl") == b._make_task_id("sys", "user", "lbl")
+
+
+def test_agent_discards_the_zero_default(tmp_path):
+    """Same caveat as claude-cli: the default is resolved but not actionable."""
+    from mykg.llm.config import load_adapter
+    from mykg.llm.temperature import DEFAULT_TEMPERATURE
+
+    raw = {
+        "provider": "agent",
+        "llm": {"model": "claude", "max_output_tokens": 100, "timeout": 30},
+        "agent": {"inbox_dir": "in", "outbox_dir": "out", "poll_interval_seconds": 0.1},
+    }
+    adapter = load_adapter(_raw=raw, intermediate_dir=tmp_path)
+    assert adapter._temperature == DEFAULT_TEMPERATURE
+    # ...but it never reaches the envelope; pinned by
+    # test_agent_temperature_is_not_written_to_the_envelope above.
