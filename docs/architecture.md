@@ -698,9 +698,14 @@ All provider parameters — model, context window, token limits, timeout, base U
 
 #### Sampling temperature
 
-Temperature is an **internal knob, not a documented user-facing setting**. It is
-absent from the shipped profiles and from the README, so every provider applies
-its own default and payloads are unchanged from before it existed.
+myKG sends **`temperature: 0.0`** on every call by default
+(`DEFAULT_TEMPERATURE` in `llm/temperature.py`). Extraction is a
+structured-output task: the same corpus should induce the same schema and yield
+the same graph run over run, and provider defaults (~1.0) work against that.
+
+The key stays absent from the shipped profiles — the default lives in code, not
+config. A profile may override it, and an explicit `temperature:` (null) means
+"send nothing", restoring each provider's own default.
 
 The set of model families that reject an explicit temperature is a **default,
 not a hardcoded rule**. Provider lineups change faster than mykg releases, so
@@ -718,8 +723,10 @@ in the active profile. The last exists because the factory reads the `llm:`
 block uniformly; it is deliberately not advertised, so treat it as unsupported
 rather than as public API.
 
-An unset value is omitted from the request entirely rather than sent as a null,
-which is what lets one code path serve providers with very different support:
+A `None` value — whether from an explicit YAML null or from a model that
+rejects the parameter — is omitted from the request entirely rather than sent as
+a null, which is what lets one code path serve providers with very different
+support:
 
 | Provider | Temperature |
 |---|---|
