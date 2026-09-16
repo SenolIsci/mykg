@@ -3,14 +3,14 @@
   <img src="https://gcore.jsdelivr.net/gh/SenolIsci/mykg@main/docs/mykg-logo-text.svg" width="400px" style="vertical-align:middle;">
 </p>
 
-# myKG — Knowledge Graph Engine
+# myKG — The Knowledge Graph Engine
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![CI](https://github.com/SenolIsci/mykg/actions/workflows/ci.yml/badge.svg)](https://github.com/SenolIsci/mykg/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/SenolIsci/mykg/branch/main/graph/badge.svg)](https://codecov.io/gh/SenolIsci/mykg)
 [![Providers](https://img.shields.io/badge/LLM-Anthropic%20%7C%20OpenAI%20%7C%20Gemini%20%7C%20Ollama%20%7C%20OpenRouter-orange.svg)](#configuration)
-[![Agent](https://img.shields.io/badge/Agent-Claude%20Code-orange.svg)](docs/agent-mode.md)
+[![Agent](https://img.shields.io/badge/Agent-Claude%20Code-green.svg)](docs/agent-mode.md)
 [![PyPI version](https://img.shields.io/pypi/v/mykg.svg)](https://pypi.org/project/mykg/)
 [![Downloads](https://img.shields.io/pepy/dt/mykg?color=blue&label=downloads)](https://pepy.tech/project/mykg)
 [![GitHub Stars](https://img.shields.io/github/stars/SenolIsci/mykg?style=flat-square&logo=github)](https://github.com/SenolIsci/mykg/stargazers)
