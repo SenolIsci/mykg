@@ -22,6 +22,7 @@ SCHEMA_MERGE_EVENTS = frozenset(
         "attribute_synonym",
         "concept_restored",
         "concept_collapsed_by_thesaurus",
+        "type_remap",
     }
 )
 

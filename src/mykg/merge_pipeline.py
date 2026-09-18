@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from mykg.orchestrator import Step
-from mykg.steps.step_assemble import run_assemble
+from mykg.steps.step_merge_assemble import run_merge_assemble
 from mykg.steps.step_merge_manifest import run_merge_manifest
 from mykg.steps.step_merge_raw import run_merge_raw
 from mykg.steps.step_merge_reextract import run_merge_reextract
@@ -63,7 +63,7 @@ MERGE_STEPS: list[Step] = [
     # Phase 7 — assign stable IDs, deduplicate nodes/edges
     Step(
         name="assemble",
-        fn=run_assemble,
+        fn=run_merge_assemble,
         outputs=["edge_metadata.json", "nodes.json", "merge_log.json"],
     ),
     # Phase 8 — identify orphan nodes by source chunk (non-blocking)
