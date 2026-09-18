@@ -600,3 +600,402 @@ def test_review_quality_for_merge_rejects_drastic_reduction():
     adapter.complete.return_value = json.dumps(tiny)
     result = review_schema_quality_for_merge(_MULTI_CONCEPT_SCHEMA, adapter)
     assert result is _MULTI_CONCEPT_SCHEMA
+
+
+# ---------------------------------------------------------------------------
+# Structural conflict detection (parent, domain/range, attribute synonyms)
+# ---------------------------------------------------------------------------
+
+
+def _concept_proposal(ctype, parent, attributes):
+    return {
+        "concepts": [{"type": ctype, "parent": parent, "attributes": attributes}],
+        "properties": [],
+    }
+
+
+def _property_proposal(name, domain, range_, attributes=None):
+    return {
+        "concepts": [],
+        "properties": [
+            {
+                "name": name,
+                "domain": domain,
+                "range": range_,
+                "attributes": attributes or [],
+            }
+        ],
+    }
+
+
+def test_conflicting_parents_logged_and_first_seen_wins():
+    """Disagreeing parents are recorded; the first-seen parent still wins."""
+    proposals = [
+        _concept_proposal("SoftwareEngineer", "Employee", ["name"]),
+        _concept_proposal("SoftwareEngineer", "Person", ["seniority"]),
+    ]
+    schema, synonym_log = merge_proposals(proposals, {}, {}, NO_THESAURUS)
+    concept = next(c for c in schema["concepts"] if c["type"] == "SoftwareEngineer")
+    assert concept["parent"] == "Employee"
+    conflicts = [e for e in synonym_log if e["event"] == "parent_conflict"]
+    assert len(conflicts) == 1
+    assert conflicts[0]["kept"] == "Employee"
+    assert conflicts[0]["discarded"] == "Person"
+
+
+def test_agreeing_parents_log_nothing():
+    """No-regression guard: identical parents must not emit a conflict event."""
+    proposals = [
+        _concept_proposal("SoftwareEngineer", "Person", ["name"]),
+        _concept_proposal("SoftwareEngineer", "Person", ["seniority"]),
+    ]
+    _, synonym_log = merge_proposals(proposals, {}, {}, NO_THESAURUS)
+    assert synonym_log == []
+
+
+def test_parent_set_from_none_is_not_a_conflict():
+    """Filling in a previously-null parent is the existing behaviour, not a conflict."""
+    proposals = [
+        _concept_proposal("SoftwareEngineer", None, ["name"]),
+        _concept_proposal("SoftwareEngineer", "Person", ["seniority"]),
+    ]
+    schema, synonym_log = merge_proposals(proposals, {}, {}, NO_THESAURUS)
+    concept = next(c for c in schema["concepts"] if c["type"] == "SoftwareEngineer")
+    assert concept["parent"] == "Person"
+    assert [e for e in synonym_log if e["event"] == "parent_conflict"] == []
+
+
+def test_locked_class_parent_conflict_is_logged_but_never_arbitrated():
+    """A locked class owns its parent (D27) — conflict recorded, value untouched."""
+    locked = {"Vehicle": {"type": "Vehicle", "parent": "Machine", "attributes": ["year"]}}
+    idx = SynonymIndex(term_count=2)
+    idx._add_directed(idx.broader, "Vehicle", "Conveyance")
+    proposals = [_concept_proposal("Vehicle", "Conveyance", ["name"])]
+    schema, synonym_log = merge_proposals(proposals, locked, {}, idx)
+    vehicle = next(c for c in schema["concepts"] if c["type"] == "Vehicle")
+    assert vehicle["parent"] == "Machine"
+    conflicts = [e for e in synonym_log if e["event"] == "parent_conflict"]
+    assert len(conflicts) == 1
+    assert "locked" in conflicts[0]["reason"]
+
+
+def test_conflicting_domain_and_range_each_logged():
+    """A property proposed with a different domain and range logs one event per field."""
+    proposals = [
+        _property_proposal("works_at", "Person", "Organization"),
+        _property_proposal("works_at", "Organization", "Person"),
+    ]
+    schema, synonym_log = merge_proposals(proposals, {}, {}, NO_THESAURUS)
+    prop = next(p for p in schema["properties"] if p["name"] == "works_at")
+    # First-seen still wins
+    assert prop["domain"] == "Person"
+    assert prop["range"] == "Organization"
+    events = [e for e in synonym_log if e["event"] == "domain_range_conflict"]
+    assert {e["field"] for e in events} == {"domain", "range"}
+
+
+def test_agreeing_domain_range_logs_nothing():
+    """No-regression guard: matching domain/range must not emit conflict events."""
+    _, synonym_log = merge_proposals([BATCH_1, BATCH_2], {}, {}, NO_THESAURUS)
+    assert [e for e in synonym_log if e["event"] == "domain_range_conflict"] == []
+
+
+def test_omitted_domain_range_is_not_a_conflict():
+    """A proposal that omits domain/range must not be reported as disagreeing."""
+    proposals = [
+        _property_proposal("works_at", "Person", "Organization"),
+        _property_proposal("works_at", None, None),
+    ]
+    _, synonym_log = merge_proposals(proposals, {}, {}, NO_THESAURUS)
+    assert [e for e in synonym_log if e["event"] == "domain_range_conflict"] == []
+
+
+def test_attribute_synonyms_flagged_but_both_retained():
+    """Near-duplicate attributes are flagged and both survive — never collapsed."""
+    idx = SynonymIndex(term_count=2)
+    idx._add(idx.close_matches, "birth_date", "date_of_birth")
+    proposals = [
+        _concept_proposal("Person", None, ["name", "birth_date"]),
+        _concept_proposal("Person", None, ["date_of_birth"]),
+    ]
+    schema, synonym_log = merge_proposals(proposals, {}, {}, idx)
+    person = next(c for c in schema["concepts"] if c["type"] == "Person")
+    assert "birth_date" in person["attributes"]
+    assert "date_of_birth" in person["attributes"]
+    events = [e for e in synonym_log if e["event"] == "attribute_synonym"]
+    assert len(events) == 1
+    assert events[0]["owner"] == "Person"
+
+
+def test_exact_duplicate_attributes_are_not_flagged():
+    """No-regression guard: an exact repeat is deduped silently, as before."""
+    _, synonym_log = merge_proposals([BATCH_1, BATCH_2], {}, {}, NO_THESAURUS)
+    assert [e for e in synonym_log if e["event"] == "attribute_synonym"] == []
+
+
+# ---------------------------------------------------------------------------
+# skos:broader parent arbitration
+# ---------------------------------------------------------------------------
+
+
+def _broader_index():
+    idx = SynonymIndex(term_count=2)
+    idx._add_directed(idx.broader, "SoftwareEngineer", "Person")
+    return idx
+
+
+def test_broader_resolves_conflict_when_incoming_wins():
+    """The thesaurus-declared parent is adopted even though it arrived second."""
+    proposals = [
+        _concept_proposal("SoftwareEngineer", "Employee", ["name"]),
+        _concept_proposal("SoftwareEngineer", "Person", ["seniority"]),
+    ]
+    schema, synonym_log = merge_proposals(proposals, {}, {}, _broader_index())
+    concept = next(c for c in schema["concepts"] if c["type"] == "SoftwareEngineer")
+    assert concept["parent"] == "Person"
+    resolved = [e for e in synonym_log if e["event"] == "parent_conflict_resolved"]
+    assert len(resolved) == 1
+    assert resolved[0]["resolved_to"] == "Person"
+    assert resolved[0]["rejected"] == "Employee"
+    assert resolved[0]["via"] == "skos:broader"
+
+
+def test_broader_resolution_is_order_independent():
+    """Reversing proposal order yields the same resolved parent."""
+    proposals = [
+        _concept_proposal("SoftwareEngineer", "Person", ["seniority"]),
+        _concept_proposal("SoftwareEngineer", "Employee", ["name"]),
+    ]
+    schema, synonym_log = merge_proposals(proposals, {}, {}, _broader_index())
+    concept = next(c for c in schema["concepts"] if c["type"] == "SoftwareEngineer")
+    assert concept["parent"] == "Person"
+    assert [e for e in synonym_log if e["event"] == "parent_conflict_resolved"]
+
+
+def test_broader_ambiguous_match_falls_back_to_first_seen():
+    """When both candidates are declared broader terms, never guess."""
+    idx = SynonymIndex(term_count=3)
+    idx._add_directed(idx.broader, "SoftwareEngineer", "Person")
+    idx._add_directed(idx.broader, "SoftwareEngineer", "Employee")
+    proposals = [
+        _concept_proposal("SoftwareEngineer", "Employee", ["name"]),
+        _concept_proposal("SoftwareEngineer", "Person", ["seniority"]),
+    ]
+    schema, synonym_log = merge_proposals(proposals, {}, {}, idx)
+    concept = next(c for c in schema["concepts"] if c["type"] == "SoftwareEngineer")
+    assert concept["parent"] == "Employee"
+    assert [e for e in synonym_log if e["event"] == "parent_conflict"]
+    assert [e for e in synonym_log if e["event"] == "parent_conflict_resolved"] == []
+
+
+def test_broader_for_unrelated_concept_is_ignored():
+    """A broader entry naming a different concept must not arbitrate this one."""
+    idx = SynonymIndex(term_count=2)
+    idx._add_directed(idx.broader, "Vehicle", "Machine")
+    proposals = [
+        _concept_proposal("SoftwareEngineer", "Employee", ["name"]),
+        _concept_proposal("SoftwareEngineer", "Person", ["seniority"]),
+    ]
+    schema, synonym_log = merge_proposals(proposals, {}, {}, idx)
+    concept = next(c for c in schema["concepts"] if c["type"] == "SoftwareEngineer")
+    assert concept["parent"] == "Employee"
+    assert [e for e in synonym_log if e["event"] == "parent_conflict"]
+
+
+def test_no_thesaurus_falls_back_to_first_seen():
+    """Without a thesaurus there is nothing to arbitrate with."""
+    proposals = [
+        _concept_proposal("SoftwareEngineer", "Employee", ["name"]),
+        _concept_proposal("SoftwareEngineer", "Person", ["seniority"]),
+    ]
+    schema, synonym_log = merge_proposals(proposals, {}, {}, NO_THESAURUS)
+    concept = next(c for c in schema["concepts"] if c["type"] == "SoftwareEngineer")
+    assert concept["parent"] == "Employee"
+    assert [e for e in synonym_log if e["event"] == "parent_conflict_resolved"] == []
+
+
+def test_broader_never_invents_a_parent_without_conflict():
+    """Arbitration is strictly a tie-breaker — it must not set an unconflicted parent."""
+    proposals = [_concept_proposal("SoftwareEngineer", "Employee", ["name"])]
+    schema, synonym_log = merge_proposals(proposals, {}, {}, _broader_index())
+    concept = next(c for c in schema["concepts"] if c["type"] == "SoftwareEngineer")
+    assert concept["parent"] == "Employee"
+    assert synonym_log == []
+
+
+# ---------------------------------------------------------------------------
+# Merge-path concept preservation (merge-graphs only; extract path unaffected)
+# ---------------------------------------------------------------------------
+
+_MERGE_INPUT = {
+    "concepts": [
+        {"type": "Person", "parent": None, "attributes": ["name"]},
+        {"type": "Employee", "parent": "Person", "attributes": ["join_date"]},
+        {"type": "Organization", "parent": None, "attributes": ["name"]},
+    ],
+    "properties": [
+        {"name": "works_at", "domain": "Person", "range": "Organization", "attributes": []}
+    ],
+}
+
+
+def _drops_employee_adapter():
+    """Adapter whose response omits the Employee concept entirely."""
+    improved = {
+        "concepts": [
+            {"type": "Person", "parent": None, "attributes": ["name", "join_date"]},
+            {"type": "Organization", "parent": None, "attributes": ["name"]},
+        ],
+        "properties": _MERGE_INPUT["properties"],
+    }
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps(improved)
+    return adapter
+
+
+def test_merge_quality_restores_concept_deleted_without_thesaurus():
+    """With no thesaurus, a removed concept is restored with its original parent."""
+    log: list[dict] = []
+    result = review_schema_quality_for_merge(
+        _MERGE_INPUT, _drops_employee_adapter(), thesaurus=None, log=log
+    )
+    employee = next(c for c in result["concepts"] if c["type"] == "Employee")
+    assert employee["parent"] == "Person"
+    assert employee["attributes"] == ["join_date"]
+    restored = [e for e in log if e["event"] == "concept_restored"]
+    assert len(restored) == 1
+    assert restored[0]["concept"] == "Employee"
+
+
+def test_merge_quality_allows_deletion_sanctioned_by_thesaurus():
+    """A SKOS-related pair may still collapse — the exemption is per pair."""
+    idx = SynonymIndex(term_count=2)
+    idx._add(idx.close_matches, "Employee", "Person")
+    log: list[dict] = []
+    result = review_schema_quality_for_merge(
+        _MERGE_INPUT, _drops_employee_adapter(), thesaurus=idx, log=log
+    )
+    assert [c["type"] for c in result["concepts"]] == ["Person", "Organization"]
+    collapsed = [e for e in log if e["event"] == "concept_collapsed_by_thesaurus"]
+    assert len(collapsed) == 1
+    assert collapsed[0]["collapsed_into"] == "Person"
+    assert [e for e in log if e["event"] == "concept_restored"] == []
+
+
+def test_unrelated_thesaurus_pair_does_not_license_other_deletions():
+    """A thesaurus relating other terms must not permit an unsanctioned removal."""
+    idx = SynonymIndex(term_count=2)
+    idx._add(idx.close_matches, "Org", "Organisation")
+    log: list[dict] = []
+    result = review_schema_quality_for_merge(
+        _MERGE_INPUT, _drops_employee_adapter(), thesaurus=idx, log=log
+    )
+    assert any(c["type"] == "Employee" for c in result["concepts"])
+    assert [e["event"] for e in log if e["event"] == "concept_restored"]
+
+
+def test_restored_concept_drops_dangling_parent():
+    """A restored concept whose parent also vanished must not dangle."""
+    improved = {
+        "concepts": [{"type": "Organization", "parent": None, "attributes": ["name"]}],
+        "properties": [],
+    }
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps(improved)
+    log: list[dict] = []
+    result = review_schema_quality_for_merge(
+        _MERGE_INPUT, adapter, thesaurus=None, log=log
+    )
+    by_type = {c["type"]: c for c in result["concepts"]}
+    assert by_type["Employee"]["parent"] in (None, "Person")
+    for concept in result["concepts"]:
+        if concept.get("parent"):
+            assert concept["parent"] in by_type
+
+
+def test_merge_prompt_lists_concepts_that_must_survive():
+    """The preservation block names every concept and reaches the system prompt."""
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps(_MERGE_INPUT)
+    review_schema_quality_for_merge(_MERGE_INPUT, adapter, thesaurus=None, log=[])
+    system = adapter.complete.call_args[0][0]
+    assert "CONCEPTS THAT MUST SURVIVE" in system
+    assert "Employee" in system
+    assert "Employee is-a Person" in system
+
+
+def test_merge_prompt_names_thesaurus_sanctioned_pairs():
+    """With a thesaurus, the block enumerates the pairs that may collapse."""
+    idx = SynonymIndex(term_count=2)
+    idx._add(idx.close_matches, "Employee", "Person")
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps(_MERGE_INPUT)
+    review_schema_quality_for_merge(_MERGE_INPUT, adapter, thesaurus=idx, log=[])
+    system = adapter.complete.call_args[0][0]
+    assert "Employee / Person" in system or "Person / Employee" in system
+
+
+def _person_with_attrs(attrs):
+    return {
+        "concepts": [
+            {"type": "Person", "parent": None, "attributes": attrs},
+            {"type": "Employee", "parent": "Person", "attributes": ["join_date"]},
+            {"type": "Organization", "parent": None, "attributes": ["name"]},
+        ],
+        "properties": _MERGE_INPUT["properties"],
+    }
+
+
+def test_merge_quality_flags_formatting_variant_attributes():
+    """Formatting variants (birthDate / birth_date) are flagged and both retained."""
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps(
+        _person_with_attrs(["name", "birth_date", "birthDate"])
+    )
+    log: list[dict] = []
+    result = review_schema_quality_for_merge(
+        _MERGE_INPUT, adapter, thesaurus=None, log=log
+    )
+    person = next(c for c in result["concepts"] if c["type"] == "Person")
+    assert "birth_date" in person["attributes"]
+    assert "birthDate" in person["attributes"]
+    flagged = [e for e in log if e["event"] == "attribute_synonym"]
+    assert len(flagged) == 1
+    assert flagged[0]["owner"] == "Person"
+
+
+def test_semantic_attribute_variants_need_a_thesaurus():
+    """headquarters vs headquarters_location differ only semantically.
+
+    synonym_match normalises case and delimiters, so it cannot relate them on its
+    own; a SKOS thesaurus is required. Documents the real limit of the detector.
+    """
+    attrs = ["name", "headquarters", "headquarters_location"]
+    adapter = MagicMock()
+    adapter.complete.return_value = json.dumps(_person_with_attrs(attrs))
+    log: list[dict] = []
+    review_schema_quality_for_merge(_MERGE_INPUT, adapter, thesaurus=None, log=log)
+    assert [e for e in log if e["event"] == "attribute_synonym"] == []
+
+    idx = SynonymIndex(term_count=2)
+    idx._add(idx.close_matches, "headquarters", "headquarters_location")
+    adapter2 = MagicMock()
+    adapter2.complete.return_value = json.dumps(_person_with_attrs(attrs))
+    log2: list[dict] = []
+    result = review_schema_quality_for_merge(
+        _MERGE_INPUT, adapter2, thesaurus=idx, log=log2
+    )
+    person = next(c for c in result["concepts"] if c["type"] == "Person")
+    assert "headquarters" in person["attributes"]
+    assert "headquarters_location" in person["attributes"]
+    assert [e for e in log2 if e["event"] == "attribute_synonym"]
+
+
+def test_merge_harmonize_also_restores_deleted_concepts():
+    """The harmonize stage carries the same guard as the quality stage."""
+    log: list[dict] = []
+    result = harmonize_schema_for_merge(
+        _MERGE_INPUT, [_MERGE_INPUT], _drops_employee_adapter(), thesaurus=None, log=log
+    )
+    assert any(c["type"] == "Employee" for c in result["concepts"])
+    assert [e for e in log if e["event"] == "concept_restored"]

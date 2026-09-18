@@ -665,7 +665,10 @@ mykg extract-graph my_notes/ --thesaurus ontology/terms.skos.ttl
 
 - `skos:exactMatch` → silent collapse
 - `skos:closeMatch` → collapse with warning in `merge_log.json`
-- `skos:broader` / `skos:narrower` → advisory hints only
+- `skos:broader` → breaks ties when two proposals give a concept different parents; the declared broader term wins regardless of which proposal came first
+- `skos:narrower` → advisory hints only
+
+Name matching alone can't tell that two proposals disagree about the *structure* underneath a shared name, so those disagreements are recorded rather than silently dropped. `merge_log.json` (and `merge_manifest.json` for `merge-graphs`) gains a `parent_conflict`, `parent_conflict_resolved`, `domain_range_conflict`, or `attribute_synonym` entry whenever two proposals collapse onto one name but differ on a parent, a domain/range, or an attribute spelling. The first-seen value still wins — the log tells you what was discarded.
 
 ### Website / Repo Fetching (`mykg fetch-web`)
 

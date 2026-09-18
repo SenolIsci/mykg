@@ -93,7 +93,7 @@ The merge pipeline (`mykg merge-graphs`) runs 12 steps. `schema_validate`, `huma
 | # | Step | LLM | What it does | Key outputs |
 |---|---|---|---|---|
 | 1 | `merge_setup` | — | Loads both source sessions, prefixes all file keys with their session name (e.g. `session_a/notes.md`), copies shard files into the new session, and records full file provenance | `source_map.json` |
-| 2 | `merge_schema` | ✓ (3 calls) | Runs the same three-stage schema merge chain as Pass 1: algorithmic union of both schemas, LLM harmonization, LLM quality review | `schema.json`, `schema.ttl`, `schema_history/` |
+| 2 | `merge_schema` | ✓ (2 calls) | Algorithmic union of both schemas, then LLM harmonization and LLM quality review using merge-specific, concept-preserving prompts | `schema.json`, `schema.ttl`, `schema_history/` |
 | 3 | `schema_validate` | — | Reused from extract pipeline | `schema_validate.done` |
 | 4 | `human_review` | — | Optional gate; controlled by `merge_graphs.human_review` config flag | `schema_approved.flag` |
 | 5 | `schema_flatten` | — | Reused from extract pipeline | `flattened_schema.json` |
@@ -315,7 +315,7 @@ As each batch's LLM call resolves — success or failure — its result is writt
 
 **Algorithmic merge.** All batch proposals are merged without another LLM call. Exact duplicates are collapsed first, then near-duplicates are resolved using string normalization and, if you supplied a SKOS thesaurus, vocabulary-aware synonym matching. Attributes from duplicate entries are unioned. If you supplied a locked base schema, those classes and properties are protected — the LLM cannot rename, remove, or restructure them.
 
-**Harmonization.** A single LLM call sees both the merged schema and the raw batch proposals. It collapses semantic near-duplicates the algorithmic step missed — for example, collapsing "MilitaryUnit" and "ArmyUnit" into one canonical type. The original is kept if the response is unparseable. The same call is used in the merge pipeline via `harmonize_schema_for_merge`.
+**Harmonization.** A single LLM call sees both the merged schema and the raw batch proposals. It collapses semantic near-duplicates the algorithmic step missed — for example, collapsing "MilitaryUnit" and "ArmyUnit" into one canonical type. The original is kept if the response is unparseable. The merge pipeline has its own variant, `harmonize_schema_for_merge`, with a separate prompt: it relates near-duplicates by hierarchy instead of collapsing them, and never deletes a concept (see Cross-Session Merge below). The two are intentionally distinct — this Pass 1 stage still collapses.
 
 **Quality review.** A second LLM call removes over-narrow named-entity singletons (a concept like "FourthAirForce" should be an instance of MilitaryUnit, not a concept type), fixes singleton types with no meaningful abstraction, and ensures every concept has at least a name attribute.
 
@@ -486,7 +486,18 @@ On large corpora, the total number of names across all concept types can easily 
 
 **File namespacing.** Before any merging begins, all file-keyed structures from both sessions are prefixed with their session name — for example, `session_a/notes.md` and `session_b/notes.md`. This makes same-filename documents from different sessions structurally distinct, so node deduplication can work correctly across both.
 
-**Schema merge.** Both session schemas are treated as batch proposals and run through the same three-stage chain as Pass 1 schema induction: algorithmic merge, harmonization, and quality review.
+**Schema merge.** Both session schemas are treated as proposals and run through a three-stage chain: algorithmic merge (no LLM), then LLM harmonization, then LLM quality review. The two LLM stages use merge-specific prompts and merge-specific functions (`harmonize_schema_for_merge`, `review_schema_quality_for_merge`) — they are deliberately *not* the same code as Pass 1's stages, so the concept-preservation rules below apply to `merge-graphs` alone and `extract-graph` behaviour is unchanged.
+
+**Concept preservation.** The merge quality stage used to delete concepts — folding `Employee` into `Person`, `Company` into `Organization` — which destroyed the is-a hierarchy the algorithmic merge had just built. Because stable node IDs encode their concept type as a prefix and are assigned during assembly, deleting a class strands every instance that names it: the graph ends up with nodes whose `rdf:type` has no declared `rdfs:Class`, and one entity split across two node IDs. Two mechanisms now prevent this:
+
+- **Prompt rules.** `merge_quality_system.txt` and `merge_harmonize_system.txt` instruct the model to *re-parent* a redundant or over-specific concept rather than remove it. A generated block naming every concept that must survive, along with the current is-a edges, is appended to both system prompts — the same injection mechanism as the locked base-schema block, but always active on the merge path.
+- **Code guard.** `_restore_deleted_concepts` re-inserts any concept missing from the LLM's response, with its original parent and attributes. If the restored concept's parent also vanished, the parent is reset to `null`, since the validator requires every non-null parent to name a declared class.
+
+**The guard is conditional on the thesaurus, per concept pair.** A removal is honoured only when a SKOS thesaurus declares `skos:exactMatch` or `skos:closeMatch` between the missing concept and one that survives — the collapse then proceeds as before and is logged as `concept_collapsed_by_thesaurus`. A thesaurus that relates unrelated terms does not license other deletions. With no `--thesaurus`, every deletion is restored and logged as `concept_restored`. This keeps genuine vocabulary-backed collapsing working while blocking the model from guessing.
+
+**Attribute conflicts.** After the LLM stages, each concept's final attribute list is scanned for near-duplicates and any pair is recorded as an `attribute_synonym` event. Both names are always kept — the merge prompts forbid dropping an attribute that either session validated. Note the real limit of the detector: `synonym_match` normalizes case and delimiters, so it relates formatting variants (`birthDate` / `birth_date`) but not semantic ones (`headquarters` / `headquarters_location`), which need a thesaurus entry to be detected.
+
+All of these events are appended to the merge manifest's `schema_synonym_log`, alongside the structural-conflict events from the algorithmic merge.
 
 **Re-extraction.** When the merged schema introduces relationship types that were absent from one session's original schema, those relationship types have no instances in that session's files. The pipeline offers three strategies: accept the gaps without any re-extraction, surgically re-extract only the chunks containing nodes of the new property's domain or range type, or re-run Pass 2 on all files from both sessions.
 
@@ -499,7 +510,7 @@ The merge pipeline reuses all extract pipeline steps from schema validation onwa
 | File | Written by | Contents |
 |---|---|---|
 | `intermediate/source_map.json` | `merge_setup` | Maps every namespaced file key (`session_alias/filename`) to provenance: original session name, alias, SHA256 content hash, and role (`input_a` / `input_b`) |
-| `intermediate/merge_manifest.json` | `merge_manifest` | Audit record: source session names, merge timestamp, schema synonym collapse events, re-extraction strategy used, and schema deltas for each source session |
+| `intermediate/merge_manifest.json` | `merge_manifest` | Audit record: source session names, merge timestamp, re-extraction strategy used, schema deltas for each source session, and `schema_synonym_log` — synonym collapses plus the structural-conflict events (`parent_conflict`, `domain_range_conflict`) and concept-preservation events (`concept_restored`, `concept_collapsed_by_thesaurus`, `attribute_synonym`) |
 
 All other intermediate files (`schema.json`, `flattened_schema.json`, `raw_extractions.json`, `edge_metadata.json`, `nodes.json`, `merge_log.json`) use the same format as the extract pipeline and are produced by reused steps.
 

@@ -8,12 +8,13 @@ Your task: produce a single harmonized schema.
 
 WHAT TO DO
 ==========
-A. COLLAPSE NEAR-DUPLICATE CONCEPTS
+A. RELATE NEAR-DUPLICATE CONCEPTS BY HIERARCHY
    Identify concept types that represent the same real-world category but have slightly
-   different names (e.g. "MilitaryUnit" / "ArmyUnit" / "MilitaryFormation"). Keep the
-   most general or most frequently used name; merge their attributes (take the full union
-   of all attributes from every collapsed entry — do not drop any). Update domain/range
-   in all properties that reference the removed names.
+   different names (e.g. "MilitaryUnit" / "ArmyUnit" / "MilitaryFormation"). Do NOT delete
+   any of them. Choose the most general name as the parent and set the others' "parent" to
+   it, so the relationship is expressed as an is-a hierarchy rather than a deletion.
+   Each concept keeps its own attributes; do not move attributes up to the parent.
+   Leave domain/range references intact — every name they mention still exists.
 
 B. COLLAPSE NEAR-DUPLICATE PROPERTIES
    Identify properties with different names but the same semantic meaning
@@ -24,9 +25,10 @@ B. COLLAPSE NEAR-DUPLICATE PROPERTIES
    duplicates regardless of name difference. Collapse them — keep the more general or
    more common name.
 
-C. LIFT MISCLASSIFIED INSTANCES TO PROPER TYPES
+C. GIVE MISCLASSIFIED INSTANCES A PROPER PARENT
    If a concept looks like a named entity rather than a reusable category (e.g. "FourthAirForce"),
-   remove it and ensure a general parent type exists (e.g. "MilitaryUnit").
+   ensure a general type exists (e.g. "MilitaryUnit") and set the specific concept's "parent"
+   to it. Keep the specific concept — do not remove it.
 
 D. UNIFY ATTRIBUTE NAMING
    Across all concepts and properties, standardize attribute names for the same field:

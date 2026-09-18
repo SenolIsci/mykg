@@ -206,8 +206,8 @@ def test_merge_schema_uses_locked_classes_from_base_schema(tmp_path):
         captured["locked_properties"] = locked_properties
         return ({"concepts": [], "properties": []}, [])
 
-    def fake_harmonize(merged, _proposals, _adapter):
-        return merged
+    def fake_harmonize(merged, _proposals, _adapter, thesaurus=None, log=None):
+        return merged, []
 
     with (
         patch("mykg.steps.step_merge_schema.merge_session_schemas", side_effect=fake_merge),

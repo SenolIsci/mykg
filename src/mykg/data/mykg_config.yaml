@@ -183,7 +183,7 @@ profiles:
         enabled: true           # generate walkthrough.md after each extract run; set false to skip
       merge_graphs:
         reextraction_strategy: surgical  # none | surgical | full — controls re-extraction when merged schema has new properties absent from a source session
-        surgical_top_k_chunks_per_property: 5  # 0 = no cap; >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
+        surgical_top_k_chunks_per_property: 1  # 0 = DISABLED (no re-extraction at all); >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
         human_review: false             # pause for human review of merged schema; overridden by --human-review CLI flag
         orphan_pass_max_restarts: 1     # max schema-gap restart loops during merge orphan pass (0 = disabled)
       append:
@@ -359,7 +359,7 @@ profiles:
         enabled: true           # generate walkthrough.md after each extract run; set false to skip
       merge_graphs:
         reextraction_strategy: surgical  # none | surgical | full — controls re-extraction when merged schema has new properties absent from a source session
-        surgical_top_k_chunks_per_property: 5  # 0 = no cap; >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
+        surgical_top_k_chunks_per_property: 1  # 0 = DISABLED (no re-extraction at all); >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
         human_review: false             # pause for human review of merged schema; overridden by --human-review CLI flag
         orphan_pass_max_restarts: 1     # max schema-gap restart loops during merge orphan pass (0 = disabled)
       append:
@@ -534,7 +534,7 @@ profiles:
         enabled: true           # generate walkthrough.md after each extract run; set false to skip
       merge_graphs:
         reextraction_strategy: surgical  # none | surgical | full — controls re-extraction when merged schema has new properties absent from a source session
-        surgical_top_k_chunks_per_property: 5  # 0 = no cap; >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
+        surgical_top_k_chunks_per_property: 1  # 0 = DISABLED (no re-extraction at all); >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
         human_review: false             # pause for human review of merged schema; overridden by --human-review CLI flag
         orphan_pass_max_restarts: 1     # max schema-gap restart loops during merge orphan pass (0 = disabled)
       append:
@@ -716,7 +716,7 @@ profiles:
         enabled: true           # generate walkthrough.md after each extract run; set false to skip
       merge_graphs:
         reextraction_strategy: surgical  # none | surgical | full — controls re-extraction when merged schema has new properties absent from a source session
-        surgical_top_k_chunks_per_property: 0  # 0 = no cap; >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
+        surgical_top_k_chunks_per_property: 1  # 0 = DISABLED (no re-extraction at all); >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
         human_review: false             # pause for human review of merged schema; overridden by --human-review CLI flag
         orphan_pass_max_restarts: 1     # max schema-gap restart loops during merge orphan pass (0 = disabled)
       append:
@@ -911,7 +911,7 @@ profiles:
         enabled: true           # generate walkthrough.md after each extract run; set false to skip
       merge_graphs:
         reextraction_strategy: surgical  # none | surgical | full — controls re-extraction when merged schema has new properties absent from a source session
-        surgical_top_k_chunks_per_property: 0  # 0 = no cap; >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
+        surgical_top_k_chunks_per_property: 1  # 0 = DISABLED (no re-extraction at all); >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
         human_review: false             # pause for human review of merged schema; overridden by --human-review CLI flag
         orphan_pass_max_restarts: 1     # max schema-gap restart loops during merge orphan pass (0 = disabled)
       append:
@@ -1089,7 +1089,7 @@ profiles:
         enabled: true           # generate walkthrough.md after each extract run; set false to skip
       merge_graphs:
         reextraction_strategy: surgical  # none | surgical | full — controls re-extraction when merged schema has new properties absent from a source session
-        surgical_top_k_chunks_per_property: 0  # 0 = no cap; >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
+        surgical_top_k_chunks_per_property: 1  # 0 = DISABLED (no re-extraction at all); >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
         human_review: false             # pause for human review of merged schema; overridden by --human-review CLI flag
         orphan_pass_max_restarts: 1     # max schema-gap restart loops during merge orphan pass (0 = disabled)
       append:
@@ -1257,7 +1257,7 @@ profiles:
         enabled: true
       merge_graphs:
         reextraction_strategy: surgical  # none | surgical | full — controls re-extraction when merged schema has new properties absent from a source session
-        surgical_top_k_chunks_per_property: 0
+        surgical_top_k_chunks_per_property: 1  # 0 = DISABLED (no re-extraction at all); >0 = top-K chunks per new property (ranked by domain/range node co-occurrence)
         human_review: false
         orphan_pass_max_restarts: 0
       append:

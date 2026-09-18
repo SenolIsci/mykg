@@ -214,6 +214,52 @@ def test_step_assemble_writes_merge_log(tmp_path):
     assert isinstance(data, list)
 
 
+def test_step_assemble_preserves_schema_merge_events(tmp_path):
+    """Conflict events written by pass1 survive assemble; unknown events are dropped."""
+    import json
+    from unittest.mock import MagicMock
+
+    from mykg.steps.step_assemble import run_assemble
+
+    raw = {
+        "file_a.md": {
+            "nodes": [
+                {
+                    "id": "person-alice",
+                    "type": "Person",
+                    "confidence": 0.9,
+                    "attributes": {"name": {"value": "Alice", "confidence": 0.9}},
+                }
+            ],
+            "edges": [],
+        }
+    }
+    (tmp_path / "raw_extractions.json").write_text(json.dumps(raw))
+    seeded = [
+        {"event": "synonym_collapse", "kept": "Org", "discarded": "Organisation"},
+        {"event": "parent_conflict", "concept": "SoftwareEngineer", "kept": "Employee"},
+        {"event": "parent_conflict_resolved", "concept": "SoftwareEngineer"},
+        {"event": "domain_range_conflict", "property": "works_at", "field": "domain"},
+        {"event": "attribute_synonym", "owner": "Person", "kept": "birth_date"},
+        {"event": "totally_unknown_event", "detail": "should be dropped"},
+    ]
+    (tmp_path / "merge_log.json").write_text(json.dumps(seeded))
+
+    ctx = MagicMock()
+    ctx.intermediate_dir = tmp_path
+    run_assemble(ctx)
+
+    data = json.loads((tmp_path / "merge_log.json").read_text())
+    events = {e["event"] for e in data}
+    assert "synonym_collapse" in events
+    assert "parent_conflict" in events
+    assert "parent_conflict_resolved" in events
+    assert "domain_range_conflict" in events
+    assert "attribute_synonym" in events
+    # The whitelist is still a whitelist, not a passthrough
+    assert "totally_unknown_event" not in events
+
+
 def test_dedup_nodes_confidence_agg_max():
     """deduplicate_nodes with agg='max' takes maximum confidence, not mean."""
     raw = {

@@ -10,6 +10,21 @@ from mykg.utility.atomic_io import atomic_write_json
 
 log = get("mykg.steps.assemble")
 
+# Schema-merge audit events written by pass1 into merge_log.json. Assemble
+# rewrites that file on every run, so any event type absent from this set is
+# dropped — register new ones here.
+SCHEMA_MERGE_EVENTS = frozenset(
+    {
+        "synonym_collapse",
+        "parent_conflict",
+        "parent_conflict_resolved",
+        "domain_range_conflict",
+        "attribute_synonym",
+        "concept_restored",
+        "concept_collapsed_by_thesaurus",
+    }
+)
+
 
 def _annotate_aliases(raw_with_ids: dict, alias_index: dict[str, dict[str, list[str]]]) -> None:
     """Attach aliases list to each node based on the inverted normalization map.
@@ -52,15 +67,18 @@ def run_assemble(ctx: PipelineContext) -> None:
     atomic_write_json(ctx.intermediate_dir / "edge_metadata.json", ctx.edge_metadata)
     atomic_write_json(ctx.intermediate_dir / "nodes.json", ctx.nodes)
 
-    # Preserve synonym_collapse events written by pass1 (D21), then append
-    # dedup events from this assembly run. On Re-entry C (--from-step assemble),
-    # pass1 is skipped but its synonym events must survive in the audit log.
+    # Preserve schema-merge events written by pass1 (D21) — synonym collapses and
+    # structural conflicts — then append dedup events from this assembly run. On
+    # Re-entry C (--from-step assemble), pass1 is skipped but these must survive
+    # in the audit log.
     merge_log_path = ctx.intermediate_dir / "merge_log.json"
     synonym_events: list[dict] = []
     if merge_log_path.exists():
         try:
             existing = json.loads(merge_log_path.read_text(encoding="utf-8"))
-            synonym_events = [e for e in existing if e.get("event") == "synonym_collapse"]
+            synonym_events = [
+                e for e in existing if e.get("event") in SCHEMA_MERGE_EVENTS
+            ]
         except (json.JSONDecodeError, ValueError):
             synonym_events = []
     merge_log = synonym_events + node_log + edge_log

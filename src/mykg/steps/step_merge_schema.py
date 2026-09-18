@@ -34,11 +34,13 @@ def run_merge_schema(ctx: MergeContext) -> None:
         locked_classes,
         locked_properties,
     )
-    merged_schema = harmonize_merged_schema(
+    merged_schema, llm_events = harmonize_merged_schema(
         merged_schema,
         [ctx.session_a.schema, ctx.session_b.schema],
         ctx.adapter,
+        thesaurus=ctx.thesaurus,
     )
+    synonym_log = synonym_log + llm_events
 
     write_schema(merged_schema, ctx.intermediate_dir, TRIGGER_SESSION_MERGE)
 
