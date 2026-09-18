@@ -389,11 +389,14 @@ def test_harmonize_merged_schema_uses_merge_specific_functions():
         patch("mykg.merger.harmonize_schema_for_merge", return_value=harmonized) as mock_harm,
         patch("mykg.merger.review_schema_quality_for_merge", return_value=harmonized) as mock_qual,
     ):
-        result = harmonize_merged_schema(schema, proposals, adapter)
+        result, events = harmonize_merged_schema(schema, proposals, adapter)
 
-    mock_harm.assert_called_once_with(schema, proposals, adapter)
-    mock_qual.assert_called_once_with(harmonized, adapter)
+    mock_harm.assert_called_once_with(
+        schema, proposals, adapter, thesaurus=None, log=events
+    )
+    mock_qual.assert_called_once_with(harmonized, adapter, thesaurus=None, log=events)
     assert result is harmonized
+    assert events == []
 
 
 def test_harmonize_merged_schema_skips_llm_when_no_adapter():
@@ -402,11 +405,12 @@ def test_harmonize_merged_schema_skips_llm_when_no_adapter():
         patch("mykg.merger.harmonize_schema_for_merge") as mock_harm,
         patch("mykg.merger.review_schema_quality_for_merge") as mock_qual,
     ):
-        result = harmonize_merged_schema(schema, [], None)
+        result, events = harmonize_merged_schema(schema, [], None)
 
     mock_harm.assert_not_called()
     mock_qual.assert_not_called()
     assert result is schema
+    assert events == []
 
 
 def test_build_source_map_same_filename(tmp_path):

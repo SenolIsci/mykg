@@ -3,6 +3,7 @@ from __future__ import annotations
 from mykg.exporter import export_ttl
 from mykg.logging import get
 from mykg.merge_context import MergeContext
+from mykg.merge_type_remap import build_type_remap, write_type_remap
 from mykg.merger import harmonize_merged_schema, merge_session_schemas
 from mykg.schema_history import TRIGGER_SESSION_MERGE, write_schema
 
@@ -34,16 +35,23 @@ def run_merge_schema(ctx: MergeContext) -> None:
         locked_classes,
         locked_properties,
     )
-    merged_schema = harmonize_merged_schema(
+    merged_schema, llm_events = harmonize_merged_schema(
         merged_schema,
         [ctx.session_a.schema, ctx.session_b.schema],
         ctx.adapter,
+        thesaurus=ctx.thesaurus,
     )
+    synonym_log = synonym_log + llm_events
 
     write_schema(merged_schema, ctx.intermediate_dir, TRIGGER_SESSION_MERGE)
 
     ttl = export_ttl(merged_schema, [], {})
     (ctx.intermediate_dir / "schema.ttl").write_text(ttl, encoding="utf-8")
+
+    # A collapsed concept leaves the schema but its instances keep naming it, so
+    # record the remap here — merge_manifest.json is written long after assemble.
+    type_remap = build_type_remap(synonym_log, merged_schema)
+    write_type_remap(type_remap, ctx.intermediate_dir, source_events=len(synonym_log))
 
     ctx.synonym_log = synonym_log
     log.info(

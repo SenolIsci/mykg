@@ -419,20 +419,36 @@ def harmonize_merged_schema(
     schema: dict,
     proposals: list[dict],
     adapter: LLMAdapter | None,
-) -> dict:
+    thesaurus: SynonymIndex | None = None,
+) -> tuple[dict, list[dict]]:
     """Harmonize the merged schema using merge-specific LLM prompts.
 
     Uses merge-specific prompts that preserve the full attribute union from both
     source sessions. Calls harmonize_schema_for_merge then review_schema_quality_for_merge.
     If adapter is None, skips both LLM calls and returns schema unchanged (dry-run mode).
+
+    Returns (schema, events) where events records concepts restored after the LLM
+    removed them, thesaurus-sanctioned collapses, and near-duplicate attributes.
     """
     if adapter is None:
         log.info("No adapter provided — skipping LLM harmonization (dry-run)")
-        return schema
+        return schema, []
 
-    return review_schema_quality_for_merge(
-        harmonize_schema_for_merge(schema, proposals, adapter), adapter
+    events: list[dict] = []
+    harmonized = harmonize_schema_for_merge(
+        schema, proposals, adapter, thesaurus=thesaurus, log=events
     )
+    reviewed = review_schema_quality_for_merge(
+        harmonized, adapter, thesaurus=thesaurus, log=events
+    )
+    restored = sum(1 for e in events if e["event"] == "concept_restored")
+    if restored:
+        log.info(
+            "harmonize_merged_schema — restored %d concept(s) the LLM removed: %s",
+            restored,
+            sorted(e["concept"] for e in events if e["event"] == "concept_restored"),
+        )
+    return reviewed, events
 
 
 def compute_schema_delta(original_schema: dict, merged_schema: dict) -> set[str]:
