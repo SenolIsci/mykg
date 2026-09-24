@@ -133,6 +133,29 @@ exception raised, and the log line still reaches stdout/`run.log` normally
 through the handlers `logging.setup()` already installed — this handler is
 additive, never a replacement sink.
 
+**Verification status — unit-tested, not yet observed on a real `log`/
+`exception` event from a live run.** A clean end-to-end run against a
+well-formed corpus (confirmed: `_test_files/` — `team.pdf`, `projects.xlsx`,
+`technologies.md`, 3 files, 36 spans, 25 nodes/23 edges) produces **zero**
+`log`/`exception` span events, because nothing in the main process logged a
+WARNING+ on an active span that run — the only two WARNINGs it did produce
+came from MinerU's own logger inside the separate `mykg parse-docs`
+subprocess (rejecting `.xlsx` — "No valid PDF or image files to process"),
+which has no active span from the main process's tracer to attach to, so
+correctly produced no event. That's expected behavior, not a failure — but
+it means a clean run is not a live positive-path check for this mechanism.
+`tests/test_tracing.py` unit-tests `OtelSpanLogHandler` directly (attaching
+it to a throwaway logger under a real span, asserting the event lands), so
+the mechanism itself is proven — what hasn't been separately confirmed is
+seeing it fire mid-pipeline, end-to-end, with a real Phoenix instance on
+the receiving end. To get a genuine positive-path check, run against a
+corpus likely to trigger a real `pass2.chunk.validation_errors`/similar
+WARNING (an oddly-formatted or very dense source file tends to trip Pass 2
+retries), or temporarily lower `pass2.max_workers`/retry limits to make a
+transient failure more likely, then query for
+`[e for e in span.events if e.name in ("log", "exception")]` across the
+run's spans the way "Reading spans back" (SKILL.md) describes.
+
 ## Streaming — what actually appears live in Phoenix, and what can't
 
 `otel.sync_export: false` (default) uses an async `BatchSpanProcessor`,

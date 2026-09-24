@@ -148,3 +148,32 @@ client.spans.log_span_annotations_dataframe(
 Reading annotations back requires `project_identifier` (easy to miss —
 confirmed by hitting a `TypeError` without it):
 `client.spans.get_span_annotations(span_ids=[...], project_identifier="default")`.
+
+## Sanity-checking the span tree before trusting an eval's results
+
+Phoenix's own trace-detail UI panel renders spans as a flat, unindented
+checkbox list by default — this can look like a tracing bug (broken parent
+links) when it's actually just a collapsed default view; click a span row
+to expand it and see its children indented underneath, per Phoenix's own
+documented click-to-expand behavior. Don't take a flat-looking UI panel as
+evidence of a tracing problem on its own.
+
+The `parent_id`/`context.span_id` columns are the actual ground truth
+regardless of how the UI renders — worth checking directly whenever the
+hierarchy looks suspicious, before assuming instrumentation is broken (this
+exact check was run against a live 3-file mykg session and confirmed every
+span's `parent_id` resolves to a real ancestor's `context.span_id`, all the
+way up to the root span, whose own `parent_id` is `NaN`):
+```python
+from phoenix.client import Client
+
+client = Client(base_url="http://localhost:6006")
+df = client.spans.get_spans_dataframe(project_name="default", limit=200)
+print(df[["name", "parent_id", "context.span_id"]].to_string())
+```
+A healthy tree: every `parent_id` value (except the root span's, which is
+`NaN`/`None`) appears somewhere else in the `context.span_id` column. If a
+`parent_id` doesn't resolve to any row's `context.span_id`, that's a real
+orphaned/misattributed span — worth investigating via the thread-pool
+context-propagation trap (`references/instrumentation-guide.md`) if the
+orphan sits under a parallelized step.

@@ -273,6 +273,11 @@ That file has the confirmed signatures and worked examples for:
   This matters a lot for mykg specifically, since one `ChatCompletion` span
   commonly backs many extracted nodes/edges — always ask "can more than one
   thing I'm grading map to the same span_id?" before skipping `identifier`.
+- **Sanity-checking the tree via `parent_id`/`context.span_id` directly**
+  before trusting an eval's results — worth doing whenever the hierarchy
+  looks suspicious. Note Phoenix's own trace-detail UI panel renders spans
+  as a flat checkbox list until you click a row to expand it; a flat-looking
+  panel is a UI default, not evidence of broken parent links on its own.
 
 ### Writing evaluators
 
