@@ -27,9 +27,9 @@
 ## Review Focus
 
 - **`grader.enabled: false` (the default) must be a true no-op.** A user who never touches `grader:` config should see byte-identical pipeline output to before this feature existed — no new files with unexpected content, no attempted `typesafe_sdk` import, no behavior change in `step_assemble`. Task 4's tests pin this explicitly.
+- **A null-valued attribute (`{value: null, confidence: 0.0}` from `_backfill_extraction`) must never be sent to the grader, and must never gain a `self_reported_confidence` field or a changed `confidence`.** `0.0` there is a "not found" placeholder, not a measurement — there is nothing for `Noul` to verify against a null, and asking anyway lets an unrelated answer overwrite the one piece of already-correct information. Covered in Task 3 (`grade_chunk` skips null values before building questions) and re-verified in Task 8 (an attribute absent from the grades map is left completely untouched, which is what the null-skip in Task 3 produces).
+- **A chunk whose grader call raises must not abort the pipeline or lose other chunks' grades**, and separately, **an entity/attribute with no grade entry (whether from a null-skip or a failed call) must fall through to its self-reported confidence unchanged**, not `None`/`0.0`/a KeyError. Covered in Task 4 (per-chunk `except Exception`, matching `run_pass2._process_file`'s breadth) and Task 8 (`_apply_grades` never assumes every attribute was graded).
 - **Missing `TYPESAFE_API_KEY` with `grader.enabled: true` must fail fast with a clear message**, not a bare `KeyError`/`AttributeError` deep in the SDK — mirrors `openai_adapter.py`'s `ValueError` pattern. Covered in Task 3.
-- **A chunk whose grader call raises must not abort the pipeline or lose other chunks' grades.** `run_grade_confidence` must catch grading failures per-chunk (the spec's "graceful degradation" contract) the same breadth `run_pass2._process_file`'s `except Exception` already uses — one bad chunk must not prevent `confidence_grades.json` from being written with every other chunk's grades intact. Covered in Task 4.
-- **An entity/attribute with no grade entry must fall through to its self-reported confidence unchanged**, not `None`/`0.0`/a KeyError — this is the graceful-degradation contract at the consumption boundary (Task 8), and it's the one path most likely to silently corrupt confidence values if `_apply_grades` assumes every attribute was graded.
 - **Re-running `--from-step pass2` (or earlier) after grading has already happened must not leave stale grades for content that gets re-extracted differently.** This is easy to get wrong because `grade_confidence` sits *after* pass2 in step order, so the existing `idx <= pass2_idx` shard-clearing condition in `cli.py` is the wrong boundary — a separate `idx <= grade_confidence_idx` condition is needed (a superset of the pass2 one). Covered in Task 7.
 
 ---
@@ -319,6 +319,53 @@ def test_grade_chunk_skips_entities_with_no_attributes():
     assert result == {"x": {"__self__": 1.0}}
 
 
+def test_grade_chunk_skips_null_valued_attributes():
+    """A null-valued attribute (pass2's _backfill_extraction marker for 'not
+    found', confidence 0.0 as a placeholder — not a measurement) must not be
+    sent to the grader at all: there's nothing to verify, and an unrelated
+    answer would overwrite the one piece of already-correct information."""
+    grader = TypeSafeGrader(api_key="fake-key")
+
+    captured_questions = {}
+
+    def fake_system_one(state, questions, **kwargs):
+        captured_questions.update(questions)
+        response = MagicMock()
+        response.nouls = {k: _mock_noul_result(1.0) for k in questions}
+        return response
+
+    grader._client.system_one = fake_system_one
+
+    entities = [
+        {
+            "id": "person-alice",
+            "type": "Person",
+            "attributes": {"name": "Alice", "birth_date": None},
+        }
+    ]
+    result = grader.grade_chunk("Alice works here.", entities)
+
+    # No question built for birth_date — only name and __self__.
+    assert set(captured_questions.keys()) == {"person-alice::name", "person-alice::__self__"}
+    assert "birth_date" not in result["person-alice"]
+
+
+def test_grade_chunk_asks_self_question_when_every_attribute_is_null():
+    grader = TypeSafeGrader(api_key="fake-key")
+
+    def fake_system_one(state, questions, **kwargs):
+        response = MagicMock()
+        response.nouls = {k: _mock_noul_result(1.0) for k in questions}
+        return response
+
+    grader._client.system_one = fake_system_one
+
+    entities = [{"id": "person-ghost", "type": "Person", "attributes": {"name": None}}]
+    result = grader.grade_chunk("text", entities)
+
+    assert result == {"person-ghost": {"__self__": 1.0}}
+
+
 def test_missing_api_key_raises_value_error(monkeypatch):
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
     with pytest.raises(ValueError, match="TYPESAFE_API_KEY"):
@@ -421,6 +468,15 @@ class TypeSafeGrader:
         whose question fails to come back in the response are simply absent
         from the result — callers (step_grade_confidence) treat an absent
         entry as "not graded" and fall back to self-reported confidence.
+
+        Attributes whose value is None are skipped entirely — no question is
+        built for them. A null value is pass2's _backfill_extraction marker
+        for "this attribute was not found" (confidence 0.0 is a placeholder,
+        not a measurement); there is nothing for the grader to verify against
+        a null, and asking anyway would let an unrelated answer overwrite the
+        one piece of already-correct information (see spec's "Null-valued
+        attributes are never sent to the grader"). The entity's own __self__
+        question is still asked even when every attribute is null.
         """
         from typesafe_sdk import Noul
 
@@ -429,6 +485,8 @@ class TypeSafeGrader:
             eid = entity["id"]
             etype = entity["type"]
             for attr_name, value in entity.get("attributes", {}).items():
+                if value is None:
+                    continue
                 key = f"{eid}{_SEPARATOR}{attr_name}"
                 questions[key] = Noul(
                     instructions={
@@ -480,7 +538,7 @@ def build_grader(raw_config: dict | None) -> TypeSafeGrader | None:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_typesafe_grader.py -v`
-Expected: PASS (all 5 tests). Note: `test_grade_chunk_builds_one_noul_per_attribute_plus_self` and `test_grade_chunk_skips_entities_with_no_attributes` construct a real `TypeSafeGrader(api_key="fake-key")`, which calls the real `TypeSafeClient(...)` constructor — this does not make a network call (constructing a client is not a request), only `system_one` does, and that's replaced with `fake_system_one` before it's ever called. If `typesafe-sdk` is not installed in the test environment, install it first: `uv pip install -e ".[grader]"`.
+Expected: PASS (all 7 tests). Note: most of these construct a real `TypeSafeGrader(api_key="fake-key")`, which calls the real `TypeSafeClient(...)` constructor — this does not make a network call (constructing a client is not a request), only `system_one` does, and that's replaced with `fake_system_one` before it's ever called. If `typesafe-sdk` is not installed in the test environment, install it first: `uv pip install -e ".[grader]"`.
 
 - [ ] **Step 5: Commit**
 

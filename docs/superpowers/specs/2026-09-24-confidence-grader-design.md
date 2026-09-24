@@ -189,6 +189,24 @@ overall confidence becomes one additional `Noul` question per entity,
 keyed `f"{entity_id}::__self__"`: `"Is this {type} entity, as a whole,
 correctly identified in the source text?"`.
 
+**Null-valued attributes are never sent to the grader.** `_backfill_extraction`
+(D9) fills every schema-declared attribute the extractor didn't find with
+`{value: null, confidence: 0.0}` — that `0.0` is not a measurement, it's a
+"we don't know" placeholder, and there is nothing for the grader to verify
+against a null. Asking `Noul` "is `extracted_value` (= `null`) correct for
+`field`?" is a meaningless question whose answer would carry no real
+signal, yet would overwrite the one piece of correct information already
+present (confidence 0.0 *because* the value is absent) with an unrelated
+number. `TypeSafeGrader.grade_chunk` therefore filters `entity["attributes"]`
+down to non-null values before building any `Noul` questions — a null
+attribute contributes no question and consequently no key in the returned
+grades map, so `_apply_grades` (see "Consumption at assemble time" below)
+leaves it untouched by the same "absent from grades → keep self-reported"
+rule already used for ungraded/failed entities. The entity's own `__self__`
+question is unaffected by this filter — it is still asked even when every
+attribute is null, since "is this entity correctly identified at all" is a
+meaningful question independent of which attributes came back empty.
+
 A chunk with many entities × many attributes could produce dozens of
 `Noul` questions in one call. Neither a hard per-call question-count limit
 nor a `state` size limit is documented by the API (confirmed against the
