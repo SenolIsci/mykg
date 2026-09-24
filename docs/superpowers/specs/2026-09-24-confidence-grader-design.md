@@ -1,7 +1,7 @@
 # Confidence Grader — Design Spec
 
 Date: 2026-09-24
-Status: revised — grader backend selected (TypeSafe AI / Jev), pending approval
+Status: revised — grader backend + Python SDK details resolved, ready for writing-plans
 
 ## Addendum (2026-09-24): grader backend = TypeSafe AI (Jev)
 
@@ -133,13 +133,20 @@ distribution-derived confidence, no JSON-parse brittleness). Instead:
   `TYPESAFE_API_KEY` from the environment the same way `openai_adapter.py`
   reads `OPENAI_API_KEY` — sourced via the existing `load_dotenv(".env.mykg")`
   call already in `cli.py`.
+- Constructs its own `TypeSafeClient(api_key=..., timeout=grader.timeout,
+  retry=RetryPolicy(max_retries=grader.retry_max))` — one instance per
+  call site/worker thread (never shared across threads — see the resolved
+  thread-safety item above), so `TypeSafeGrader` itself is instantiated
+  once per `ThreadPoolExecutor` worker inside `grade_confidence`, not once
+  globally.
 - One method, shaped after the actual need:
   `grade_chunk(chunk_text: str, entities: list[EntityAttrs]) ->
   dict[str, float]` — internally builds the `Noul` questions dict, calls
-  `client.system_one(...)` once (or N times if the size cap above requires
-  splitting), and returns the flat `{f"{id}::{attr}": noul_value}` map the
-  `grade_confidence` step already expects to write into
-  `confidence_grades_shards/`.
+  `client.system_one(...)` once (or N times if `max_questions_per_call`
+  requires splitting), catches `TypeSafeError` around the call for the
+  step's per-chunk graceful-degradation behavior, and returns the flat
+  `{f"{id}::{attr}": noul_value}` map the `grade_confidence` step already
+  expects to write into `confidence_grades_shards/`.
 - `ctx.grader_adapter` (added in the original design below) becomes
   `ctx.grader: TypeSafeGrader | None` instead — same role (None when
   `grader.enabled` is false), different type.
@@ -161,11 +168,15 @@ profiles:
       enabled: false        # opt-in; false ⇒ grade_confidence is a no-op passthrough
       backend: typesafe      # only backend for now; keeps the door open for a future
                               # generic-LLM grader without a breaking config change
-      max_questions_per_call: 50   # cap; split into multiple system_one calls per chunk
-                                     # above this (see open sizing question above)
+      max_questions_per_call: 50   # self-imposed cap (API documents no server-side limit);
+                                     # split into multiple system_one calls per chunk above this
       timeout: 600
+      retry_max: 2            # passed as a RetryPolicy to system_one — the SDK's own
+                               # built-in retry, not a second hand-rolled retry loop
       max_workers: 4         # independent of pass2.max_workers — grader calls run in
-                              # their own ThreadPoolExecutor in grade_confidence
+                              # their own ThreadPoolExecutor in grade_confidence, one
+                              # TypeSafeClient instance constructed per worker thread
+                              # (thread-safety of a shared instance is undocumented)
 ```
 
 No `model:`/`base_url:`/`context_window:` keys — Jev is TypeSafe's one
@@ -173,24 +184,54 @@ flagship model, selected implicitly by the SDK/API key, not by a model
 string mykg passes. `TYPESAFE_API_KEY` lives in `.env.mykg`, not in YAML
 (same secrets-out-of-YAML convention every other provider follows).
 
-### Still open, to resolve in the implementation plan
+### Resolved (previously open items)
 
-1. **Exact `system_one` batch size / `state` size limits** — not found in
-   the pages fetched so far (`/primitives`, `/primitives/advanced`,
-   `/confidence`, `/introduction/quickstart`); the plan's research phase
-   should fetch the rate-limits/pricing pages before finalizing
-   `max_questions_per_call`.
-2. **Async client** — quickstart shows the sync client; docs mention an
-   async client exists. `grade_confidence` already parallelizes via
-   `ThreadPoolExecutor` (matching every other pipeline step's Invariant 12
-   convention), so the sync client is likely the right fit — confirm no
-   thread-safety caveat exists for reusing one sync `TypeSafeClient` across
-   worker threads, or construct one client per worker.
-3. **Error/exception classes** — the JS SDK docs mention
-   `APIConnectionError`/`AuthenticationError`/`RateLimitError`; the plan
-   should confirm the Python SDK's equivalents so `grade_confidence` can
-   apply the same graceful-degradation-per-chunk handling (log + leave
-   self-reported confidence in place) the original design specifies below.
+Confirmed against the real Python SDK reference pages
+(`/sdk/python/api/{exceptions,clients/sync,clients/async,types/questions}.md`,
+found via the site's `llms.txt` index rather than guessed paths):
+
+1. **No documented hard limit** on questions-per-`system_one`-call or
+   `state` size. `Choice`/`Score`/`Noul` constructors and the `state`
+   docs state no numeric caps. `grader.max_questions_per_call` therefore
+   stays a **self-imposed, defensive** config cap (Invariant 16 discipline
+   — bound cost/blast-radius ourselves rather than discover a server-side
+   limit in production) rather than something dictated by the API.
+2. **Both a sync and async client exist**: `TypeSafeClient` and
+   `AsyncTypeSafeClient` (`from typesafe_sdk import TypeSafeClient,
+   AsyncTypeSafeClient`), same constructor shape
+   (`api_key`, `model`, `retry: RetryPolicy | None`, `timeout`, `headers`,
+   `transport`, `http_client`, `base_url`). **Neither documents
+   thread-safety** for concurrent/multi-threaded reuse of one instance.
+   Given mykg's uniform `ThreadPoolExecutor` convention (Invariant 12) and
+   this documentation gap, `grade_confidence` uses the **sync**
+   `TypeSafeClient` (matches every other step's synchronous-adapter-in-a-
+   thread-pool pattern — no need to introduce `asyncio` into the
+   pipeline for this one step) and constructs **one client instance per
+   worker thread** rather than sharing one across threads, sidestepping the
+   undocumented thread-safety question entirely.
+3. **Exception hierarchy**, all rooted at `TypeSafeError(Exception)`:
+   `TypeSafeAPIError` (base for HTTP failures) →
+   `TypeSafeBadRequestError` (400), `TypeSafeAuthenticationError` (401),
+   `TypeSafePermissionDeniedError` (403), `TypeSafeNotFoundError` (404),
+   `TypeSafeUnprocessableEntityError` (422), `TypeSafeRateLimitError` (429),
+   `TypeSafeInternalServerError` (5xx); separately,
+   `TypeSafeAPIConnectionError(TypeSafeError, ConnectionError)` (no HTTP
+   response at all) and `TypeSafeAPITimeoutError(TypeSafeAPIConnectionError,
+   TimeoutError)`. `grade_confidence` catches the common base
+   `TypeSafeError` for its per-chunk graceful-degradation handling (log +
+   leave self-reported confidence in place), the same breadth
+   `run_pass2._process_file`'s `except Exception` already uses for pass2
+   file failures — no special-casing per exception subtype is needed for
+   v1.
+4. **`system_one` takes a `retry: RetryPolicy | None` parameter directly**
+   — the SDK has its own built-in retry mechanism (mirrors
+   `llm_complete_with_retry`'s role for the extractor adapters). The
+   implementation plan should pass a `RetryPolicy` here (sized off
+   `grader.timeout`/a new `grader.retry_max` knob) rather than hand-rolling
+   a second retry loop around `system_one` — `TypeSafeGrader.grade_chunk`
+   only needs its own try/except for the *outer* graceful-degradation
+   behavior (item 3), not for transient-error retry, which the SDK already
+   does internally.
 
 ---
 
