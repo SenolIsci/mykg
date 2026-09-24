@@ -12,6 +12,7 @@ from pathlib import Path
 from mykg import config as _cfg
 from mykg.logging import get
 from mykg.orchestrator import PipelineContext
+from mykg.tracing import submit_with_context
 from mykg.utility.atomic_io import atomic_write_json
 
 log = get("mykg.steps.preprocess")
@@ -62,7 +63,7 @@ def _hash_files_parallel(files: list[Path], workers: int) -> dict[Path, str]:
         return {}
     results: dict[Path, str] = {}
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        future_to_path = {pool.submit(_sha256_path, p): p for p in files}
+        future_to_path = {submit_with_context(pool, _sha256_path, p): p for p in files}
         for fut in as_completed(future_to_path):
             results[future_to_path[fut]] = fut.result()
     return results

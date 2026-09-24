@@ -6,11 +6,13 @@ from typing import TYPE_CHECKING, Callable, TypeVar
 from mykg import config as _cfg
 from mykg.llm.adapter import LLMAdapter
 from mykg.logging import get
+from mykg.tracing import get_tracer, mark_span_error
 
 if TYPE_CHECKING:
     from mykg.llm.error_gate import ErrorGate
 
 log = get("mykg.llm.retry")
+_tracer = get_tracer()
 
 E = TypeVar("E", bound=BaseException)
 
@@ -102,29 +104,39 @@ def llm_complete_with_retry(
     timeout: per-call override in seconds forwarded to the adapter; None means use adapter default.
     temperature: per-call override forwarded to the adapter; None means use adapter default.
     """
-    max_retries = _cfg.LLM_RETRY_MAX_RETRIES
-    label = f" [{context_label}]" if context_label else ""
-    for retry in range(max_retries + 1):
-        raw = adapter.complete(
-            system,
-            user,
-            context_label=context_label,
-            max_tokens=max_tokens,
-            timeout=timeout,
-            temperature=temperature,
-        )
-        if raw.strip():
-            return raw
-        if retry < max_retries:
-            log.warning("empty response%s — retrying (retry %d/%d)", label, retry + 1, max_retries)
-        else:
-            log.warning(
-                "empty response%s — all %d retr%s exhausted",
-                label,
-                max_retries,
-                "y" if max_retries == 1 else "ies",
+    with _tracer.start_as_current_span("mykg.llm.call") as span:
+        span.set_attribute("mykg.llm.context_label", context_label)
+        try:
+            span.set_attribute("gen_ai.system", adapter.endpoint_label())
+        except Exception:
+            pass  # endpoint_label() must never fail a real LLM call over a span attribute
+
+        max_retries = _cfg.LLM_RETRY_MAX_RETRIES
+        label = f" [{context_label}]" if context_label else ""
+        for retry in range(max_retries + 1):
+            raw = adapter.complete(
+                system,
+                user,
+                context_label=context_label,
+                max_tokens=max_tokens,
+                timeout=timeout,
+                temperature=temperature,
             )
-    return ""
+            if raw.strip():
+                return raw
+            if retry < max_retries:
+                log.warning(
+                    "empty response%s — retrying (retry %d/%d)", label, retry + 1, max_retries
+                )
+            else:
+                log.warning(
+                    "empty response%s — all %d retr%s exhausted",
+                    label,
+                    max_retries,
+                    "y" if max_retries == 1 else "ies",
+                )
+        mark_span_error(span, "all retries exhausted with empty response")
+        return ""
 
 
 def retry_on_rate_limit(

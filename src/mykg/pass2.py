@@ -7,6 +7,8 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from opentelemetry import trace
+
 from mykg import config as _cfg
 from mykg.chunker import Chunk, chunk_file, count_tokens, truncate_to_tokens
 from mykg.ids import stable_id as _ids_stable_id
@@ -16,8 +18,10 @@ from mykg.llm.retry import llm_complete_with_retry
 from mykg.logging import get
 from mykg.pass2_batch import build_pass2_batches, make_batch_map
 from mykg.prompts import load_prompt
+from mykg.tracing import get_tracer, mark_span_error, submit_with_context
 
 log = get("mykg.pass2")
+_tracer = get_tracer()
 
 
 class FailedChunkLog:
@@ -309,6 +313,10 @@ def _extract_chunk(
         extraction = json.loads(raw)
     except (json.JSONDecodeError, ValueError) as exc:
         log.warning("    chunk %d — JSON parse error: %s — retrying", chunk_idx, exc)
+        trace.get_current_span().add_event(
+            "pass2.chunk.json_parse_error",
+            attributes={"mykg.chunk_index": chunk_idx, "mykg.error": str(exc)},
+        )
         retry_user = (
             "Your previous response was not valid JSON. "
             "Return only a JSON object with 'nodes' and 'edges' keys.\n\n" + user
@@ -325,6 +333,14 @@ def _extract_chunk(
             log.warning(
                 "    chunk %d — retry JSON parse error: %s — skipping chunk", chunk_idx, exc2
             )
+            trace.get_current_span().add_event(
+                "pass2.chunk.skipped",
+                attributes={
+                    "mykg.chunk_index": chunk_idx,
+                    "mykg.reason": "retry_json_parse_error",
+                    "mykg.error": str(exc2),
+                },
+            )
             return None
 
     # Primary null-guard: some LLMs (e.g. Gemma via OpenRouter) emit null items inside arrays.
@@ -334,6 +350,10 @@ def _extract_chunk(
     errors = validate_extraction(extraction, schema, flat_schema, prior_nodes)
     if errors:
         log.warning("    chunk %d — validation errors: %s — retrying", chunk_idx, errors)
+        trace.get_current_span().add_event(
+            "pass2.chunk.validation_errors",
+            attributes={"mykg.chunk_index": chunk_idx, "mykg.errors": errors},
+        )
         error_context = "Previous attempt had errors:\n" + "\n".join(errors)
         retry_user = error_context + "\n\n" + user
         raw2 = llm_complete_with_retry(
@@ -350,6 +370,14 @@ def _extract_chunk(
                 chunk_idx,
                 exc,
             )
+            trace.get_current_span().add_event(
+                "pass2.chunk.retry_json_parse_error",
+                attributes={
+                    "mykg.chunk_index": chunk_idx,
+                    "mykg.error": str(exc),
+                    "mykg.action": "dropping_invalid_edges",
+                },
+            )
             extraction = _partial_recover(extraction, schema, prior_nodes)
             return _backfill_extraction(extraction, schema, flat_schema)
 
@@ -360,6 +388,10 @@ def _extract_chunk(
             log.warning(
                 "    chunk %d — retry still has errors — accepting nodes, dropping invalid edges",
                 chunk_idx,
+            )
+            trace.get_current_span().add_event(
+                "pass2.chunk.validation_errors_persist",
+                attributes={"mykg.chunk_index": chunk_idx, "mykg.errors": errors2},
             )
             extraction2 = _partial_recover(extraction2, schema, prior_nodes)
         return _backfill_extraction(extraction2, schema, flat_schema)
@@ -459,79 +491,95 @@ def run_pass2(
     truncated_files: list[dict] = []
 
     def _process_file(filename: str, content: str) -> tuple[str, dict, dict[str, list[str]]]:
-        if max_file_tokens > 0:
-            original_tokens = count_tokens(content)
-            if original_tokens > max_file_tokens:
-                content = truncate_to_tokens(content, max_file_tokens)
-                log.warning(
-                    "  %s — %d tokens exceeds per_file_token_target %d; truncated to first %d tokens",
-                    filename,
-                    original_tokens,
-                    max_file_tokens,
-                    max_file_tokens,
-                )
-                with truncation_lock:
-                    truncated_files.append(
-                        {
-                            "filename": filename,
-                            "original_tokens": original_tokens,
-                            "cap": max_file_tokens,
-                        }
+        with _tracer.start_as_current_span("mykg.pass2.file") as span:
+            span.set_attribute("mykg.file.name", filename)
+            if max_file_tokens > 0:
+                original_tokens = count_tokens(content)
+                if original_tokens > max_file_tokens:
+                    content = truncate_to_tokens(content, max_file_tokens)
+                    log.warning(
+                        "  %s — %d tokens exceeds per_file_token_target %d; "
+                        "truncated to first %d tokens",
+                        filename,
+                        original_tokens,
+                        max_file_tokens,
+                        max_file_tokens,
                     )
-        chunks = chunk_file(filename, content)
-        target_chunks: set[int] | None = (
-            reextract_chunks.get(filename) if reextract_chunks else None
-        )
-        log.info(
-            "  %s — %d chunk(s)%s",
-            filename,
-            len(chunks),
-            f" (re-extracting chunks {sorted(target_chunks)})" if target_chunks else "",
-        )
-
-        # Seed from prior data when doing targeted re-extraction.
-        prior_file_data = (prior_extractions or {}).get(filename, {})
-        prior_file_index = (prior_chunk_index or {}).get(filename, {})
-        all_nodes: list[dict] = list(prior_file_data.get("nodes", [])) if target_chunks else []
-        all_edges: list[dict] = list(prior_file_data.get("edges", [])) if target_chunks else []
-        file_chunk_index: dict[str, list[str]] = dict(prior_file_index) if target_chunks else {}
-        stateful = _cfg.PASS2_STATEFUL_CHUNKS
-
-        for i, chunk in enumerate(chunks, 1):
-            if target_chunks is not None and i not in target_chunks:
-                continue
-            log.info("    chunk %d/%d …", i, len(chunks))
-            prior = _dedup_within_file(all_nodes) if stateful and all_nodes else None
-            chunk_key = f"{filename}::{i}"
-            hint_block = _build_schema_hint_block(chunk_key, schema_hints or [])
-            extraction = _extract_chunk(
-                chunk.text, schema, flat_schema, adapter, i, prior, hint_block or None
+                    with truncation_lock:
+                        truncated_files.append(
+                            {
+                                "filename": filename,
+                                "original_tokens": original_tokens,
+                                "cap": max_file_tokens,
+                            }
+                        )
+            chunks = chunk_file(filename, content)
+            target_chunks: set[int] | None = (
+                reextract_chunks.get(filename) if reextract_chunks else None
             )
-            if extraction is None:
-                failed_log.record(filename, i, "blank_response")
-                continue
-            chunk_nodes = extraction.get("nodes", [])
-            all_nodes.extend(chunk_nodes)
-            all_edges.extend(extraction.get("edges", []))
-            file_chunk_index[str(i)] = [_name_slug(n) for n in chunk_nodes]
+            log.info(
+                "  %s — %d chunk(s)%s",
+                filename,
+                len(chunks),
+                f" (re-extracting chunks {sorted(target_chunks)})" if target_chunks else "",
+            )
 
-        all_nodes = _dedup_within_file(all_nodes)
-        surviving_ids = {n["id"] for n in all_nodes}
-        valid_edges = []
-        for e in all_edges:
-            if e.get("from") in surviving_ids and e.get("to") in surviving_ids:
-                valid_edges.append(e)
-            else:
-                log.warning(
-                    "  %s — dropping edge %s→%s (dangling after dedup)",
-                    filename,
-                    e.get("from"),
-                    e.get("to"),
+            # Seed from prior data when doing targeted re-extraction.
+            prior_file_data = (prior_extractions or {}).get(filename, {})
+            prior_file_index = (prior_chunk_index or {}).get(filename, {})
+            all_nodes: list[dict] = (
+                list(prior_file_data.get("nodes", [])) if target_chunks else []
+            )
+            all_edges: list[dict] = (
+                list(prior_file_data.get("edges", [])) if target_chunks else []
+            )
+            file_chunk_index: dict[str, list[str]] = (
+                dict(prior_file_index) if target_chunks else {}
+            )
+            stateful = _cfg.PASS2_STATEFUL_CHUNKS
+
+            for i, chunk in enumerate(chunks, 1):
+                if target_chunks is not None and i not in target_chunks:
+                    continue
+                log.info("    chunk %d/%d …", i, len(chunks))
+                prior = _dedup_within_file(all_nodes) if stateful and all_nodes else None
+                chunk_key = f"{filename}::{i}"
+                hint_block = _build_schema_hint_block(chunk_key, schema_hints or [])
+                extraction = _extract_chunk(
+                    chunk.text, schema, flat_schema, adapter, i, prior, hint_block or None
                 )
-        all_edges = valid_edges
-        log.info("  %s — total: %d node(s), %d edge(s)", filename, len(all_nodes), len(all_edges))
-        chunks_in_file = len(chunks)
-        return filename, {"nodes": all_nodes, "edges": all_edges}, file_chunk_index, chunks_in_file
+                if extraction is None:
+                    failed_log.record(filename, i, "blank_response")
+                    continue
+                chunk_nodes = extraction.get("nodes", [])
+                all_nodes.extend(chunk_nodes)
+                all_edges.extend(extraction.get("edges", []))
+                file_chunk_index[str(i)] = [_name_slug(n) for n in chunk_nodes]
+
+            all_nodes = _dedup_within_file(all_nodes)
+            surviving_ids = {n["id"] for n in all_nodes}
+            valid_edges = []
+            for e in all_edges:
+                if e.get("from") in surviving_ids and e.get("to") in surviving_ids:
+                    valid_edges.append(e)
+                else:
+                    log.warning(
+                        "  %s — dropping edge %s→%s (dangling after dedup)",
+                        filename,
+                        e.get("from"),
+                        e.get("to"),
+                    )
+            all_edges = valid_edges
+            log.info(
+                "  %s — total: %d node(s), %d edge(s)", filename, len(all_nodes), len(all_edges)
+            )
+            chunks_in_file = len(chunks)
+            return (
+                filename,
+                {"nodes": all_nodes, "edges": all_edges},
+                file_chunk_index,
+                chunks_in_file,
+            )
 
     # Pre-count total chunks across all files so ETA is weighted by actual LLM work, not file count.
     file_chunk_counts = {fname: len(chunk_file(fname, content)) for fname, content in files.items()}
@@ -543,7 +591,7 @@ def run_pass2(
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(_process_file, fname, content): fname
+            submit_with_context(executor, _process_file, fname, content): fname
             for fname, content in files.items()
         }
         for future in as_completed(futures):
@@ -749,45 +797,54 @@ def run_pass2_batched(
     # Process batches in order so stateful prior_nodes flow correctly when per_file=True.
     # When per_file=False (mixed), prior_nodes are still threaded per source file.
     def _process_batch(batch_idx: int, batch: list[Chunk]) -> tuple[int, dict | None, list[Chunk]]:
-        # Collect per-file prior_nodes for files appearing in this batch.
-        # For mixed batches we aggregate prior_nodes from all files in the batch.
-        batch_files = {c.source_file for c in batch}
-        prior: list[dict] | None = None
-        if stateful:
-            combined: list[dict] = []
-            for f in batch_files:
-                combined.extend(prior_nodes_by_file.get(f, []))
-            prior = _dedup_within_file(combined) if combined else None
-
-        # Build hint block for chunks in this batch.
-        hint_lines: list[str] = []
-        for chunk in batch:
-            chunk_key = f"{chunk.source_file}::{chunk.chunk_index + 1}"
-            block = _build_schema_hint_block(chunk_key, schema_hints or [])
-            if block:
-                hint_lines.append(block)
-        hint_block = "\n".join(hint_lines) if hint_lines else None
-
-        token_count = sum(c.token_end - c.token_start for c in batch)
-        log.info(
-            "  batch %d/%d — %d chunk(s), ~%d tokens",
-            batch_idx + 1,
-            total_batches,
-            len(batch),
-            token_count,
-        )
-        extraction = _extract_batch(
-            batch, schema, flat_schema, adapter, batch_idx + 1, prior, hint_block
-        )
-        if extraction is not None:
-            clean = _strip_nulls(extraction)
-            log.debug(
-                "  batch %d — %d node(s), %d edge(s)",
-                batch_idx + 1,
-                len(clean["nodes"]),
-                len(clean["edges"]),
+        with _tracer.start_as_current_span("mykg.pass2.batch") as span:
+            span.set_attribute("mykg.batch.index", batch_idx)
+            span.set_attribute("mykg.batch.chunk_count", len(batch))
+            span.set_attribute(
+                "mykg.batch.source_files", sorted({c.source_file for c in batch})
             )
-        return batch_idx, extraction, batch
+
+            # Collect per-file prior_nodes for files appearing in this batch.
+            # For mixed batches we aggregate prior_nodes from all files in the batch.
+            batch_files = {c.source_file for c in batch}
+            prior: list[dict] | None = None
+            if stateful:
+                combined: list[dict] = []
+                for f in batch_files:
+                    combined.extend(prior_nodes_by_file.get(f, []))
+                prior = _dedup_within_file(combined) if combined else None
+
+            # Build hint block for chunks in this batch.
+            hint_lines: list[str] = []
+            for chunk in batch:
+                chunk_key = f"{chunk.source_file}::{chunk.chunk_index + 1}"
+                block = _build_schema_hint_block(chunk_key, schema_hints or [])
+                if block:
+                    hint_lines.append(block)
+            hint_block = "\n".join(hint_lines) if hint_lines else None
+
+            token_count = sum(c.token_end - c.token_start for c in batch)
+            log.info(
+                "  batch %d/%d — %d chunk(s), ~%d tokens",
+                batch_idx + 1,
+                total_batches,
+                len(batch),
+                token_count,
+            )
+            extraction = _extract_batch(
+                batch, schema, flat_schema, adapter, batch_idx + 1, prior, hint_block
+            )
+            if extraction is not None:
+                clean = _strip_nulls(extraction)
+                log.debug(
+                    "  batch %d — %d node(s), %d edge(s)",
+                    batch_idx + 1,
+                    len(clean["nodes"]),
+                    len(clean["edges"]),
+                )
+            else:
+                mark_span_error(span, "extraction returned None")
+            return batch_idx, extraction, batch
 
     def _flush_progress(batch_name: str, extraction: dict | None, error: str | None) -> None:
         """Update the batch entry and atomically overwrite pass2_progress.json."""
@@ -825,7 +882,9 @@ def run_pass2_batched(
     ]
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(_process_batch, i, batch): i for i, batch in to_dispatch}
+        futures = {
+            submit_with_context(executor, _process_batch, i, batch): i for i, batch in to_dispatch
+        }
         for future in as_completed(futures):
             batch_idx_from_future = futures[future]
             batch_name = f"batch_{batch_idx_from_future:04d}"
@@ -879,7 +938,8 @@ def run_pass2_batched(
             retry_completed: list[tuple[int, dict | None, list[Chunk]]] = []
             with ThreadPoolExecutor(max_workers=max_workers) as retry_executor:
                 retry_futures = {
-                    retry_executor.submit(_process_batch, bi, b): bi for bi, b in failed_items
+                    submit_with_context(retry_executor, _process_batch, bi, b): bi
+                for bi, b in failed_items
                 }
                 for future in as_completed(retry_futures):
                     bi = retry_futures[future]

@@ -50,6 +50,7 @@
     - [Incremental Schema Growth](#incremental-schema-growth---append-with-grow-schema)
   - [Merging Sessions](#merging-sessions)
   - [Walkthrough Report](#walkthrough-report)
+  - [Tracing (OpenTelemetry)](#tracing-opentelemetry)
   - [Obsidian Vault Export](#obsidian-vault-export)
   - [Neo4j LOAD CSV Export](#neo4j-load-csv-export)
 - [MCP (Model Context Protocol) Server](#mcp-model-context-protocol-server)
@@ -363,6 +364,7 @@ Everything else (`.py`, `.json`, `.yaml`, lock files, etc.) is ignored. Hidden d
 | `--thesaurus PATH` | SKOS TTL thesaurus for synonym resolution in schema merge |
 | `--obsidian-vault` | Force Obsidian vault export for this run (overrides config) |
 | `--neo4j-csv` | Force Neo4j LOAD CSV bundle export for this run (overrides config) |
+| `--otel` | Enable OpenTelemetry tracing for this run (overrides config `otel.enabled`) |
 | `--log-file PATH` | Write logs here (relative paths placed inside the session folder) |
 | `--verbose / -v` | Enable DEBUG-level logging |
 
@@ -944,6 +946,29 @@ mykg walkthrough --session 2026-05-17T18-31-07
 ```
 
 Disable with `pipeline.report.enabled: false`.
+
+### Tracing (OpenTelemetry)
+
+`mykg extract-graph` can emit OpenTelemetry traces for debugging slow or
+stuck runs and for token/cost visibility across steps and LLM calls. Off by
+default — no dependency, no overhead — unless enabled.
+
+```bash
+# In one terminal, start Phoenix and leave it running. It serves at
+# http://localhost:6006 and its OTLP gRPC receiver on localhost:4317 —
+# no Docker, no separate install (uvx fetches it into an isolated cache).
+uvx arize-phoenix serve
+
+# In another terminal, install the optional extra and run with tracing enabled
+pip install 'mykg[otel]'
+mykg extract-graph my_notes/ --otel
+```
+
+Open `http://localhost:6006` and view the run's trace — one span per
+pipeline step, nested batch/file/chunk spans for parallel work, and one
+span per LLM call tagged with provider, model, and token counts. Enable
+persistently with `otel.enabled: true` in `mykg_config.yaml` instead of
+passing `--otel` every time.
 
 ## MCP (Model Context Protocol) Server
 

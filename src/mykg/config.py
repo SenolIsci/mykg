@@ -265,6 +265,29 @@ LOG_CAPTURE_PROMPTS: bool = bool(_get_opt("logging", "capture_prompts", False))
 LOG_ERROR_OUTPUT_MAX_CHARS: int = int(_get_opt("logging", "error_output_max_chars", 500))
 
 # ---------------------------------------------------------------------------
+# OpenTelemetry tracing (opt-in)
+# ---------------------------------------------------------------------------
+OTEL_ENABLED: bool = bool(_get_opt("otel", "enabled", False))
+OTEL_EXPORTER_OTLP_ENDPOINT: str = str(
+    _get_opt("otel", "exporter_endpoint", "http://localhost:4317")
+)
+OTEL_SERVICE_NAME: str = str(_get_opt("otel", "service_name", "mykg"))
+OTEL_PROJECT_NAME: str = str(_get_opt("otel", "project_name", OTEL_SERVICE_NAME))
+# sync_export=true swaps in a blocking SimpleSpanProcessor (every span exports
+# the instant it closes — local debugging only, adds latency to every traced
+# call). Default false uses the async BatchSpanProcessor, tuned below to
+# flush frequently rather than on OTel's default 5s/512-span batching.
+OTEL_SYNC_EXPORT: bool = bool(_get_opt("otel", "sync_export", False))
+OTEL_SCHEDULE_DELAY_MILLIS: int = int(_get_opt("otel", "schedule_delay_millis", 1000))
+OTEL_MAX_EXPORT_BATCH_SIZE: int = int(_get_opt("otel", "max_export_batch_size", 64))
+# Bridges standard `logging` WARNING+/exception records onto the currently
+# active OTel span as span events — Phoenix has no native OTel-logs
+# ingestion (still true as of Phoenix's own open GitHub issue #10624), so
+# this is the only way a log line shows up next to the span that produced
+# it. See tracing.py:OtelSpanLogHandler.
+OTEL_LOG_TO_SPAN_EVENTS: bool = bool(_get_opt("otel", "log_to_span_events", True))
+
+# ---------------------------------------------------------------------------
 # Preprocess — optional document conversion before ingest (D39–D48)
 # MinerU runs in an ephemeral uv-managed venv created per parse-docs call;
 # nothing about MinerU is installed into mykg's own interpreter. The four

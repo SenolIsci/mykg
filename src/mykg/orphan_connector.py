@@ -42,8 +42,10 @@ from mykg.llm.error_gate import ErrorGate, noop_gate
 from mykg.llm.retry import llm_complete_with_retry
 from mykg.logging import get
 from mykg.prompts import load_prompt
+from mykg.tracing import get_tracer, mark_span_error, submit_with_context
 
 log = get("mykg.orphan_connector")
+_tracer = get_tracer()
 
 
 # ---------------------------------------------------------------------------
@@ -578,93 +580,98 @@ def _confirm_one(
     adapter: LLMAdapter,
     chunk_texts: dict[str, str],
 ) -> dict | None:
-    prompt = _build_confirmation_prompt(candidate, schema, chunk_texts)
-    raw = llm_complete_with_retry(
-        adapter,
-        _ORPHAN_SYSTEM_PROMPT,
-        prompt,
-        context_label=f"orphan stage2 {candidate.orphan_id}↔{candidate.candidate_id}",
-    )
-    try:
-        result = json.loads(raw)
-    except (json.JSONDecodeError, ValueError) as exc:
-        log.warning(
-            "Stage 2 — JSON parse error for %s↔%s: %s",
-            candidate.orphan_id,
-            candidate.candidate_id,
-            exc,
+    with _tracer.start_as_current_span("mykg.orphan.confirm") as span:
+        span.set_attribute("mykg.orphan.orphan_id", candidate.orphan_id)
+        span.set_attribute("mykg.orphan.candidate_id", candidate.candidate_id)
+
+        prompt = _build_confirmation_prompt(candidate, schema, chunk_texts)
+        raw = llm_complete_with_retry(
+            adapter,
+            _ORPHAN_SYSTEM_PROMPT,
+            prompt,
+            context_label=f"orphan stage2 {candidate.orphan_id}↔{candidate.candidate_id}",
         )
-        return None
+        try:
+            result = json.loads(raw)
+        except (json.JSONDecodeError, ValueError) as exc:
+            log.warning(
+                "Stage 2 — JSON parse error for %s↔%s: %s",
+                candidate.orphan_id,
+                candidate.candidate_id,
+                exc,
+            )
+            mark_span_error(span, f"JSON parse error: {exc}")
+            return None
 
-    if not result.get("connected"):
-        return None
+        if not result.get("connected"):
+            return None
 
-    edge_type = result.get("type")
-    if not edge_type:
-        log.warning(
-            "Stage 2 — connected=true but no type for %s↔%s",
-            candidate.orphan_id,
-            candidate.candidate_id,
-        )
-        return None
+        edge_type = result.get("type")
+        if not edge_type:
+            log.warning(
+                "Stage 2 — connected=true but no type for %s↔%s",
+                candidate.orphan_id,
+                candidate.candidate_id,
+            )
+            return None
 
-    valid_props = {
-        p["name"]
-        for p in schema.get("properties", [])
-        if (p["domain"], p["range"])
-        in {
-            (candidate.orphan_type, candidate.candidate_type),
-            (candidate.candidate_type, candidate.orphan_type),
+        valid_props = {
+            p["name"]
+            for p in schema.get("properties", [])
+            if (p["domain"], p["range"])
+            in {
+                (candidate.orphan_type, candidate.candidate_type),
+                (candidate.candidate_type, candidate.orphan_type),
+            }
         }
-    }
-    if edge_type not in valid_props:
-        log.warning(
-            "Stage 2 — '%s' incompatible with %s↔%s type pair, rejecting",
-            edge_type,
-            candidate.orphan_type,
-            candidate.candidate_type,
+        if edge_type not in valid_props:
+            log.warning(
+                "Stage 2 — '%s' incompatible with %s↔%s type pair, rejecting",
+                edge_type,
+                candidate.orphan_type,
+                candidate.candidate_type,
+            )
+            return None
+
+        matched_prop = next(
+            (p for p in schema.get("properties", []) if p["name"] == edge_type),
+            None,
         )
-        return None
+        from_id = candidate.orphan_id
+        to_id = candidate.candidate_id
+        if matched_prop:
+            if (matched_prop["domain"], matched_prop["range"]) == (
+                candidate.candidate_type,
+                candidate.orphan_type,
+            ):
+                # LLM returned a property whose direction is candidate→orphan; flip
+                from_id, to_id = candidate.candidate_id, candidate.orphan_id
 
-    matched_prop = next(
-        (p for p in schema.get("properties", []) if p["name"] == edge_type),
-        None,
-    )
-    from_id = candidate.orphan_id
-    to_id = candidate.candidate_id
-    if matched_prop:
-        if (matched_prop["domain"], matched_prop["range"]) == (
-            candidate.candidate_type,
-            candidate.orphan_type,
-        ):
-            # LLM returned a property whose direction is candidate→orphan; flip
-            from_id, to_id = candidate.candidate_id, candidate.orphan_id
+        # Backfill edge attributes per Invariant 6: missing → {value: null, confidence: 0.0}
+        prop_attrs = matched_prop.get("attributes", []) if matched_prop else []
+        attributes = {attr: {"value": None, "confidence": 0.0} for attr in prop_attrs}
 
-    # Backfill edge attributes per Invariant 6: missing → {value: null, confidence: 0.0}
-    prop_attrs = matched_prop.get("attributes", []) if matched_prop else []
-    attributes = {attr: {"value": None, "confidence": 0.0} for attr in prop_attrs}
+        llm_conf = max(0.0, min(1.0, float(result.get("confidence", _cfg.CONFIDENCE_FALLBACK))))
+        heuristic = candidate.heuristic_score
+        final_conf = round(
+            llm_conf
+            * min(1.0, _cfg.ORPHAN_CONFIDENCE_BASE + _cfg.ORPHAN_CONFIDENCE_WEIGHT * heuristic),
+            4,
+        )
 
-    llm_conf = max(0.0, min(1.0, float(result.get("confidence", _cfg.CONFIDENCE_FALLBACK))))
-    heuristic = candidate.heuristic_score
-    final_conf = round(
-        llm_conf
-        * min(1.0, _cfg.ORPHAN_CONFIDENCE_BASE + _cfg.ORPHAN_CONFIDENCE_WEIGHT * heuristic),
-        4,
-    )
-
-    return {
-        "type": edge_type,
-        "from": from_id,
-        "to": to_id,
-        "confidence": final_conf,
-        "method": "orphan_inferred",
-        "attributes": attributes,
-        "source_files": list({ck.split("::")[0] for ck in candidate.shared_chunks}),
-        "_orphan_id": candidate.orphan_id,
-        "_rationale": result.get("rationale", ""),
-        "_heuristic_score": heuristic,
-        "_llm_confidence": llm_conf,
-    }
+        return {
+            "type": edge_type,
+            "from": from_id,
+            "to": to_id,
+            "confidence": final_conf,
+            "method": "orphan_inferred",
+            "attributes": attributes,
+            "source_files": list({ck.split("::")[0] for ck in candidate.shared_chunks}),
+            "_orphan_id": candidate.orphan_id,
+            "_rationale": result.get("rationale", ""),
+            "_heuristic_score": heuristic,
+            "_llm_confidence": llm_conf,
+        }
 
 
 def build_chunk_texts(file_manifest: dict[str, str | dict]) -> dict[str, str]:
@@ -714,7 +721,8 @@ def confirm_orphan_edges(
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures: dict[Any, OrphanCandidate] = {
-            executor.submit(_confirm_one, c, schema, adapter, chunk_texts): c for c in candidates
+            submit_with_context(executor, _confirm_one, c, schema, adapter, chunk_texts): c
+            for c in candidates
         }
         for future in as_completed(futures):
             candidate = futures[future]
@@ -833,101 +841,111 @@ def confirm_orphan_chunk_groups(
     rejections: list[dict] = []
 
     def _process_group(group: OrphanChunkGroup) -> tuple[list[dict], list[dict]]:
-        prompt = _build_chunk_recovery_prompt(
-            group, nodes, schema, chunk_texts, node_by_id=node_by_id
-        )
-        raw = llm_complete_with_retry(
-            adapter,
-            _CHUNK_RECOVERY_SYSTEM_PROMPT,
-            prompt,
-            context_label=f"orphan chunk_recovery {group.chunk_key}",
-        )
-        try:
-            result = json.loads(raw)
-        except (json.JSONDecodeError, ValueError) as exc:
-            log.warning("chunk_recovery — JSON parse error for %s: %s", group.chunk_key, exc)
-            return [], [
-                {"orphan_id": oid, "candidate_id": None, "reason": "parse_error"}
-                for oid in group.orphan_ids
-            ]
+        with _tracer.start_as_current_span("mykg.orphan.group") as span:
+            span.set_attribute("mykg.orphan.chunk_key", group.chunk_key)
+            span.set_attribute("mykg.orphan.count", len(group.orphan_ids))
 
-        if not isinstance(result, list):
-            log.warning(
-                "chunk_recovery — expected list for %s, got %s",
-                group.chunk_key,
-                type(result),
+            prompt = _build_chunk_recovery_prompt(
+                group, nodes, schema, chunk_texts, node_by_id=node_by_id
             )
-            return [], [
-                {"orphan_id": oid, "candidate_id": None, "reason": "wrong_type"}
-                for oid in group.orphan_ids
-            ]
+            raw = llm_complete_with_retry(
+                adapter,
+                _CHUNK_RECOVERY_SYSTEM_PROMPT,
+                prompt,
+                context_label=f"orphan chunk_recovery {group.chunk_key}",
+            )
+            try:
+                result = json.loads(raw)
+            except (json.JSONDecodeError, ValueError) as exc:
+                log.warning("chunk_recovery — JSON parse error for %s: %s", group.chunk_key, exc)
+                mark_span_error(span, f"JSON parse error: {exc}")
+                return [], [
+                    {"orphan_id": oid, "candidate_id": None, "reason": "parse_error"}
+                    for oid in group.orphan_ids
+                ]
 
-        group_confirmed: list[dict] = []
-        confirmed_orphan_ids: set[str] = set()
-
-        for edge in result:
-            etype = edge.get("type", "")
-            from_id = edge.get("from", "")
-            to_id = edge.get("to", "")
-
-            if etype not in valid_edge_types:
-                log.debug(
-                    "chunk_recovery — unknown edge type %s in %s; dropping", etype, group.chunk_key
-                )
-                continue
-            if from_id not in all_node_ids or to_id not in all_node_ids:
-                log.debug(
-                    "chunk_recovery — dangling edge %s→%s in %s; dropping",
-                    from_id,
-                    to_id,
+            if not isinstance(result, list):
+                log.warning(
+                    "chunk_recovery — expected list for %s, got %s",
                     group.chunk_key,
+                    type(result),
                 )
-                continue
+                mark_span_error(span, f"expected list, got {type(result).__name__}")
+                return [], [
+                    {"orphan_id": oid, "candidate_id": None, "reason": "wrong_type"}
+                    for oid in group.orphan_ids
+                ]
 
-            matched_prop = prop_by_name.get(etype)
-            prop_attrs = matched_prop.get("attributes", []) if matched_prop else []
-            attributes = {attr: {"value": None, "confidence": 0.0} for attr in prop_attrs}
+            group_confirmed: list[dict] = []
+            confirmed_orphan_ids: set[str] = set()
 
-            llm_conf = max(0.0, min(1.0, float(edge.get("confidence", _cfg.CONFIDENCE_FALLBACK))))
+            for edge in result:
+                etype = edge.get("type", "")
+                from_id = edge.get("from", "")
+                to_id = edge.get("to", "")
 
-            group_confirmed.append(
-                {
-                    "type": etype,
-                    "from": from_id,
-                    "to": to_id,
-                    "confidence": round(llm_conf, 4),
-                    "method": "orphan_inferred",
-                    "attributes": attributes,
-                    "source_files": [group.filename],
-                    "_rationale": edge.get("rationale", ""),
-                    "_llm_confidence": llm_conf,
-                    "_chunk_key": group.chunk_key,
-                }
-            )
+                if etype not in valid_edge_types:
+                    log.debug(
+                        "chunk_recovery — unknown edge type %s in %s; dropping",
+                        etype,
+                        group.chunk_key,
+                    )
+                    continue
+                if from_id not in all_node_ids or to_id not in all_node_ids:
+                    log.debug(
+                        "chunk_recovery — dangling edge %s→%s in %s; dropping",
+                        from_id,
+                        to_id,
+                        group.chunk_key,
+                    )
+                    continue
 
-            if from_id in group.orphan_ids:
-                confirmed_orphan_ids.add(from_id)
-            if to_id in group.orphan_ids:
-                confirmed_orphan_ids.add(to_id)
+                matched_prop = prop_by_name.get(etype)
+                prop_attrs = matched_prop.get("attributes", []) if matched_prop else []
+                attributes = {attr: {"value": None, "confidence": 0.0} for attr in prop_attrs}
 
-        if group.is_blank_response:
-            for oid in group.orphan_ids:
-                node = node_by_id.get(oid)
-                if node and node.get("extraction_quality") == "blank_response":
-                    if oid in confirmed_orphan_ids:
-                        node["extraction_quality"] = "blank_recovered"
-                    else:
-                        node["extraction_quality"] = "blank_unresolved"
+                llm_conf = max(
+                    0.0, min(1.0, float(edge.get("confidence", _cfg.CONFIDENCE_FALLBACK)))
+                )
 
-        group_rejections = [
-            {"orphan_id": oid, "candidate_id": None, "reason": "llm_rejected"}
-            for oid in group.orphan_ids
-            if oid not in confirmed_orphan_ids
-        ]
-        return group_confirmed, group_rejections
+                group_confirmed.append(
+                    {
+                        "type": etype,
+                        "from": from_id,
+                        "to": to_id,
+                        "confidence": round(llm_conf, 4),
+                        "method": "orphan_inferred",
+                        "attributes": attributes,
+                        "source_files": [group.filename],
+                        "_rationale": edge.get("rationale", ""),
+                        "_llm_confidence": llm_conf,
+                        "_chunk_key": group.chunk_key,
+                    }
+                )
+
+                if from_id in group.orphan_ids:
+                    confirmed_orphan_ids.add(from_id)
+                if to_id in group.orphan_ids:
+                    confirmed_orphan_ids.add(to_id)
+
+            if group.is_blank_response:
+                for oid in group.orphan_ids:
+                    node = node_by_id.get(oid)
+                    if node and node.get("extraction_quality") == "blank_response":
+                        if oid in confirmed_orphan_ids:
+                            node["extraction_quality"] = "blank_recovered"
+                        else:
+                            node["extraction_quality"] = "blank_unresolved"
+
+            group_rejections = [
+                {"orphan_id": oid, "candidate_id": None, "reason": "llm_rejected"}
+                for oid in group.orphan_ids
+                if oid not in confirmed_orphan_ids
+            ]
+            return group_confirmed, group_rejections
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(_process_group, g): g for g in groups}
+        futures = {submit_with_context(executor, _process_group, g): g for g in groups}
         for future in as_completed(futures):
             group = futures[future]
             try:

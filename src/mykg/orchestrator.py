@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Literal
@@ -13,8 +14,28 @@ if TYPE_CHECKING:
 
 from mykg import config as _cfg
 from mykg.logging import get
+from mykg.tracing import get_tracer, mark_span_error
 
 log = get("mykg.orchestrator")
+_tracer = get_tracer()
+
+
+def _attempt_span(name: str, is_llm_step: bool):
+    """Open an attempt-N child span only for LLM steps.
+
+    A non-LLM step (assemble, orphan_score, validate_graph, ...) makes no
+    LLM call, so its attempt-N span would carry no attributes and no
+    content-bearing children (mykg.pass1.batch / mykg.pass2.batch /
+    ChatCompletion, etc. only ever appear under LLM steps — see
+    references/span-map.md) — it would just be a childless span cluttering
+    the trace view with nothing to inspect. Calling _try_run directly
+    (nullcontext) for those steps skips the span entirely while leaving the
+    retry control flow itself untouched: attempt-2/attempt-3-with-feedback
+    still fire the same way on failure, still under mykg.step.<name>.
+    """
+    if is_llm_step:
+        return _tracer.start_as_current_span(name)
+    return nullcontext()
 
 
 class PipelineHaltError(Exception):
@@ -425,159 +446,182 @@ def run(steps: list[Step], ctx: PipelineContext) -> None:
             state.mark_running(step.name)
             state.save(ctx.intermediate_dir)
 
-            try:
-                error, non_retryable = _try_run(step, ctx)
-            except (KeyboardInterrupt, SystemExit) as exc:
-                # Signal or Ctrl-C — save failure before the process exits so
-                # pipeline_state.json doesn't stay stuck as "running".
-                state.mark_failed(step.name, repr(exc), attempts=1, llm_correction=False)
-                state.save(ctx.intermediate_dir)
-                log.error("INTERRUPTED %s — %s", step.name, type(exc).__name__)
-                raise
-            except SchemaUpdatedError as schema_exc:
-                if ctx.schema_restart_count >= _cfg.ORPHAN_SCHEMA_MAX_RESTARTS:
+            with _tracer.start_as_current_span(f"mykg.step.{step.name}") as step_span:
+                step_span.set_attribute("mykg.step.name", step.name)
+                step_span.set_attribute("mykg.step.is_llm_step", step.is_llm_step)
+                step_span.set_attribute("mykg.step.blocking", step.blocking)
+
+                try:
+                    with _attempt_span("attempt-1", step.is_llm_step):
+                        error, non_retryable = _try_run(step, ctx)
+                except (KeyboardInterrupt, SystemExit) as exc:
+                    # Signal or Ctrl-C — save failure before the process exits so
+                    # pipeline_state.json doesn't stay stuck as "running".
+                    state.mark_failed(step.name, repr(exc), attempts=1, llm_correction=False)
+                    state.save(ctx.intermediate_dir)
+                    log.error("INTERRUPTED %s — %s", step.name, type(exc).__name__)
+                    raise
+                except SchemaUpdatedError as schema_exc:
+                    step_span.add_event(
+                        "schema.updated_restart",
+                        attributes={"mykg.restart_count": ctx.schema_restart_count},
+                    )
+                    if ctx.schema_restart_count >= _cfg.ORPHAN_SCHEMA_MAX_RESTARTS:
+                        log.warning(
+                            "SCHEMA UPDATED — %s — but restart limit (%d) reached; "
+                            "schema.json has been updated but pass2 will NOT re-run. "
+                            "Re-run manually with --from-step pass2 to apply the new properties.",
+                            schema_exc,
+                            _cfg.ORPHAN_SCHEMA_MAX_RESTARTS,
+                        )
+                        ctx.schema_hints = []
+                        state.mark_failed(
+                            step.name,
+                            "schema_restart_limit_reached",
+                            attempts=1,
+                            llm_correction=False,
+                        )
+                        state.save(ctx.intermediate_dir)
+                        continue
+
+                    # schema.json was updated during orphan_connect; invalidate downstream
+                    # outputs so pass2 and all later steps re-run (Re-entry A).
+                    ctx.schema_restart_count += 1
                     log.warning(
-                        "SCHEMA UPDATED — %s — but restart limit (%d) reached; "
-                        "schema.json has been updated but pass2 will NOT re-run. "
-                        "Re-run manually with --from-step pass2 to apply the new properties.",
+                        "SCHEMA UPDATED — %s; invalidating outputs and restarting from %s "
+                        "(restart %d/%d)",
                         schema_exc,
+                        _SCHEMA_RESTART_FROM,
+                        ctx.schema_restart_count,
                         _cfg.ORPHAN_SCHEMA_MAX_RESTARTS,
                     )
-                    ctx.schema_hints = []
+                    # Build per-chunk hints so pass2 can inject targeted prompts for the
+                    # orphan nodes whose schema gap triggered this restart.
+                    ctx.schema_hints = [
+                        {
+                            "new_properties": schema_exc.new_property_names,
+                            "orphan_id": g.orphan_id,
+                            "orphan_type": g.orphan_type,
+                            "orphan_name": g.orphan_name,
+                            "shared_chunks": g.shared_chunks,
+                        }
+                        for g in schema_exc.gap_orphans
+                    ]
+                    for s in steps:
+                        if s.name in _SCHEMA_RESTART_INVALIDATE:
+                            for output in s.outputs:
+                                for loc in (ctx.intermediate_dir, ctx.output_dir):
+                                    p = loc / output
+                                    if p.exists():
+                                        p.unlink()
+                                        log.debug("Deleted stale output: %s", p)
+                            state.steps[s.name] = {"status": "pending"}
+                    # Shards are intentionally preserved — step_pass2 will re-extract only
+                    # the specific chunks named in schema_hints.shared_chunks, merging new
+                    # edges back into the existing shards. Deleting all shards here would
+                    # force a full re-extraction of every file for every schema-gap restart,
+                    # paying O(files × restarts) LLM cost instead of O(affected_chunks).
+                    flag_path = ctx.intermediate_dir / "schema_approved.flag"
+                    if flag_path.exists():
+                        flag_path.unlink()
+                        log.debug(
+                            "Deleted stale schema_approved.flag "
+                            "(schema updated by schema-gap restart)"
+                        )
+                    # Regenerate schema.ttl immediately — schema_validate is skipped on
+                    # restart (append mode) or would skip regeneration (non-append, file
+                    # still exists). Deferred import avoids circular dependency.
+                    _schema_json_path = ctx.intermediate_dir / "schema.json"
+                    if _schema_json_path.exists():
+                        from mykg.exporter import export_ttl as _export_ttl
+
+                        _updated_schema = json.loads(
+                            _schema_json_path.read_text(encoding="utf-8")
+                        )
+                        _ttl_text = _export_ttl(_updated_schema, [], {})
+                        (ctx.intermediate_dir / "schema.ttl").write_text(
+                            _ttl_text, encoding="utf-8"
+                        )
+                        log.info(
+                            "Schema-gap restart — regenerated schema.ttl "
+                            "(%d concept(s), %d property/properties)",
+                            len(_updated_schema.get("concepts", [])),
+                            len(_updated_schema.get("properties", [])),
+                        )
+                    # Reset in-memory state that pass2 populates
+                    ctx.nodes = None
+                    ctx.edge_metadata = None
+                    ctx.raw_extractions = None
+                    ctx.chunk_node_index = None
+                    state.save(ctx.intermediate_dir)
+                    schema_restart_triggered = True
+                    break  # restart the for-loop via the outer while
+
+                if error and non_retryable:
+                    log.warning(
+                        "PRECONDITION FAILED %s — %s (skipping retry and LLM feedback; "
+                        "this is a usage/precondition error, not a transient or content error)",
+                        step.name,
+                        error,
+                    )
+
+                if error and not non_retryable:
+                    log.warning("RETRY %s — attempt 1 failed: %s", step.name, error)
+                    with _attempt_span("attempt-2", step.is_llm_step):
+                        error, non_retryable = _try_run(step, ctx)
+
+                llm_correction = False
+                if error and not non_retryable and step.is_llm_step:
+                    log.warning("FEEDBACK %s — requesting LLM correction", step.name)
+                    try:
+                        llm_correction = feedback.apply(step.name, error, ctx)
+                    except Exception as fb_exc:
+                        log.warning("Feedback handler failed: %s", fb_exc)
+                    with _attempt_span("attempt-3-with-feedback", step.is_llm_step):
+                        error, non_retryable = _try_run(step, ctx)
+
+                if error:
+                    mark_span_error(step_span)
+                    step_span.set_attribute("mykg.step.error", error)
+                    if non_retryable:
+                        attempts = 1
+                    elif step.is_llm_step and llm_correction:
+                        attempts = 3
+                    else:
+                        attempts = 2
                     state.mark_failed(
-                        step.name, "schema_restart_limit_reached", attempts=1, llm_correction=False
+                        step.name, error, attempts=attempts, llm_correction=llm_correction
                     )
                     state.save(ctx.intermediate_dir)
-                    continue
+                    _log_advisory(step, error, ctx)
+                    if step.blocking:
+                        raise PipelineHaltError(step.name, error)
+                    else:
+                        log.warning("NON-BLOCKING: continuing past %s", step.name)
+                        continue
 
-                # schema.json was updated during orphan_connect; invalidate downstream
-                # outputs so pass2 and all later steps re-run (Re-entry A).
-                ctx.schema_restart_count += 1
-                log.warning(
-                    "SCHEMA UPDATED — %s; invalidating outputs and restarting from %s "
-                    "(restart %d/%d)",
-                    schema_exc,
-                    _SCHEMA_RESTART_FROM,
-                    ctx.schema_restart_count,
-                    _cfg.ORPHAN_SCHEMA_MAX_RESTARTS,
-                )
-                # Build per-chunk hints so pass2 can inject targeted prompts for the
-                # orphan nodes whose schema gap triggered this restart.
-                ctx.schema_hints = [
-                    {
-                        "new_properties": schema_exc.new_property_names,
-                        "orphan_id": g.orphan_id,
-                        "orphan_type": g.orphan_type,
-                        "orphan_name": g.orphan_name,
-                        "shared_chunks": g.shared_chunks,
-                    }
-                    for g in schema_exc.gap_orphans
-                ]
-                for s in steps:
-                    if s.name in _SCHEMA_RESTART_INVALIDATE:
-                        for output in s.outputs:
-                            for loc in (ctx.intermediate_dir, ctx.output_dir):
-                                p = loc / output
-                                if p.exists():
-                                    p.unlink()
-                                    log.debug("Deleted stale output: %s", p)
-                        state.steps[s.name] = {"status": "pending"}
-                # Shards are intentionally preserved — step_pass2 will re-extract only
-                # the specific chunks named in schema_hints.shared_chunks, merging new
-                # edges back into the existing shards. Deleting all shards here would
-                # force a full re-extraction of every file for every schema-gap restart,
-                # paying O(files × restarts) LLM cost instead of O(affected_chunks).
-                flag_path = ctx.intermediate_dir / "schema_approved.flag"
-                if flag_path.exists():
-                    flag_path.unlink()
-                    log.debug(
-                        "Deleted stale schema_approved.flag (schema updated by schema-gap restart)"
-                    )
-                # Regenerate schema.ttl immediately — schema_validate is skipped on
-                # restart (append mode) or would skip regeneration (non-append, file
-                # still exists). Deferred import avoids circular dependency.
-                _schema_json_path = ctx.intermediate_dir / "schema.json"
-                if _schema_json_path.exists():
-                    from mykg.exporter import export_ttl as _export_ttl
+                # Re-entry B: ingest found new/modified files in append mode — delete
+                # pass2 and all downstream outputs so they re-run against the existing
+                # schema (D26). Must happen after ingest writes the updated manifest.
+                # The ctx.sync guard on deleted_files is load-bearing: without it a
+                # plain --append that merely *detected* a deletion would unlink every
+                # downstream output and pay a full re-assemble plus the entire orphan
+                # sweep — on a run whose documented behaviour is warn-only (D58).
+                if ctx.append and step.name == "ingest" and (
+                    ctx.append_new_files or (ctx.sync and ctx.deleted_files)
+                ):
+                    _invalidate_append_downstream(steps, ctx, state)
 
-                    _updated_schema = json.loads(_schema_json_path.read_text(encoding="utf-8"))
-                    _ttl_text = _export_ttl(_updated_schema, [], {})
-                    (ctx.intermediate_dir / "schema.ttl").write_text(_ttl_text, encoding="utf-8")
+                state.mark_done(step.name)
+                state.save(ctx.intermediate_dir)
+                log.info("DONE %s", step.name)
+
+                if ctx.stop_after and step.name == ctx.stop_after:
                     log.info(
-                        "Schema-gap restart — regenerated schema.ttl "
-                        "(%d concept(s), %d property/properties)",
-                        len(_updated_schema.get("concepts", [])),
-                        len(_updated_schema.get("properties", [])),
+                        "STOP — halted after step '%s' (--pass1-schema-induction-only)",
+                        step.name,
                     )
-                # Reset in-memory state that pass2 populates
-                ctx.nodes = None
-                ctx.edge_metadata = None
-                ctx.raw_extractions = None
-                ctx.chunk_node_index = None
-                state.save(ctx.intermediate_dir)
-                schema_restart_triggered = True
-                break  # restart the for-loop via the outer while
-
-            if error and non_retryable:
-                log.warning(
-                    "PRECONDITION FAILED %s — %s (skipping retry and LLM feedback; "
-                    "this is a usage/precondition error, not a transient or content error)",
-                    step.name,
-                    error,
-                )
-
-            if error and not non_retryable:
-                log.warning("RETRY %s — attempt 1 failed: %s", step.name, error)
-                error, non_retryable = _try_run(step, ctx)
-
-            llm_correction = False
-            if error and not non_retryable and step.is_llm_step:
-                log.warning("FEEDBACK %s — requesting LLM correction", step.name)
-                try:
-                    llm_correction = feedback.apply(step.name, error, ctx)
-                except Exception as fb_exc:
-                    log.warning("Feedback handler failed: %s", fb_exc)
-                error, non_retryable = _try_run(step, ctx)
-
-            if error:
-                if non_retryable:
-                    attempts = 1
-                elif step.is_llm_step and llm_correction:
-                    attempts = 3
-                else:
-                    attempts = 2
-                state.mark_failed(
-                    step.name, error, attempts=attempts, llm_correction=llm_correction
-                )
-                state.save(ctx.intermediate_dir)
-                _log_advisory(step, error, ctx)
-                if step.blocking:
-                    raise PipelineHaltError(step.name, error)
-                else:
-                    log.warning("NON-BLOCKING: continuing past %s", step.name)
-                    continue
-
-            # Re-entry B: ingest found new/modified files in append mode — delete
-            # pass2 and all downstream outputs so they re-run against the existing
-            # schema (D26). Must happen after ingest writes the updated manifest.
-            # The ctx.sync guard on deleted_files is load-bearing: without it a
-            # plain --append that merely *detected* a deletion would unlink every
-            # downstream output and pay a full re-assemble plus the entire orphan
-            # sweep — on a run whose documented behaviour is warn-only (D58).
-            if ctx.append and step.name == "ingest" and (
-                ctx.append_new_files or (ctx.sync and ctx.deleted_files)
-            ):
-                _invalidate_append_downstream(steps, ctx, state)
-
-            state.mark_done(step.name)
-            state.save(ctx.intermediate_dir)
-            log.info("DONE %s", step.name)
-
-            if ctx.stop_after and step.name == ctx.stop_after:
-                log.info(
-                    "STOP — halted after step '%s' (--pass1-schema-induction-only)", step.name
-                )
-                return
+                    return
 
         if not schema_restart_triggered:
             break  # all steps completed (or we returned early); exit the while loop

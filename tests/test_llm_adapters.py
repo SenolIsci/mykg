@@ -1085,7 +1085,11 @@ def test_openrouter_wall_clock_timeout_raises_timeouterror(monkeypatch):
         def __exit__(self, *args):
             return False
 
-        def submit(self, fn):
+        def submit(self, fn, *args, **kwargs):
+            # submit_with_context() calls executor.submit(ctx.run, fn, *args,
+            # **kwargs) — one more positional arg (ctx.run) than a bare
+            # executor.submit(fn) would receive — so this fake must accept
+            # the same variadic shape as the real ThreadPoolExecutor.submit.
             return _SlowFuture()
 
     with (

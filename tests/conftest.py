@@ -75,6 +75,60 @@ def openai_api_key():
     return _key_fixture("openai")
 
 
+@pytest.fixture
+def span_exporter():
+    """An in-memory OTel span exporter wired into the process-global
+    TracerProvider for the duration of one test.
+
+    Production code (mykg.orchestrator, pass1.py, etc.) caches its tracer
+    at import time via a module-level `_tracer = get_tracer()`. This is
+    intentional and correct in production: opentelemetry.trace.get_tracer()
+    returns a ProxyTracer that forwards to whatever TracerProvider is
+    active *at span-creation time*, not at get_tracer()-call time — so a
+    tracer cached before mykg.tracing.setup_tracing() runs still correctly
+    picks up the real provider once setup_tracing() installs it.
+
+    That also means tests cannot isolate spans by installing a *new*
+    TracerProvider per test (set_tracer_provider() is a process-wide
+    set-once operation — every call after the first is silently ignored,
+    and every already-cached ProxyTracer keeps forwarding to whichever
+    provider won that first call). Instead, this fixture installs exactly
+    one real TracerProvider the first time it runs, then on every test
+    (including the first) swaps in a fresh InMemorySpanExporter as that
+    provider's only span processor — so each test only sees the spans
+    produced during its own body, regardless of import order or which
+    module cached its tracer first.
+    """
+    from opentelemetry import trace
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+
+    provider = trace.get_tracer_provider()
+    if not isinstance(provider, TracerProvider):
+        # First test in the process to need real tracing: install the one
+        # SDK TracerProvider every ProxyTracer in the process will forward
+        # to from now on (set_tracer_provider() only ever succeeds once).
+        provider = TracerProvider(resource=Resource.create({"service.name": "mykg-test"}))
+        trace.set_tracer_provider(provider)
+
+    exporter = InMemorySpanExporter()
+    span_processor = SimpleSpanProcessor(exporter)
+
+    # Swap in this test's own processor list so spans from earlier/later
+    # tests never leak into this test's assertions.
+    old_processors = list(provider._active_span_processor._span_processors)
+    provider._active_span_processor._span_processors = (span_processor,)
+
+    yield exporter
+
+    provider._active_span_processor._span_processors = tuple(old_processors)
+    exporter.clear()
+
+
 @pytest.fixture(scope="session")
 def live_corpus(tmp_path_factory):
     d = tmp_path_factory.mktemp("corpus")

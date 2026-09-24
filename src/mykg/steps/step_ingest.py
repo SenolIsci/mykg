@@ -11,6 +11,7 @@ from mykg.chunker import chunk_file
 from mykg.chunker import count_tokens as _token_count
 from mykg.logging import get
 from mykg.orchestrator import PipelineContext
+from mykg.tracing import submit_with_context
 
 log = get("mykg.steps.ingest")
 
@@ -52,7 +53,8 @@ def _run_parallel(
     results: dict[str, _T] = {}
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_file = {
-            executor.submit(worker, md_file, input_dir): md_file for md_file in md_files
+            submit_with_context(executor, worker, md_file, input_dir): md_file
+            for md_file in md_files
         }
         for future in as_completed(future_to_file):
             md_file = future_to_file[future]

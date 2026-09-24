@@ -130,3 +130,31 @@ def test_temperature_forwarded_on_every_retry():
         assert llm_complete_with_retry(adapter, "sys", "user", temperature=0.0) == "ok"
     assert len(adapter.calls) == 3
     assert all(c["temperature"] == 0.0 for c in adapter.calls)
+
+
+def test_llm_complete_with_retry_creates_span(span_exporter):
+    adapter = _Adapter(["fake response"])
+    result = llm_complete_with_retry(
+        adapter, "system prompt", "user prompt", context_label="test-call"
+    )
+
+    assert result == "fake response"
+    spans = span_exporter.get_finished_spans()
+    call_spans = [s for s in spans if s.name == "mykg.llm.call"]
+    assert len(call_spans) == 1
+    assert call_spans[0].attributes["mykg.llm.context_label"] == "test-call"
+    assert call_spans[0].attributes["gen_ai.system"] == "test"
+
+
+def test_llm_complete_with_retry_span_records_error_on_exhausted_retries(span_exporter):
+    adapter = _Adapter(["", "", ""])
+    with patch("mykg.llm.retry._cfg.LLM_RETRY_MAX_RETRIES", 2):
+        result = llm_complete_with_retry(adapter, "sys", "user", context_label="exhausted")
+
+    assert result == ""
+    spans = span_exporter.get_finished_spans()
+    call_spans = [s for s in spans if s.name == "mykg.llm.call"]
+    assert len(call_spans) == 1
+    from opentelemetry.trace import StatusCode
+
+    assert call_spans[0].status.status_code == StatusCode.ERROR

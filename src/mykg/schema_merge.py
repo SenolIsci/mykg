@@ -8,8 +8,10 @@ from mykg.llm.adapter import LLMAdapter
 from mykg.llm.retry import llm_complete_with_retry
 from mykg.prompts import load_prompt
 from mykg.thesaurus import SynonymIndex
+from mykg.tracing import get_tracer
 
 _log = logging.getLogger("mykg.schema_merge")
+_tracer = get_tracer()
 _QUALITY_SYSTEM_PROMPT = load_prompt("schema_merge/quality_system")
 _HARMONIZE_SYSTEM_PROMPT = load_prompt("schema_merge/harmonize_system")
 _MERGE_HARMONIZE_SYSTEM_PROMPT = load_prompt("schema_merge/merge_harmonize_system")
@@ -297,23 +299,24 @@ def harmonize_schema(
     system = _HARMONIZE_SYSTEM_PROMPT
     if locked_block:
         system = system + "\n\n" + locked_block
-    try:
-        raw = llm_complete_with_retry(
-            adapter,
-            system,
-            user,
-            context_label="schema_harmonize",
-        )
-        improved = json.loads(raw)
-        if not isinstance(improved.get("concepts"), list) or not isinstance(
-            improved.get("properties"), list
-        ):
-            _log.warning("schema_harmonize — wrong structure from LLM; keeping original")
+    with _tracer.start_as_current_span("mykg.schema_harmonize"):
+        try:
+            raw = llm_complete_with_retry(
+                adapter,
+                system,
+                user,
+                context_label="schema_harmonize",
+            )
+            improved = json.loads(raw)
+            if not isinstance(improved.get("concepts"), list) or not isinstance(
+                improved.get("properties"), list
+            ):
+                _log.warning("schema_harmonize — wrong structure from LLM; keeping original")
+                return schema
+            return _normalize_schema(improved)
+        except Exception as exc:
+            _log.warning("schema_harmonize — failed (%s); keeping original schema", exc)
             return schema
-        return _normalize_schema(improved)
-    except Exception as exc:
-        _log.warning("schema_harmonize — failed (%s); keeping original schema", exc)
-        return schema
 
 
 def _reject_empty_schema(improved: dict, original: dict, label: str) -> dict | None:
@@ -349,26 +352,27 @@ def review_schema_quality(schema: dict, adapter: LLMAdapter, locked_block: str =
     system = _QUALITY_SYSTEM_PROMPT
     if locked_block:
         system = system + "\n\n" + locked_block
-    try:
-        raw = llm_complete_with_retry(
-            adapter,
-            system,
-            user,
-            context_label="schema_quality_review",
-        )
-        improved = json.loads(raw)
-        if not isinstance(improved.get("concepts"), list) or not isinstance(
-            improved.get("properties"), list
-        ):
-            _log.warning("schema_quality_review — wrong structure from LLM; keeping original")
+    with _tracer.start_as_current_span("mykg.schema_quality_review"):
+        try:
+            raw = llm_complete_with_retry(
+                adapter,
+                system,
+                user,
+                context_label="schema_quality_review",
+            )
+            improved = json.loads(raw)
+            if not isinstance(improved.get("concepts"), list) or not isinstance(
+                improved.get("properties"), list
+            ):
+                _log.warning("schema_quality_review — wrong structure from LLM; keeping original")
+                return schema
+            fallback = _reject_empty_schema(improved, schema, "schema_quality_review")
+            if fallback is not None:
+                return fallback
+            return _normalize_schema(improved)
+        except Exception as exc:
+            _log.warning("schema_quality_review — failed (%s); keeping original schema", exc)
             return schema
-        fallback = _reject_empty_schema(improved, schema, "schema_quality_review")
-        if fallback is not None:
-            return fallback
-        return _normalize_schema(improved)
-    except Exception as exc:
-        _log.warning("schema_quality_review — failed (%s); keeping original schema", exc)
-        return schema
 
 
 def _sanctioned_collapses(schema: dict, thesaurus: SynonymIndex | None) -> list[tuple[str, str]]:
@@ -543,24 +547,27 @@ def harmonize_schema_for_merge(
         + "\n\n"
         + _concept_preservation_block(schema, thesaurus)
     )
-    try:
-        raw = llm_complete_with_retry(
-            adapter,
-            system,
-            user,
-            context_label="merge_schema_harmonize",
-        )
-        improved = json.loads(raw)
-        if not isinstance(improved.get("concepts"), list) or not isinstance(
-            improved.get("properties"), list
-        ):
-            _log.warning("merge_schema_harmonize — wrong structure from LLM; keeping original")
+    with _tracer.start_as_current_span("mykg.merge_schema_harmonize"):
+        try:
+            raw = llm_complete_with_retry(
+                adapter,
+                system,
+                user,
+                context_label="merge_schema_harmonize",
+            )
+            improved = json.loads(raw)
+            if not isinstance(improved.get("concepts"), list) or not isinstance(
+                improved.get("properties"), list
+            ):
+                _log.warning(
+                    "merge_schema_harmonize — wrong structure from LLM; keeping original"
+                )
+                return schema
+            improved = _restore_deleted_concepts(improved, schema, thesaurus, events)
+            return _normalize_schema(improved)
+        except Exception as exc:
+            _log.warning("merge_schema_harmonize — failed (%s); keeping original schema", exc)
             return schema
-        improved = _restore_deleted_concepts(improved, schema, thesaurus, events)
-        return _normalize_schema(improved)
-    except Exception as exc:
-        _log.warning("merge_schema_harmonize — failed (%s); keeping original schema", exc)
-        return schema
 
 
 def review_schema_quality_for_merge(
@@ -581,26 +588,31 @@ def review_schema_quality_for_merge(
     system = (
         _MERGE_QUALITY_SYSTEM_PROMPT + "\n\n" + _concept_preservation_block(schema, thesaurus)
     )
-    try:
-        raw = llm_complete_with_retry(
-            adapter,
-            system,
-            user,
-            context_label="merge_schema_quality_review",
-        )
-        improved = json.loads(raw)
-        if not isinstance(improved.get("concepts"), list) or not isinstance(
-            improved.get("properties"), list
-        ):
-            _log.warning("merge_schema_quality_review — wrong structure from LLM; keeping original")
+    with _tracer.start_as_current_span("mykg.merge_schema_quality_review"):
+        try:
+            raw = llm_complete_with_retry(
+                adapter,
+                system,
+                user,
+                context_label="merge_schema_quality_review",
+            )
+            improved = json.loads(raw)
+            if not isinstance(improved.get("concepts"), list) or not isinstance(
+                improved.get("properties"), list
+            ):
+                _log.warning(
+                    "merge_schema_quality_review — wrong structure from LLM; keeping original"
+                )
+                return schema
+            fallback = _reject_empty_schema(improved, schema, "merge_schema_quality_review")
+            if fallback is not None:
+                return fallback
+            improved = _restore_deleted_concepts(improved, schema, thesaurus, events)
+            improved = _normalize_schema(improved)
+            _flag_attribute_synonyms(improved, thesaurus, events)
+            return improved
+        except Exception as exc:
+            _log.warning(
+                "merge_schema_quality_review — failed (%s); keeping original schema", exc
+            )
             return schema
-        fallback = _reject_empty_schema(improved, schema, "merge_schema_quality_review")
-        if fallback is not None:
-            return fallback
-        improved = _restore_deleted_concepts(improved, schema, thesaurus, events)
-        improved = _normalize_schema(improved)
-        _flag_attribute_synonyms(improved, thesaurus, events)
-        return improved
-    except Exception as exc:
-        _log.warning("merge_schema_quality_review — failed (%s); keeping original schema", exc)
-        return schema

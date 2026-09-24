@@ -874,6 +874,12 @@ def _print_next_steps(
     default=False,
     help="Write a Neo4j LOAD CSV bundle to output/neo4j_csv/ (overrides config neo4j_csv_enabled)",
 )
+@click.option(
+    "--otel",
+    is_flag=True,
+    default=False,
+    help="Enable OpenTelemetry tracing for this run (overrides config otel.enabled)",
+)
 def extract_graph(
     input_dir,
     output_dir,
@@ -898,6 +904,7 @@ def extract_graph(
     session,
     obsidian_vault,
     neo4j_csv,
+    otel,
 ):
     """Extract a knowledge graph from a directory of Markdown files."""
     from mykg.llm.config import load_adapter
@@ -1080,6 +1087,16 @@ def extract_graph(
 
         _config_mod.NEO4J_CSV_ENABLED = True
 
+    if otel:
+        import mykg.config as _config_mod
+
+        _config_mod.OTEL_ENABLED = True
+
+    from mykg.tracing import setup_tracing
+
+    _otel_session_label = session or locals().get("session_name") or "no-session"
+    setup_tracing(session_name=_otel_session_label, profile=profile or "default")
+
     from mykg.llm.error_gate import ErrorGate
 
     error_gate = (
@@ -1150,7 +1167,18 @@ def extract_graph(
             encoding="utf-8",
         )
 
-    run(STEPS, ctx)
+    from mykg.tracing import get_tracer
+
+    tracer = get_tracer()
+    with tracer.start_as_current_span("mykg.extract_graph.run") as run_span:
+        run_span.set_attribute("mykg.session", _otel_session_label)
+        run_span.set_attribute("mykg.profile", profile or "default")
+        run_span.set_attribute("llm.provider", adapter.endpoint_label())
+        run_span.set_attribute("mykg.append", bool(append))
+        run_span.set_attribute("mykg.sync", bool(sync))
+        run_span.set_attribute("mykg.grow_schema", bool(grow_schema))
+        run_span.set_attribute("mykg.pass2_only", bool(pass2_only))
+        run(STEPS, ctx)
 
     if _cfg().REPORT_ENABLED and session_root is not None:
         from mykg.steps.step_walkthrough import run_walkthrough

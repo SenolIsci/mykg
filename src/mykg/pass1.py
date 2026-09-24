@@ -13,8 +13,10 @@ from mykg.llm.error_gate import ErrorGate, noop_gate
 from mykg.llm.retry import llm_complete_with_retry
 from mykg.logging import get
 from mykg.prompts import load_prompt
+from mykg.tracing import get_tracer, mark_span_error, submit_with_context
 
 log = get("mykg.pass1")
+_tracer = get_tracer()
 
 PASS1_SYSTEM_PROMPT = load_prompt("pass1/system")
 
@@ -216,60 +218,72 @@ def run_pass1(
         system = system + "\n\n" + locked_schema_block
 
     def _process_batch(idx: int, batch: list[Chunk]) -> tuple[int, dict | None, str | None]:
-        token_count = sum(c.token_end - c.token_start for c in batch)
-        log.info(
-            "  batch %d/%d — %d chunk(s), ~%d tokens", idx, len(batches), len(batch), token_count
-        )
-        user_text = "\n\n".join(c.text for c in batch)
-        raw = llm_complete_with_retry(
-            adapter,
-            system,
-            user_text,
-            context_label=f"pass1 batch {idx}/{len(batches)}",
-        )
-        try:
-            proposal = json.loads(raw)
-        except (json.JSONDecodeError, ValueError) as exc:
-            log.warning("  batch %d — JSON parse error: %s; retrying", idx, exc)
-            snippet = (
-                raw[max(0, exc.pos - 100) : exc.pos + 50]
-                if isinstance(exc, json.JSONDecodeError)
-                else raw[:200]
+        with _tracer.start_as_current_span("mykg.pass1.batch") as span:
+            span.set_attribute("mykg.batch.index", idx)
+            span.set_attribute("mykg.batch.chunk_count", len(batch))
+
+            token_count = sum(c.token_end - c.token_start for c in batch)
+            log.info(
+                "  batch %d/%d — %d chunk(s), ~%d tokens",
+                idx,
+                len(batches),
+                len(batch),
+                token_count,
             )
-            log.debug("  batch %d — raw response around error: %s", idx, snippet)
-            retry_user_text = (
-                "Your previous response was not valid JSON. "
-                "Return only a JSON object with 'concepts' and 'properties' keys.\n\n" + user_text
-            )
-            retry_raw = llm_complete_with_retry(
+            user_text = "\n\n".join(c.text for c in batch)
+            raw = llm_complete_with_retry(
                 adapter,
                 system,
-                retry_user_text,
-                context_label=f"pass1 batch {idx}/{len(batches)} json-retry",
+                user_text,
+                context_label=f"pass1 batch {idx}/{len(batches)}",
             )
             try:
-                proposal = json.loads(retry_raw)
-            except (json.JSONDecodeError, ValueError) as exc2:
-                msg = f"JSON parse error on retry: {exc2}"
-                log.warning("  batch %d — %s; skipping", idx, msg)
+                proposal = json.loads(raw)
+            except (json.JSONDecodeError, ValueError) as exc:
+                log.warning("  batch %d — JSON parse error: %s; retrying", idx, exc)
+                snippet = (
+                    raw[max(0, exc.pos - 100) : exc.pos + 50]
+                    if isinstance(exc, json.JSONDecodeError)
+                    else raw[:200]
+                )
+                log.debug("  batch %d — raw response around error: %s", idx, snippet)
+                retry_user_text = (
+                    "Your previous response was not valid JSON. "
+                    "Return only a JSON object with 'concepts' and 'properties' keys.\n\n"
+                    + user_text
+                )
+                retry_raw = llm_complete_with_retry(
+                    adapter,
+                    system,
+                    retry_user_text,
+                    context_label=f"pass1 batch {idx}/{len(batches)} json-retry",
+                )
+                try:
+                    proposal = json.loads(retry_raw)
+                except (json.JSONDecodeError, ValueError) as exc2:
+                    msg = f"JSON parse error on retry: {exc2}"
+                    log.warning("  batch %d — %s; skipping", idx, msg)
+                    mark_span_error(span, msg)
+                    return (idx, None, msg)
+            if "concepts" not in proposal or "properties" not in proposal:
+                msg = "response missing 'concepts'/'properties'"
+                log.warning("  batch %d — %s, skipping", idx, msg)
+                mark_span_error(span, msg)
                 return (idx, None, msg)
-        if "concepts" not in proposal or "properties" not in proposal:
-            msg = "response missing 'concepts'/'properties'"
-            log.warning("  batch %d — %s, skipping", idx, msg)
-            return (idx, None, msg)
-        if not isinstance(proposal["concepts"], list) or not isinstance(
-            proposal["properties"], list
-        ):
-            msg = "'concepts'/'properties' must be lists"
-            log.warning("  batch %d — %s, skipping", idx, msg)
-            return (idx, None, msg)
-        log.debug(
-            "  batch %d — %d concept(s), %d property(ies)",
-            idx,
-            len(proposal["concepts"]),
-            len(proposal["properties"]),
-        )
-        return (idx, proposal, None)
+            if not isinstance(proposal["concepts"], list) or not isinstance(
+                proposal["properties"], list
+            ):
+                msg = "'concepts'/'properties' must be lists"
+                log.warning("  batch %d — %s, skipping", idx, msg)
+                mark_span_error(span, msg)
+                return (idx, None, msg)
+            log.debug(
+                "  batch %d — %d concept(s), %d property(ies)",
+                idx,
+                len(proposal["concepts"]),
+                len(proposal["properties"]),
+            )
+            return (idx, proposal, None)
 
     gate = error_gate if error_gate is not None else noop_gate()
     to_dispatch = [
@@ -288,7 +302,9 @@ def run_pass1(
     )
     results: dict[int, dict | None] = dict(existing_proposals)
     with ThreadPoolExecutor(max_workers=_cfg.PASS1_MAX_WORKERS) as executor:
-        futures = [executor.submit(_process_batch, i, batch) for i, batch in to_dispatch]
+        futures = [
+            submit_with_context(executor, _process_batch, i, batch) for i, batch in to_dispatch
+        ]
         for future in as_completed(futures):
             try:
                 idx, proposal, error = future.result()

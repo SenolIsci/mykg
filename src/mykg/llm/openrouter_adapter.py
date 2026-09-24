@@ -20,6 +20,7 @@ from mykg.llm.retry import (
 )
 from mykg.llm.temperature import rejects_temperature, resolve_temperature
 from mykg.logging import record_llm_call
+from mykg.tracing import submit_with_context
 
 _log = logging.getLogger(__name__)
 
@@ -142,8 +143,20 @@ class OpenRouterAdapter(LLMAdapter):
 
             # Hard wall-clock deadline — prevents OpenRouter keep-alive bytes
             # from resetting the httpx read timeout indefinitely.
+            #
+            # submit_with_context (not a bare executor.submit) is load-bearing
+            # for tracing: ThreadPoolExecutor.submit() does not propagate the
+            # calling thread's contextvars.Context into the worker thread, so
+            # the active OTel span context would not follow _do_request into
+            # this inner pool. Without it, the ChatCompletion span created by
+            # OpenAIInstrumentor around self._client.chat.completions.create()
+            # below would come out parentless — a root span with no
+            # mykg.llm.call/mykg.step.*/mykg.extract_graph.run ancestry, even
+            # though every other adapter's ChatCompletion span nests correctly
+            # (see mykg.tracing.submit_with_context's own docstring, and
+            # references/span-map.md's "propagation trap" note).
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(_do_request)
+                future = submit_with_context(executor, _do_request)
                 try:
                     raw, usage, finish_reason = future.result(timeout=effective_timeout)
                 except concurrent.futures.TimeoutError:
