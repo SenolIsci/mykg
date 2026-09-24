@@ -10,15 +10,15 @@
 
 **Tech Stack:** Python 3.11+, `typesafe-sdk` (new dependency, Python ≥3.10 — compatible), Pydantic `BaseModel` for config/context fields, `ThreadPoolExecutor` for per-file parallelism (Invariant 12), `pytest` + `monkeypatch` for tests (no live API calls in unit tests).
 
-**Spec:** `docs/superpowers/specs/2026-09-24-confidence-grader-design.md` — the plan argues from this spec; read both. In particular read the spec's "Grader backend: TypeSafe AI (Jev)" section (`Noul` primitive selection, adapter shape, exception hierarchy) before Task 1.
+**Design:** This plan is self-contained — the "Design" section immediately below (Problem, Goal, Current state, Chosen architecture, Grader backend, Schema in `state`, pipeline mechanics) is the full design this plan implements; read it before Task 1. (It was previously a separate spec document, `docs/superpowers/specs/2026-09-24-confidence-grader-design.md`, now merged in here and superseded — do not consult that file.)
 
 ## Global Constraints
 
-- `enabled: false` is the shipped default for `grader:` in every profile of both `mykg_config.yaml` and `src/mykg/data/mykg_config.yaml` — grading must be fully opt-in; the pipeline's existing self-reported-confidence behavior is unchanged unless a user turns it on (spec "Config block, revised").
-- `typesafe-sdk` is an **optional** dependency, imported lazily only inside grader code paths — must not be imported at module load time anywhere reachable when `grader.enabled` is false, so users who never enable grading never need it installed (spec "Adapter shape" bullet 5).
-- `TypeSafeGrader` is **not** a subclass of `LLMAdapter` and is **not** registered in `llm/config.py:load_adapter()`'s provider dispatch (spec "Adapter shape").
-- Every attribute's self-reported confidence must be preserved as `attr["self_reported_confidence"]`, never dropped, when a grade overwrites `attr["confidence"]` (spec "Consumption at assemble time" — mirrors D9's "never silently drop" pattern).
-- No changes to `assembler.py`'s dedup/aggregation logic — it must keep reading whatever sits in `confidence` fields unmodified (spec "Consumption at assemble time").
+- `enabled: false` is the shipped default for `grader:` in every profile of both `mykg_config.yaml` and `src/mykg/data/mykg_config.yaml` — grading must be fully opt-in; the pipeline's existing self-reported-confidence behavior is unchanged unless a user turns it on (Design section, "Config block").
+- `typesafe-sdk` is an **optional** dependency, imported lazily only inside grader code paths — must not be imported at module load time anywhere reachable when `grader.enabled` is false, so users who never enable grading never need it installed (Design section, "Adapter shape").
+- `TypeSafeGrader` is **not** a subclass of `LLMAdapter` and is **not** registered in `llm/config.py:load_adapter()`'s provider dispatch (Design section, "Adapter shape").
+- Every attribute's self-reported confidence must be preserved as `attr["self_reported_confidence"]`, never dropped, when a grade overwrites `attr["confidence"]` (Design section, "Consumption at assemble time" — mirrors D9's "never silently drop" pattern).
+- No changes to `assembler.py`'s dedup/aggregation logic — it must keep reading whatever sits in `confidence` fields unmodified (Design section, "Consumption at assemble time").
 - Config keys read via `config.py`'s `_get()`/`_get_opt()` come from the `pipeline:` YAML block; the `grader:` block is a **profile-level sibling of `llm:`**, read from `RAW` directly (matching how `load_adapter()` reads `RAW["llm"]`) — NOT wired through `config.py`'s pipeline-only constant mechanism. `_apply_profile()` in `src/mykg/config.py` promotes only an explicit allowlist of profile keys (`provider`, `pipeline`, `llm`, `llm_retry`, `agent`, `mcp`) — `grader` must be added to that allowlist or it is silently dropped for every profile (verified in Task 1).
 - Any new key added under `preprocess:`, `pipeline:`, or any other YAML block must be added to **both** `mykg_config.yaml` and `src/mykg/data/mykg_config.yaml` (Invariant 17) — the `grader:` block, being a sibling of `llm:` rather than under `pipeline:`, is technically outside Invariant 17's literal wording, but this plan applies the same both-files discipline to it for consistency (one shipped block should not differ between the runtime and packaging copies).
 - All file I/O uses `encoding="utf-8"` explicitly and `json.dumps(..., ensure_ascii=False)` where content may be non-ASCII (Invariant 20).
@@ -31,6 +31,580 @@
 - **A chunk whose grader call raises must not abort the pipeline or lose other chunks' grades**, and separately, **an entity/attribute with no grade entry (whether from a null-skip or a failed call) must fall through to its self-reported confidence unchanged**, not `None`/`0.0`/a KeyError. Covered in Task 4 (per-chunk `except Exception`, matching `run_pass2._process_file`'s breadth) and Task 8 (`_apply_grades` never assumes every attribute was graded).
 - **An edge whose type isn't a declared schema property, or whose endpoint node types violate that property's declared `domain`/`range`, must never reach `grade_chunk`.** Grading a structurally invalid edge wastes an API call on something already known to be wrong, and (worse) could hand the grader a `field_path` like `bad_type.role` that doesn't correspond to anything in the schema it was also given — a confusing, ungrounded question. Covered in Task 4 (`_index_entities` filters before building the entities list, at zero grader-call cost).
 - **Missing `TYPESAFE_API_KEY` with `grader.enabled: true` must fail fast**, and **re-running `--from-step pass2` (or earlier) must not leave stale grades** — the first mirrors `openai_adapter.py`'s `ValueError` pattern (Task 3); the second needs a separate `idx <= grade_confidence_idx` shard-clearing condition in `cli.py` since `grade_confidence` sits *after* pass2 in step order, so the existing `idx <= pass2_idx` check is the wrong boundary (Task 7).
+
+---
+
+## Design
+
+### Problem
+
+Every attribute value, node, and edge in the graph carries a confidence
+score (D9), but today that score is entirely **self-reported by the Pass 2
+extraction LLM in the same call that produces the value** — there is no
+independent check. `_normalize_scalars` coerces bare scalars to a fallback
+confidence when the LLM omits the wrapper, and `_backfill_extraction` fills
+genuinely missing attributes with `{value: null, confidence: 0.0}`, but
+neither of these is a *measurement* — they're defaults for absent data. A
+value the extractor hallucinated gets whatever confidence the extractor
+felt like reporting for it, with nothing downstream to catch the mismatch.
+
+### Goal
+
+Introduce an independent **grader** that re-scores confidence for each
+extracted node/edge attribute against the source text it was extracted
+from. Its score replaces the extractor's self-reported confidence before
+the graph is assembled.
+
+### Current state (as found)
+
+- **Pass 2** (`src/mykg/pass2.py`) chunks each file (`chunker.chunk_file`,
+  default ~6,400 tokens/chunk) and makes one LLM call per chunk
+  (`_extract_chunk`) via the single adapter at `ctx.adapter`. The extractor
+  is asked to emit `{value, confidence}` per attribute in the same response
+  that produces the value.
+- **`chunk_node_index.json`** already records, per file and per chunk
+  index, the stable IDs of every node extracted from that chunk — this is
+  the exact join key needed to re-associate a value with its source chunk
+  after the fact.
+- **`raw_extractions.json`** (assembled from `raw_extractions_shards/`)
+  holds the per-file `{nodes, edges}` with their attribute values and
+  self-reported confidence.
+- **`step_assemble.run_assemble`** loads `raw_extractions.json`, assigns
+  stable IDs, then calls `assembler.deduplicate_nodes` /
+  `deduplicate_edges`, which aggregate confidence across duplicate
+  occurrences (mean/max, D10/D19) purely by reading whatever `confidence`
+  value already sits on each attribute dict. Assembler logic has **no
+  awareness of how confidence was produced** — it just trusts the field.
+- **One LLM adapter for the whole pipeline.** `load_adapter()`
+  (`src/mykg/llm/config.py`) builds a single `LLMAdapter` from the active
+  profile's flat `llm:` block; `cli.py` constructs it once and threads it
+  through `PipelineContext.adapter`, used by pass1, pass2, normalize,
+  orphan, and feedback alike. There is no existing precedent for a second,
+  independently-configured model in the pipeline.
+- **Re-entry / resumability machinery** that any new LLM step must plug
+  into: per-file shard directories flushed incrementally inside the
+  `ThreadPoolExecutor` `as_completed` loop (D57 pattern); `_is_done` step
+  skipping; `_SCHEMA_RESTART_INVALIDATE` / `_APPEND_INVALIDATE` sets in
+  `orchestrator.py` that list which steps' outputs get deleted on a
+  schema-gap restart or `--append`; and the shard-clearing block in
+  `cli.py:_delete_from_step` that clears pass2's shard dirs whenever
+  `--from-step` targets pass2 or an earlier step.
+
+### Chosen architecture: per-chunk re-grading
+
+Considered against two axes — what evidence the grader sees (source chunk
+text vs. structured JSON only vs. full file) and call granularity (per
+chunk, per node/edge, per file) — three real architectures emerged:
+
+1. **Per-chunk, chunk text + values (chosen).** Mirrors Pass 2's own unit of
+   work exactly. Call count is the same order of magnitude as Pass 2
+   itself.
+2. **Per-node/edge, chunk text + single entity's values.** Finest-grained
+   (no dilution across sibling entities in one call) but scales LLM call
+   count with extracted-entity count rather than chunk count — typically
+   3–10x more calls than (1) on a dense corpus. Would need an explicit
+   Invariant-16-style cost cap to justify.
+3. **Structure-only, batched per file, no source text.** Cheapest by far,
+   but the grader can only judge internal plausibility/consistency, not
+   whether a value is actually supported by the source — the one thing an
+   independent grader most needs to catch. Rejected as a weak fit for the
+   stated goal.
+
+(1) is selected: it re-uses the exact chunk/shard/resume machinery pass2
+already has and directly tests groundedness against source text.
+
+### Grader backend: TypeSafe AI (Jev)
+
+TypeSafe AI (https://docs.typesafe.ai) is **not** a general chat-completion
+service. Its model, **Jev** ("the first System One model"), is a
+structured-decision primitive: you call `client.system_one(state=...,
+questions={...})` with a `state` blob (string, object, array, or null —
+arbitrary JSON is accepted directly, no manual serialization needed) and a
+dict of typed questions, each one of:
+
+- **`Choice`** — select from an enumerated `criteria` dict → returns
+  `.choice`, `.probabilities`, `.confidence`
+- **`Score`** — rate against an ordered `criteria` list of levels → returns
+  `.score` (the winning level's *index*, not a 0–1 value), `.legend`
+  (maps level index → its description string), `.probabilities`,
+  `.confidence`
+- **`Noul`** — yes/no truthfulness judgment, no criteria required → returns
+  `.noul` (a 0–1 probability, this *is* the confidence signal)
+
+All three accept **structured JSON in `instructions`/`criteria`**, not just
+plain strings — e.g. a `Choice` criterion can be `{"what": ..., "not_for":
+..., "examples": [...]}` instead of a one-line description, and a `Score`
+level can be `{"summary": ..., "signals": [...]}`. Every question in one
+`questions={...}` dict is evaluated **independently in parallel within a
+single API call** — "one question's answer is not hidden context for
+another," and the docs' own cookbook pattern for exactly our use case (the
+invoice-extraction cascade) is: build one question per extracted field, all
+sent in a single call:
+
+```json
+{
+  "invoice_number_is_correct": {
+    "type": "noul",
+    "instructions": {
+      "field": {
+        "name": "invoice_number",
+        "type": "string",
+        "description": "The identifier printed on the invoice."
+      },
+      "extracted_value": "4471",
+      "question": "Does `extracted_value` match the `field`?"
+    }
+  }
+}
+```
+
+`confidence` in TypeSafe's response (`Choice`/`Score`) is a **derived
+statistic on the shape of the probability distribution** (concentrated →
+confident, spread out → uncertain), not the same thing as the model's own
+self-assessment — e.g. for a 3-option `Choice`, `confidence = (3 ×
+top_probability − 1) / 2`. For `Score`, `.confidence` is computed the same
+way from how `probabilities` spreads across levels — it measures certainty
+about *which level won*, not "how good/correct" the winning level is. For
+`Noul` there is no separate `.confidence` field; the `.noul` value itself
+(0–1) is the usable signal, since it's already a probability, not a choice
+among options.
+
+#### Primitive selection: `Noul`, one per extracted attribute
+
+mykg needs a direct 0–1 confidence score per extracted attribute. Two
+primitives were weighed against that requirement:
+
+- **`Noul`** — "is this extracted value correct?" is inherently a
+  yes/no/how-sure-are-you question, and `.noul` returns exactly a 0–1
+  probability with no further derivation needed.
+- **`Score`** — would require designing an ordered N-tier rubric (e.g.
+  `["not supported", "weakly supported", "partially supported", "fully
+  supported"]`), then manually deriving a 0–1 value from the winning
+  level's index (`score / (len(criteria) - 1)`) since `.score` is an index
+  and `Score`'s own `.confidence` field means something unrelated
+  (distribution-spread certainty about *which* tier won, not "how correct"
+  the value is) and would go unused.
+
+`Noul` is the more direct path to a 0–1 confidence score with no rubric to
+design and no derivation step, so it is the primitive used throughout this
+design. One `Noul` question per `{entity, attribute, value}` triple
+extracted from a chunk, all batched into **one `system_one` call per
+chunk** — this both matches the docs' recommended "one question per field,
+single call" pattern and preserves the per-chunk call granularity chosen
+above. This is also, concretely, TypeSafe's own documented pattern for
+exactly this problem: the `sde_cascade` cookbook
+(https://docs.typesafe.ai/cookbooks/sde_cascade) grades a whole LLM
+extraction record against its source text using this same shape — one
+`system_one` call per record, one `Noul` question per field (plus one
+holistic `"__overall__::judge"` question), all evaluated in parallel and
+returned as `{field::metric: P(true)}`. mykg's per-chunk grading call
+mirrors this directly, one level up (one call per chunk's worth of
+nodes/edges rather than one call per single extracted record), and adopts
+two things from the cookbook's actual code:
+
+**`NoulCriteria(true=..., false=...)`** — a `Noul` question accepts an
+explicit `criteria` object stating in domain terms what a `true` and a
+`false` answer each mean, rather than relying purely on prose inside
+`instructions`. Sharper than a bare question string, and it's the real
+signature the SDK exposes (`from typesafe_sdk import Noul, NoulCriteria`).
+
+**A structured `state` dict**, not a bare source-text string — the
+cookbook's `verify()` builds `state = {"system_message": ..., "instruction":
+..., "source_text": row["content"], "schema": schema, "extraction":
+record}` and passes that whole dict as `state`; `system_one` accepts `state`
+as "string, object, array, or null" (arbitrary JSON), so a structured `state`
+gives Jev the schema and the full extraction record as separate, clearly
+labeled JSON fields alongside the source text, rather than making
+`instructions` re-state that context per question.
+
+Applying both to mykg's shape — one call per chunk, `state` carrying the
+schema, the chunk's full extraction (the flat list of node/edge records
+attributed to that chunk, not just one attribute at a time), and the source
+text side by side, one `Noul` question per `{entity_id, attr_name}`:
+
+```python
+from typesafe_sdk import Noul, NoulCriteria
+
+FIELD_CRITERIA = NoulCriteria(
+    true="the extracted value at `field_path` is correct and fully supported by `source_text`",
+    false="the extracted value at `field_path` is wrong, unsupported, or not present in `source_text`",
+)
+SELF_CRITERIA = NoulCriteria(
+    true="this entity, as a whole, is correctly identified in `source_text`",
+    false="this entity is not actually present in, or is misidentified from, `source_text`",
+)
+
+def build_questions(entities: list[EntityAttrs]) -> dict[str, Noul]:
+    """One Noul question per non-null attribute (keyed 'entity_id::attr_name')
+    plus one per entity for its own overall confidence (keyed
+    'entity_id::__self__') — mirrors sde_cascade's build_questions()."""
+    questions: dict[str, Noul] = {}
+    for entity in entities:
+        eid, etype = entity["id"], entity["type"]
+        for attr_name, value in entity["attributes"].items():
+            if value is None:  # see "Null-valued attributes" below
+                continue
+            questions[f"{eid}::{attr_name}"] = Noul(
+                instructions={
+                    "field_path": f"{etype}.{attr_name}",
+                    "extracted_value": value,
+                },
+                criteria=FIELD_CRITERIA,
+            )
+        questions[f"{eid}::__self__"] = Noul(
+            instructions={"entity_type": etype, "entity_id": eid},
+            criteria=SELF_CRITERIA,
+        )
+    return questions
+
+# One call per chunk. `state` carries the schema, the chunk's full
+# extraction (every node/edge attributed to this chunk, via
+# chunk_node_index.json), and the source text — mirroring sde_cascade's
+# verify(), which passes {"source_text":, "schema":, "extraction":} as one
+# structured state:
+state = {
+    "schema": schema_block,   # see "Schema in state" below — built once per run, not per chunk
+    "source_text": chunk_text,
+    "extraction": entities,
+}
+questions = build_questions(entities)
+answers = client.system_one(state=state, questions=questions).answers
+grades = {}
+for qid, answer in answers.items():
+    eid, _, attr_or_self = qid.rpartition("::")
+    grades.setdefault(eid, {})[attr_or_self] = answer.noul
+```
+
+One `system_one(state=..., questions={...})` call covers every attribute of
+every node/edge attributed to that chunk (via `chunk_node_index.json`) in
+one round trip — `.answers[qid].noul` is read back per question exactly as
+`sde_cascade`'s `verify()` does (`{qid: ans.noul for qid, ans in
+answers.items()}`). Response access is `response.answers[qid].noul`, **not**
+`response.nouls` — an early draft of this design assumed a `.nouls`
+shortcut attribute on the response object that does not exist; the
+cookbook's own code reads `answers = ts.system_one(...).answers` then
+`ans.noul` per answer, and that is the shape used throughout this plan.
+
+#### Schema in `state`
+
+The extractor's own Pass 2 prompt includes a full `SCHEMA` block — every
+concept's attributes plus its outgoing/incoming edge types — so the
+extractor knows what's structurally valid before it extracts
+(`pass2._build_extraction_prompt`, private to `pass2.py`, builds this as a
+text block). The grader needs the equivalent: without it, Jev has no
+notion of what `manages` or `works_at` *mean* as relationship types, or
+which attributes are declared for a given concept — it can only judge a
+bare `field_path` string against prose, with no structural context. Two
+concrete things the schema unlocks:
+
+- Jev can judge an edge like `manages (Person → Organization)` against
+  "does this specific relationship type, as the schema defines it, actually
+  hold between these two entities in the text" rather than judging
+  plausibility in the abstract.
+- mykg's own code can catch a **schema violation before spending an API
+  call** — an edge whose `type` isn't in `schema["properties"]`, or whose
+  `domain`/`range` doesn't match its `from`/`to` node types, is invalid by
+  construction and needs no grader round-trip to flag (this mirrors
+  `validate_extraction`'s existing schema checks in `pass2.py`, applied one
+  step later in the pipeline — see Task 4).
+
+`TypeSafeGrader` is not handed the raw `schema.json`/`flattened_schema.json`
+files — it receives a small, pre-built JSON block, structurally equivalent
+to the text `SCHEMA` block pass2's prompt already builds, but as native JSON
+rather than a formatted string: `{"concepts": {type: {attributes,
+outgoing_edges, incoming_edges}}, "properties": {name: {domain, range,
+attributes}}}`. This block is **built once per pipeline run** (schema does
+not change per-chunk) — `grade_confidence` (the pipeline step) is
+responsible for loading `schema.json` + `flattened_schema.json`, building
+it once via `build_schema_block()` before dispatching any chunk, and
+setting it on `TypeSafeGrader.schema_block`, exactly the same "build once,
+reuse per call" shape `step_pass2.py` already uses for the flattened schema
+it hands to every pass2 chunk call (see Task 3 and Task 4).
+
+**Null-valued attributes are never sent to the grader.** `_backfill_extraction`
+(D9) fills every schema-declared attribute the extractor didn't find with
+`{value: null, confidence: 0.0}` — that `0.0` is not a measurement, it's a
+"we don't know" placeholder, and there is nothing for the grader to verify
+against a null. Asking `Noul` "is `extracted_value` (= `null`) correct for
+`field`?" is a meaningless question whose answer would carry no real
+signal, yet would overwrite the one piece of correct information already
+present (confidence 0.0 *because* the value is absent) with an unrelated
+number. `TypeSafeGrader.grade_chunk` therefore filters `entity["attributes"]`
+down to non-null values before building any `Noul` questions — a null
+attribute contributes no question and consequently no key in the returned
+grades map, so `_apply_grades` (Task 8) leaves it untouched by the same
+"absent from grades → keep self-reported" rule already used for
+ungraded/failed entities. The entity's own `__self__` question is
+unaffected by this filter — it is still asked even when every attribute is
+null, since "is this entity correctly identified at all" is a meaningful
+question independent of which attributes came back empty.
+
+A chunk with many entities × many attributes could produce dozens of
+`Noul` questions in one call. Neither a hard per-call question-count limit
+nor a `state` size limit is documented by the API (confirmed against the
+full Python SDK reference — `Choice`/`Score`/`Noul` constructors and the
+`state` docs state no numeric caps). `grader.max_questions_per_call`
+therefore stays a **self-imposed, defensive** config cap (Invariant 16
+discipline — bound cost/blast-radius ourselves rather than discover a
+server-side limit in production), splitting a dense chunk's questions
+across multiple `system_one` calls when exceeded.
+
+### Adapter shape: new parallel interface, not `LLMAdapter`
+
+This does **not** go through the existing `LLMAdapter.complete(system,
+user) -> str` interface — forcing Jev's typed `system_one(state,
+questions)` call through a free-text round-trip would throw away the very
+things that make it useful (bounded outputs, real distribution-derived
+confidence, no JSON-parse brittleness). Instead:
+
+- New module `src/mykg/llm/typesafe_grader.py` with a small, purpose-built
+  class, `TypeSafeGrader`, wrapping `typesafe_sdk.TypeSafeClient` — **not**
+  a subclass of `LLMAdapter` and not registered in
+  `llm/config.py:load_adapter()`'s provider dispatch.
+- Constructed directly by the `grade_confidence` step (via a small
+  `build_grader()` factory) from the `grader:` config block, reading
+  `TYPESAFE_API_KEY` from the environment the same way `openai_adapter.py`
+  reads `OPENAI_API_KEY` — sourced via the existing
+  `load_dotenv(".env.mykg")` call already in `cli.py`.
+- Constructs its own `TypeSafeClient(api_key=..., timeout=grader.timeout,
+  retry=RetryPolicy(max_retries=grader.retry_max))`. Both a sync
+  (`TypeSafeClient`) and async (`AsyncTypeSafeClient`) client exist in the
+  Python SDK; **neither documents thread-safety** for concurrent reuse of
+  one instance. Given mykg's uniform `ThreadPoolExecutor` convention
+  (Invariant 12), `grade_confidence` uses the **sync** client (no need to
+  introduce `asyncio` into the pipeline for this one step) and constructs
+  **one `TypeSafeGrader`/`TypeSafeClient` instance per worker thread**
+  rather than sharing one across threads — sidesteps the undocumented
+  thread-safety question entirely.
+- Exposes a mutable `schema_block: dict | None` attribute (see "Schema in
+  `state`" above) rather than taking it as a constructor parameter, since
+  the schema isn't known yet when `TypeSafeGrader` is first constructed
+  (see Task 3).
+- One method, shaped after the actual need: `grade_chunk(chunk_text: str,
+  entities: list[EntityAttrs]) -> dict[str, dict[str, float]]` — internally
+  builds the structured `state` dict (`{"schema": self.schema_block,
+  "source_text": chunk_text, "extraction": entities}`) and the `Noul`
+  questions dict per the "Primitive selection" snippet above, calls
+  `client.system_one(state=state, questions=questions)` once (or N times if
+  `max_questions_per_call` requires splitting a dense chunk's questions
+  across calls — `state`, schema included, is repeated unchanged on each
+  split call), catches `TypeSafeError` around the call for the step's
+  per-chunk graceful-degradation behavior, and returns the flat
+  `{stable_id: {attr_name: confidence_float, "__self__": confidence_float}}`
+  map the `grade_confidence` step writes into `confidence_grades_shards/`.
+- `typesafe-sdk` (`pip install typesafe-sdk`, Python ≥3.10) is added as an
+  **optional** dependency (extras group, `mykg[grader]`), imported lazily
+  inside `TypeSafeGrader`/`grade_confidence` — mirrors how `mineru`/uv venv
+  isolation (D48) keeps a heavy/optional dependency out of mykg's core
+  install; TypeSafe's SDK is lighter than MinerU so a venv is unnecessary,
+  but it should still not be a hard dependency for users who never enable
+  grading.
+
+**Exception hierarchy**, all rooted at `TypeSafeError(Exception)`:
+`TypeSafeAPIError` (base for HTTP failures) → `TypeSafeBadRequestError`
+(400), `TypeSafeAuthenticationError` (401), `TypeSafePermissionDeniedError`
+(403), `TypeSafeNotFoundError` (404), `TypeSafeUnprocessableEntityError`
+(422), `TypeSafeRateLimitError` (429), `TypeSafeInternalServerError` (5xx);
+separately, `TypeSafeAPIConnectionError(TypeSafeError, ConnectionError)`
+(no HTTP response at all) and
+`TypeSafeAPITimeoutError(TypeSafeAPIConnectionError, TimeoutError)`.
+`grade_confidence` catches the common base `TypeSafeError` for its
+per-chunk graceful-degradation handling (log + leave self-reported
+confidence in place), the same breadth `run_pass2._process_file`'s `except
+Exception` already uses for pass2 file failures — no special-casing per
+exception subtype is needed for v1.
+
+`system_one` takes a `retry: RetryPolicy | None` parameter directly — the
+SDK has its own built-in retry mechanism (mirrors
+`llm_complete_with_retry`'s role for the extractor adapters), so
+`TypeSafeGrader.grade_chunk` passes a `RetryPolicy` here rather than
+hand-rolling a second retry loop; it only needs its own try/except for the
+*outer* graceful-degradation behavior, not for transient-error retry.
+
+### Config block
+
+```yaml
+profiles:
+  openai:
+    llm: {...}            # unchanged — the extractor
+    grader:
+      enabled: false        # opt-in; false ⇒ grade_confidence is a no-op passthrough
+      backend: typesafe      # only backend for now; keeps the door open for a future
+                              # generic-LLM grader without a breaking config change
+      max_questions_per_call: 50   # self-imposed cap (API documents no server-side limit);
+                                     # split into multiple system_one calls per chunk above this
+      timeout: 600
+      retry_max: 2            # passed as a RetryPolicy to system_one — the SDK's own
+                               # built-in retry, not a second hand-rolled retry loop
+      max_workers: 4         # independent of pass2.max_workers — grader calls run in
+                              # their own ThreadPoolExecutor in grade_confidence, one
+                              # TypeSafeClient instance constructed per worker thread
+                              # (thread-safety of a shared instance is undocumented)
+```
+
+No `model:`/`base_url:`/`context_window:` keys — Jev is TypeSafe's one
+flagship model, selected implicitly by the SDK/API key, not by a model
+string mykg passes. `TYPESAFE_API_KEY` lives in `.env.mykg`, not in YAML
+(same secrets-out-of-YAML convention every other provider follows). Full
+placement and rollout details are in Task 1.
+
+### New pipeline step: `grade_confidence`
+
+Registered in `STEPS` (`src/mykg/pipeline.py`) immediately after `pass2`
+and before `normalize_names` (Task 5):
+
+```python
+Step(
+    name="grade_confidence",
+    fn=run_grade_confidence,
+    outputs=["confidence_grades.json", "confidence_grades.done"],
+    is_llm_step=True,
+)
+```
+
+`is_llm_step=True` so it participates in the existing Tier-1 per-step retry
+and feedback-loop machinery (D31) like pass1/pass2/normalize/orphan_connect.
+
+**When `grader.enabled` is false** (or `ctx.grader is None`):
+`run_grade_confidence` writes `confidence_grades.json` as `{}` plus the
+`.done` sentinel and returns immediately. This keeps `_is_done` semantics
+uniform (the step always produces its declared outputs) with no
+special-casing in the orchestrator or in `step_assemble`.
+
+**When enabled**, the step mirrors `run_pass2`'s structure (full
+implementation in Task 4):
+
+1. Load `schema.json` and `flattened_schema.json`, and build the JSON
+   `schema_block` once (see "Schema in `state`" above) — this happens
+   **before** any file/chunk processing begins, since it's identical for
+   every call this run.
+2. Load `raw_extractions.json` (or its shards, matching whichever
+   `raw_extractions_shards/` are present, same as `step_pass2._run` does).
+3. Load `chunk_node_index.json` — `{filename: {chunk_idx: [stable_ids]}}`.
+4. For each file, re-derive its chunks via `chunk_file` (identical call
+   pass2 made, so chunk text is reproduced exactly — chunk boundaries are
+   deterministic given the same content and `pipeline.chunking` config).
+5. For each chunk, resolve its stable IDs → pull each node's/edge's current
+   `type` + `attributes` (value only, not confidence) from that file's raw
+   extraction. An edge whose `type` is not in `schema["properties"]`, or
+   whose endpoint types don't match the property's declared `domain`/
+   `range`, is dropped before grading and logged as a warning — same
+   validation `validate_extraction` already performs in `pass2.py`, applied
+   here so a structurally invalid edge never wastes a grader call.
+6. One `TypeSafeGrader.grade_chunk(chunk_text, entities)` call per chunk —
+   internally one `client.system_one(state=state, questions={...})` call
+   (or several, if `grader.max_questions_per_call` requires splitting a
+   dense chunk), `state` carrying `schema_block` + `chunk_text` +
+   `entities`, with one `Noul` question per `{entity_id, attribute}` pair
+   plus one `Noul` question per entity for its own overall confidence.
+7. The call returns a flat map:
+   `{stable_id: {attr_name: confidence_float, "__self__": confidence_float}}`
+   — `__self__` is the entity's own overall confidence (node or edge
+   level, from its dedicated `Noul` question), keeping node/edge- and
+   attribute-level scores in one response format. `confidence_float` here
+   is each question's `.noul` value directly (already a 0–1 probability,
+   no further derivation needed).
+8. Files with zero chunks needing grading (e.g. produced zero nodes) are
+   skipped without a call.
+
+**Shard format** — `intermediate/confidence_grades_shards/<slug>.json`,
+one per file, same shape as pass2's `{"_fname": fname, "data":
+{...grades...}}`, flushed via an `on_file_done`-style callback inside the
+per-file `ThreadPoolExecutor(max_workers=grader.max_workers)` loop — same
+incremental-flush pattern as D57, so a crash mid-run only loses files still
+in flight. On resume, a shard is reused as-is (grading is pure re-scoring
+of already-extracted values; no composition-fingerprint check is needed
+the way pass1/pass2 batches need one, since chunk content for a given
+filename+chunk_idx is deterministic and unaffected by dispatch order).
+Final merge writes `intermediate/confidence_grades.json`.
+
+**Failure handling per chunk**: a chunk's grader call fails (connection
+error, auth error, rate limit — see exception hierarchy above) or times
+out → log a warning, that chunk's entities simply get no entry in the
+grades map (no cascading retry logic beyond what the SDK's own
+`RetryPolicy` already provides). Downstream, an entity absent from the
+grades map keeps its self-reported confidence — grading degrades
+gracefully to today's behavior per-entity, never blocks the pipeline.
+
+### Consumption at assemble time
+
+In `step_assemble.run_assemble`, immediately after loading
+`raw_extractions.json` and before `assign_stable_ids` (full implementation
+in Task 8):
+
+```python
+grades_path = ctx.intermediate_dir / "confidence_grades.json"
+if grades_path.exists():
+    grades = json.loads(grades_path.read_text(encoding="utf-8"))
+    _apply_grades(raw, grades)
+```
+
+`_apply_grades` (new helper in `step_assemble.py`): for every node/edge
+whose stable ID appears in `grades`, overwrite `attr["confidence"]` with
+the graded value for each attribute present in the grade entry, and
+overwrite the entity's own top-level `confidence` from `__self__` when
+present. The prior self-reported value is preserved as
+`attr["self_reported_confidence"]` (a new, additive field — never dropped,
+per the spirit of D9's "never silently drop" pattern) so both signals stay
+auditable. An entity/attribute with no grade entry is left untouched —
+self-reported confidence is the value that flows onward for it, exactly as
+today.
+
+`assembler.py`'s dedup/aggregation logic (`deduplicate_nodes`,
+`deduplicate_edges`) is **unchanged** — it only ever reads whatever sits in
+`attr["confidence"]` / `node["confidence"]`, which is now the graded value
+where available. No changes to confidence aggregation, merge-log, or
+export logic anywhere downstream of assemble.
+
+### Re-entry / invalidation wiring
+
+- `orchestrator.py`: add `"grade_confidence"` to both
+  `_SCHEMA_RESTART_INVALIDATE` and `_APPEND_INVALIDATE` — a schema-gap
+  restart or `--append` run that re-extracts chunks must also re-grade
+  them, or stale/missing grades would silently fall back to self-reported
+  confidence for re-extracted entities.
+- `cli.py:_delete_from_step`: `grade_confidence` sits *after* `pass2` in
+  step order, so the existing pass2 shard-clearing block (keyed off
+  `idx <= pass2_idx`) is the wrong boundary for grading's own shards. A
+  separate clearing block, keyed off `idx <= grade_confidence_idx` (a
+  superset of the pass2 condition, since `grade_confidence` comes later),
+  clears `confidence_grades_shards/` and `confidence_grades.json` whenever
+  `--from-step` targets `grade_confidence`, `pass2`, or any earlier step —
+  otherwise a re-run would silently keep stale grades for chunks that get
+  re-extracted with different content. Full implementation in Task 7.
+- D16 intermediate-files table gains two rows:
+  `intermediate/confidence_grades.json` (after `grade_confidence`) and
+  `intermediate/confidence_grades_shards/` (during the step, per-file).
+  Full implementation in Task 9.
+- No change needed to `--pass2-kg-extraction-only` /
+  `--pass1-schema-induction-only` (D56) skip sets — `grade_confidence`
+  naturally runs as part of the normal post-`pass2` sequence in both cases
+  since it isn't in `PASS2_ONLY_SKIP_STEPS`/`APPEND_SKIP_STEPS`.
+
+### Cost shape
+
+One grader call per chunk pass2 already made — same order of magnitude in
+call count as pass2 itself when enabled (opt-in, default off). Grader
+prompts carry a schema block similar in size to pass2's, but omit pass2's
+prior-nodes block, so token cost per call is comparable-to-lower even
+though call count roughly doubles. This is a fixed 1:1 relationship with
+an already-linear pass (no multiplicative blow-up with corpus size or
+restart count), satisfying Invariant 16 by construction.
+
+### Out of scope
+
+- Fusing grader + self-reported scores (e.g. min/weighted-mean) — rejected
+  in favor of straight replacement; can be revisited later as a
+  `grader.fusion_strategy` config knob without changing the architecture
+  above.
+- Per-node/edge (finer-grained) or per-file (coarser) grading granularity —
+  documented above as considered alternatives, not built.
+- A `grading_quality` marker mirroring D33's `blank_response`/
+  `blank_recovered` pattern for ungraded entities — worth adding later but
+  not required for the core feature to work correctly.
+- Surfacing grader rationale/explanation text — output contract is a bare
+  float per attribute, not `{confidence, rationale}`, to keep grader output
+  tokens minimal.
 
 ---
 
@@ -136,7 +710,7 @@ For each of the 7 profiles (`ollama-local`, `anthropic-claude`, `openai`, `gemin
 ```yaml
     grader:
       # Optional independent confidence re-scoring pass (TypeSafe AI / Jev) — see
-      # docs/superpowers/specs/2026-09-24-confidence-grader-design.md. Disabled by
+      # docs/superpowers/plans/2026-09-24-confidence-grader.md. Disabled by
       # default; the pipeline's self-reported confidence is unchanged unless enabled.
       # Requires TYPESAFE_API_KEY in .env.mykg when enabled.
       enabled: false
@@ -193,7 +767,7 @@ the packaging copy, disabled by default."
 - Consumes: nothing.
 - Produces: `pip install mykg[grader]` installs `typesafe-sdk`; `pip install mykg` (default) does not.
 
-**Context:** `pyproject.toml` currently has no `[project.optional-dependencies]` table — every dependency including `anthropic`/`openai`/`google-genai` is a hard core dependency (verified by reading the file). This is a new pattern for this project, matching the spec's explicit choice to keep `typesafe-sdk` optional so users who never enable grading don't need it installed.
+**Context:** `pyproject.toml` currently has no `[project.optional-dependencies]` table — every dependency including `anthropic`/`openai`/`google-genai` is a hard core dependency (verified by reading the file). This is a new pattern for this project, matching the Design section's explicit choice (see "Adapter shape") to keep `typesafe-sdk` optional so users who never enable grading don't need it installed.
 
 - [ ] **Step 1: Add the optional-dependencies table**
 
@@ -243,9 +817,9 @@ Install via 'pip install mykg[grader]'."
   - `build_grader(raw_config: dict | None = None) -> TypeSafeGrader | None` factory function: returns `None` when `grader.enabled` is falsy or absent; otherwise constructs and returns a `TypeSafeGrader` with `schema_block` still `None`. This is what `cli.py` (Task 6) calls to populate `ctx.grader`.
   - `build_schema_block(schema: dict, flat_schema: dict) -> dict` module-level function: converts mykg's `schema.json` + `flattened_schema.json` shape into the compact JSON block `state["schema"]` carries — `{"concepts": {type: {"attributes": [...], "outgoing_edges": [...], "incoming_edges": [...]}}, "properties": {name: {"domain": ..., "range": ..., "attributes": [...]}}}`. Structurally mirrors `pass2._build_extraction_prompt`'s text-block logic (`src/mykg/pass2.py:101-148`) but produces JSON, not a formatted string — see Task 4 for where it's called.
 
-**Context:** Per the spec's "Adapter shape" section — this is a new, small, purpose-built class, **not** an `LLMAdapter` subclass, **not** registered in `llm/config.py:load_adapter()`. `typesafe_sdk` is imported lazily inside this module's functions (not at module top level) so importing `mykg.llm.typesafe_grader` itself doesn't require the package to be installed — only calling `build_grader()` with `enabled: true` does. Mirror `openai_adapter.py:60-66`'s fail-fast `ValueError` pattern for a missing API key. One `TypeSafeClient` instance is constructed **per `TypeSafeGrader` instance** (the constructor builds it), so callers construct one `TypeSafeGrader` per worker thread (Task 4) rather than sharing one across threads — sidesteps the SDK's undocumented thread-safety question entirely (spec's "Adapter shape" section).
+**Context:** Per the Design section's "Adapter shape" above — this is a new, small, purpose-built class, **not** an `LLMAdapter` subclass, **not** registered in `llm/config.py:load_adapter()`. `typesafe_sdk` is imported lazily inside this module's functions (not at module top level) so importing `mykg.llm.typesafe_grader` itself doesn't require the package to be installed — only calling `build_grader()` with `enabled: true` does. Mirror `openai_adapter.py:60-66`'s fail-fast `ValueError` pattern for a missing API key. One `TypeSafeClient` instance is constructed **per `TypeSafeGrader` instance** (the constructor builds it), so callers construct one `TypeSafeGrader` per worker thread (Task 4) rather than sharing one across threads — sidesteps the SDK's undocumented thread-safety question entirely (see "Adapter shape" above).
 
-For the `Noul` question shape, follow the spec's "Primitive selection" section exactly — it is grounded in TypeSafe's own `sde_cascade` cookbook
+For the `Noul` question shape, follow the Design section's "Primitive selection" above exactly — it is grounded in TypeSafe's own `sde_cascade` cookbook
 (https://docs.typesafe.ai/cookbooks/sde_cascade), which grades an LLM
 extraction record against its source text using this identical pattern: one
 `system_one` call per record, `NoulCriteria(true=, false=)` stating what
@@ -516,7 +1090,7 @@ for Pass 2 extracted attributes using TypeSafe AI's Jev model (Noul primitive).
 NOT an LLMAdapter subclass and NOT registered in llm/config.py:load_adapter() —
 Jev's typed system_one(state, questions) call has no free-text completion
 equivalent, so it is kept as its own small interface. See
-docs/superpowers/specs/2026-09-24-confidence-grader-design.md ("Adapter shape").
+docs/superpowers/plans/2026-09-24-confidence-grader.md ("Adapter shape").
 
 typesafe_sdk is imported lazily inside functions, not at module load time, so
 importing this module never requires the optional dependency to be installed —
@@ -662,9 +1236,10 @@ class TypeSafeGrader:
         for "this attribute was not found" (confidence 0.0 is a placeholder,
         not a measurement); there is nothing for the grader to verify against
         a null, and asking anyway would let an unrelated answer overwrite the
-        one piece of already-correct information (see spec's "Null-valued
-        attributes are never sent to the grader"). The entity's own __self__
-        question is still asked even when every attribute is null.
+        one piece of already-correct information (see docs/superpowers/plans/
+        2026-09-24-confidence-grader.md, "Null-valued attributes are never
+        sent to the grader"). The entity's own __self__ question is still
+        asked even when every attribute is null.
         """
         from typesafe_sdk import Noul
 
@@ -759,7 +1334,7 @@ typesafe_sdk is imported lazily so it stays an optional dependency."
 
 When `ctx.grader is None` (disabled), write `confidence_grades.json` as `{}` and the `.done` sentinel, return immediately — no `ThreadPoolExecutor`, no file iteration, no schema loading.
 
-When enabled: **first**, load `schema.json` + `flattened_schema.json`, call `build_schema_block(schema, flat_schema)`, and set `ctx.grader.schema_block = <that block>` — once, before any file/chunk processing begins, since the schema is identical for every call this run (mirrors `step_pass2.py` building `flattened_schema.json` once and handing it to every pass2 chunk call rather than rebuilding it per chunk). Then, for each file in `raw_extractions.json`, re-derive its chunks via `chunk_file(fname, content)` (content from `file_manifest.json`/`ctx.file_contents`, same loader pattern `step_pass2.py:_load_manifest` already uses), then for each chunk look up `chunk_node_index[fname][str(chunk_idx_1based)]` → the list of stable IDs extracted from that chunk, pull each one's current `type`+`attributes` from that file's raw nodes/edges (search both `nodes` and `edges` lists by `id`). **Before grading**, drop any edge whose `type` is not a declared property in `schema["properties"]`, or whose endpoint node types don't match that property's `domain`/`range` — log a warning and exclude it from `entities`, the same schema check `pass2.validate_extraction` already performs, applied here so a structurally invalid edge never wastes a grader call (see spec's "schema-violation" note in the step-mechanics list). Then call `ctx.grader.grade_chunk(chunk.text, entities)`, and merge the per-chunk result into that file's accumulated grades dict. A `TypeSafeError` (or any exception) from `grade_chunk` for one chunk is caught, logged as a warning, and that chunk's entities simply contribute nothing to the file's grades — matches `run_pass2._process_file`'s exception breadth.
+When enabled: **first**, load `schema.json` + `flattened_schema.json`, call `build_schema_block(schema, flat_schema)`, and set `ctx.grader.schema_block = <that block>` — once, before any file/chunk processing begins, since the schema is identical for every call this run (mirrors `step_pass2.py` building `flattened_schema.json` once and handing it to every pass2 chunk call rather than rebuilding it per chunk). Then, for each file in `raw_extractions.json`, re-derive its chunks via `chunk_file(fname, content)` (content from `file_manifest.json`/`ctx.file_contents`, same loader pattern `step_pass2.py:_load_manifest` already uses), then for each chunk look up `chunk_node_index[fname][str(chunk_idx_1based)]` → the list of stable IDs extracted from that chunk, pull each one's current `type`+`attributes` from that file's raw nodes/edges (search both `nodes` and `edges` lists by `id`). **Before grading**, drop any edge whose `type` is not a declared property in `schema["properties"]`, or whose endpoint node types don't match that property's `domain`/`range` — log a warning and exclude it from `entities`, the same schema check `pass2.validate_extraction` already performs, applied here so a structurally invalid edge never wastes a grader call (see the Design section's "Schema in `state`" above). Then call `ctx.grader.grade_chunk(chunk.text, entities)`, and merge the per-chunk result into that file's accumulated grades dict. A `TypeSafeError` (or any exception) from `grade_chunk` for one chunk is caught, logged as a warning, and that chunk's entities simply contribute nothing to the file's grades — matches `run_pass2._process_file`'s exception breadth.
 
 - [ ] **Step 1: Write the failing test — disabled grader is a no-op**
 
@@ -825,7 +1400,7 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'mykg.steps.step_grade_
 """grade_confidence pipeline step — re-scores Pass 2 extracted attribute
 confidence using an independent grader (TypeSafeGrader) against source chunk
 text. Mirrors pass2's per-file shard/resume pattern (D57) at a smaller scale.
-See docs/superpowers/specs/2026-09-24-confidence-grader-design.md.
+See docs/superpowers/plans/2026-09-24-confidence-grader.md.
 """
 
 from __future__ import annotations
@@ -1270,7 +1845,7 @@ git commit -m "feat(pipeline): register grade_confidence step between pass2 and 
 
 **Files:**
 - Modify: `src/mykg/orchestrator.py:47-108` (`PipelineContext`)
-- Modify: `src/mykg/cli.py` (adapter/ctx construction, around the existing `adapter = load_adapter(...)` call and `PipelineContext(...)` construction — see spec's "Config" section for exact intent)
+- Modify: `src/mykg/cli.py` (adapter/ctx construction, around the existing `adapter = load_adapter(...)` call and `PipelineContext(...)` construction — see the Design section's "Config block" above for exact intent)
 - Test: `tests/test_cli_grader_wiring.py`
 
 **Interfaces:**
@@ -1586,7 +2161,7 @@ own shards, leaving pass2's raw_extractions_shards/ untouched."
 - Consumes: `intermediate/confidence_grades.json` (Task 4's output format: `{stable_id: {attr_name: confidence_float, "__self__": confidence_float}}`).
 - Produces: `_apply_grades(raw: dict, grades: dict) -> None` — new helper in `step_assemble.py`, mutates `raw` in place. Called from `run_assemble` immediately after loading `raw_extractions.json`, before `assign_stable_ids(raw)` is called.
 
-**Context — the Review Focus item on graceful degradation.** For every node/edge whose ID appears in `grades`: for each attribute present in that grade entry, set `attr["self_reported_confidence"] = attr["confidence"]` (preserve, never drop — per D9's spirit and the spec's explicit contract) then `attr["confidence"] = graded_value`. If `"__self__"` is present in the grade entry, do the same preserve-then-overwrite for the entity's own top-level `confidence` field. An entity absent from `grades` entirely, or present but missing a specific attribute's key, is left completely untouched for that attribute — no `self_reported_confidence` field is added where no grade exists (since nothing was overwritten, there's nothing to record as "prior").
+**Context — the Review Focus item on graceful degradation.** For every node/edge whose ID appears in `grades`: for each attribute present in that grade entry, set `attr["self_reported_confidence"] = attr["confidence"]` (preserve, never drop — per D9's spirit and the Design section's explicit contract in "Consumption at assemble time") then `attr["confidence"] = graded_value`. If `"__self__"` is present in the grade entry, do the same preserve-then-overwrite for the entity's own top-level `confidence` field. An entity absent from `grades` entirely, or present but missing a specific attribute's key, is left completely untouched for that attribute — no `self_reported_confidence` field is added where no grade exists (since nothing was overwritten, there's nothing to record as "prior").
 
 Note the raw extraction shape (from reading `pass2.py`'s `_backfill_extraction`): `node["attributes"][attr_name]` is always `{"value": ..., "confidence": ...}` by the time it reaches `raw_extractions.json` (backfilled by pass2 for every schema-declared attribute) — so `_apply_grades` can assume that shape for any attribute key it looks up, but must still guard against an attribute name in the grade map that doesn't exist on the node (e.g. grading ran against a stale/different extraction) by skipping it rather than raising.
 
