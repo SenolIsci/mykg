@@ -158,36 +158,93 @@ design. One `Noul` question per `{entity, attribute, value}` triple
 extracted from a chunk, all batched into **one `system_one` call per
 chunk** — this both matches the docs' recommended "one question per field,
 single call" pattern and preserves the per-chunk call granularity chosen
-above.
+above. This is also, concretely, TypeSafe's own documented pattern for
+exactly this problem: the `sde_cascade` cookbook
+(https://docs.typesafe.ai/cookbooks/sde_cascade) grades a whole LLM
+extraction record against its source text using this same shape — one
+`system_one` call per record, one `Noul` question per field (plus one
+holistic `"__overall__::judge"` question), all evaluated in parallel and
+returned as `{field::metric: P(true)}`. mykg's per-chunk grading call
+mirrors this directly, one level up (one call per chunk's worth of
+nodes/edges rather than one call per single extracted record), and adopts
+two things from the cookbook's actual code that the earlier sketch of this
+design did not use:
 
-Following the invoice cookbook's structured-instructions shape as closely
-as mykg's schema allows:
+**`NoulCriteria(true=..., false=...)`** — a `Noul` question accepts an
+explicit `criteria` object stating in domain terms what a `true` and a
+`false` answer each mean, rather than relying purely on prose inside
+`instructions`. Sharper than a bare question string, and it's the real
+signature the SDK exposes (`from typesafe_sdk import Noul, NoulCriteria`).
+
+**A structured `state` dict**, not a bare source-text string — the
+cookbook's `verify()` builds `state = {"system_message": ..., "instruction":
+..., "source_text": row["content"], "schema": schema, "extraction":
+record}` and passes that whole dict as `state`; `system_one` accepts `state`
+as "string, object, array, or null" (arbitrary JSON), so a structured `state`
+gives Jev the schema and the full extraction record as separate, clearly
+labeled JSON fields alongside the source text, rather than making
+`instructions` re-state that context per question.
+
+Applying both to mykg's shape — one call per chunk, `state` carrying the
+chunk's full extraction (mirroring the actual `nodes`/`edges` JSON pass2
+produced for that chunk, not just one attribute at a time) and the source
+text side by side, one `Noul` question per `{entity_id, attr_name}`:
 
 ```python
-questions[f"{node_id}::{attr_name}"] = Noul(
-    instructions={
-        "field": {
-            "name": attr_name,
-            # mykg's schema (D7) stores only attribute *names* — no per-attribute
-            # type/description — so "type" and "description" are synthesized
-            # (description = attr_name itself) rather than read from schema.json.
-            "type": "string",
-            "description": attr_name,
-        },
-        "extracted_value": value,
-        "entity_type": node_type,
-        "question": "Is `extracted_value` correct for `field`, given the source text in `state`?",
-    }
+from typesafe_sdk import Noul, NoulCriteria
+
+FIELD_CRITERIA = NoulCriteria(
+    true="the extracted value at `field_path` is correct and fully supported by `source_text`",
+    false="the extracted value at `field_path` is wrong, unsupported, or not present in `source_text`",
 )
+SELF_CRITERIA = NoulCriteria(
+    true="this entity, as a whole, is correctly identified in `source_text`",
+    false="this entity is not actually present in, or is misidentified from, `source_text`",
+)
+
+def build_questions(entities: list[EntityAttrs]) -> dict[str, Noul]:
+    """One Noul question per non-null attribute (keyed 'entity_id::attr_name')
+    plus one per entity for its own overall confidence (keyed
+    'entity_id::__self__') — mirrors sde_cascade's build_questions()."""
+    questions: dict[str, Noul] = {}
+    for entity in entities:
+        eid, etype = entity["id"], entity["type"]
+        for attr_name, value in entity["attributes"].items():
+            if value is None:  # see "Null-valued attributes" below
+                continue
+            questions[f"{eid}::{attr_name}"] = Noul(
+                instructions={
+                    "field_path": f"{etype}.{attr_name}",
+                    "extracted_value": value,
+                },
+                criteria=FIELD_CRITERIA,
+            )
+        questions[f"{eid}::__self__"] = Noul(
+            instructions={"entity_type": etype, "entity_id": eid},
+            criteria=SELF_CRITERIA,
+        )
+    return questions
+
+# One call per chunk. `state` carries the chunk's full extraction JSON
+# (every node/edge attributed to this chunk, via chunk_node_index.json)
+# alongside the source text, mirroring sde_cascade's verify():
+state = {
+    "source_text": chunk_text,
+    "extraction": {"nodes": chunk_nodes, "edges": chunk_edges},
+}
+questions = build_questions(entities)
+answers = client.system_one(state=state, questions=questions).answers
+grades = {}
+for qid, answer in answers.items():
+    eid, _, attr_or_self = qid.rpartition("::")
+    grades.setdefault(eid, {})[attr_or_self] = answer.noul
 ```
 
-`state` = the chunk's source text (string) — the evidence Jev judges
-`extracted_value` against. One question per attribute across every
-node/edge attributed to that chunk (via `chunk_node_index.json`), all in
-one `client.system_one(state=chunk_text, questions={...})` call. Node/edge
-overall confidence becomes one additional `Noul` question per entity,
-keyed `f"{entity_id}::__self__"`: `"Is this {type} entity, as a whole,
-correctly identified in the source text?"`.
+One `system_one(state=..., questions={...})` call covers every attribute of
+every node/edge attributed to that chunk (via `chunk_node_index.json`) in
+one round trip — `.answers[qid].noul` is read back per question exactly as
+`sde_cascade`'s `verify()` does (`{qid: ans.noul for qid, ans in
+answers.items()}`).
 
 **Null-valued attributes are never sent to the grader.** `_backfill_extraction`
 (D9) fills every schema-declared attribute the extractor didn't find with
@@ -246,8 +303,12 @@ confidence, no JSON-parse brittleness). Instead:
   thread-safety question entirely.
 - One method, shaped after the actual need: `grade_chunk(chunk_text: str,
   entities: list[EntityAttrs]) -> dict[str, dict[str, float]]` — internally
-  builds the `Noul` questions dict, calls `client.system_one(...)` once (or
-  N times if `max_questions_per_call` requires splitting), catches
+  builds the structured `state` dict (`{"source_text": chunk_text,
+  "extraction": {"nodes": ..., "edges": ...}}`) and the `Noul` questions
+  dict per the "Primitive selection" snippet above, calls
+  `client.system_one(state=state, questions=questions)` once (or N times if
+  `max_questions_per_call` requires splitting a dense chunk's questions
+  across calls — `state` is repeated unchanged on each split call), catches
   `TypeSafeError` around the call for the step's per-chunk
   graceful-degradation behavior, and returns the flat
   `{stable_id: {attr_name: confidence_float, "__self__": confidence_float}}`

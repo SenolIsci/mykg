@@ -244,22 +244,39 @@ Install via 'pip install mykg[grader]'."
 
 **Context:** Per the spec's "Adapter shape" section — this is a new, small, purpose-built class, **not** an `LLMAdapter` subclass, **not** registered in `llm/config.py:load_adapter()`. `typesafe_sdk` is imported lazily inside this module's functions (not at module top level) so importing `mykg.llm.typesafe_grader` itself doesn't require the package to be installed — only calling `build_grader()` with `enabled: true` does. Mirror `openai_adapter.py:60-66`'s fail-fast `ValueError` pattern for a missing API key. One `TypeSafeClient` instance is constructed **per `TypeSafeGrader` instance** (the constructor builds it), so callers construct one `TypeSafeGrader` per worker thread (Task 4) rather than sharing one across threads — sidesteps the SDK's undocumented thread-safety question entirely (spec's "Adapter shape" section).
 
-For the `Noul` question shape, follow the spec exactly:
+For the `Noul` question shape, follow the spec's "Primitive selection" section exactly — it is grounded in TypeSafe's own `sde_cascade` cookbook
+(https://docs.typesafe.ai/cookbooks/sde_cascade), which grades an LLM
+extraction record against its source text using this identical pattern: one
+`system_one` call per record, `NoulCriteria(true=, false=)` stating what
+each answer means, a structured `state` dict carrying the source text and
+the extraction JSON side by side (not a bare string), and
+`response.answers[qid].noul` read back per question. Two real SDK imports
+this task must use: `Noul` and `NoulCriteria` (`from typesafe_sdk import
+Noul, NoulCriteria`).
 
 ```python
+FIELD_CRITERIA = NoulCriteria(
+    true="the extracted value at `field_path` is correct and fully supported by `source_text`",
+    false="the extracted value at `field_path` is wrong, unsupported, or not present in `source_text`",
+)
+SELF_CRITERIA = NoulCriteria(
+    true="this entity, as a whole, is correctly identified in `source_text`",
+    false="this entity is not actually present in, or is misidentified from, `source_text`",
+)
+
 Noul(
-    instructions={
-        "field": {"name": attr_name, "type": "string", "description": attr_name},
-        "extracted_value": value,
-        "entity_type": entity_type,
-        "question": "Is `extracted_value` correct for `field`, given the source text in `state`?",
-    }
+    instructions={"field_path": f"{entity_type}.{attr_name}", "extracted_value": value},
+    criteria=FIELD_CRITERIA,
 )
 ```
 
-plus one additional `Noul` per entity keyed `f"{entity_id}::__self__"` with instructions `{"entity_type": entity_type, "question": "Is this {entity_type} entity, as a whole, correctly identified in the source text?"}`.
+plus one additional `Noul` per entity keyed `f"{entity_id}::__self__"` with `instructions={"entity_type": entity_type, "entity_id": entity_id}` and `criteria=SELF_CRITERIA`.
 
-Question keys use `f"{entity_id}::{attr_name}"` (and `f"{entity_id}::__self__"` for the entity-level question) — the `::` separator was chosen because it cannot appear in a stable ID (`ids.py`'s `stable_id()` uses hyphens/lowercase only) or a schema attribute name, so splitting `key.rsplit("::", 1)` to recover `(entity_id, attr_name)` on the response side is unambiguous.
+Question keys use `f"{entity_id}::{attr_name}"` (and `f"{entity_id}::__self__"` for the entity-level question) — the `::` separator was chosen because it cannot appear in a stable ID (`ids.py`'s `stable_id()` uses hyphens/lowercase only) or a schema attribute name, so splitting `key.rpartition("::")` to recover `(entity_id, attr_name)` on the response side is unambiguous.
+
+`state` is a structured dict, not the bare chunk text: `{"source_text": chunk_text, "extraction": {"nodes": [...], "edges": [...]}}` — the `extraction` value is the subset of that chunk's nodes/edges (as pulled from `raw_extractions.json` by `entity_id`), passed alongside the source text so Jev sees the full extracted record next to its evidence, exactly as `sde_cascade`'s `verify()` does (`state = {"source_text": row["content"], "schema": schema, "extraction": record}` — mykg's version omits `schema`/`system_message`/`instruction`, since mykg's `Noul` instructions already carry the equivalent context per-question via `field_path`).
+
+**Response access is `response.answers[qid].noul`, not `response.nouls`.** This corrects an earlier draft of this plan that assumed a `.nouls` shortcut attribute on the response object — the cookbook's own code reads `answers = ts.system_one(...).answers` then `ans.noul` per answer, and that is the shape used throughout this task's implementation and tests.
 
 - [ ] **Step 1: Write the failing test — question-building and response-parsing, no real SDK call**
 
@@ -275,23 +292,25 @@ import pytest
 from mykg.llm.typesafe_grader import TypeSafeGrader, build_grader
 
 
-def _mock_noul_result(value: float) -> MagicMock:
-    result = MagicMock()
-    result.noul = value
-    return result
+def _mock_answer(value: float) -> MagicMock:
+    answer = MagicMock()
+    answer.noul = value
+    return answer
 
 
 def test_grade_chunk_builds_one_noul_per_attribute_plus_self(monkeypatch):
     grader = TypeSafeGrader(api_key="fake-key")
 
     captured_questions = {}
+    captured_state = {}
 
     def fake_system_one(state, questions, **kwargs):
         captured_questions.update(questions)
+        captured_state.update(state)
         response = MagicMock()
-        response.nouls = {
-            "person-alice::name": _mock_noul_result(0.95),
-            "person-alice::__self__": _mock_noul_result(0.9),
+        response.answers = {
+            "person-alice::name": _mock_answer(0.95),
+            "person-alice::__self__": _mock_answer(0.9),
         }
         return response
 
@@ -301,6 +320,7 @@ def test_grade_chunk_builds_one_noul_per_attribute_plus_self(monkeypatch):
     result = grader.grade_chunk("Alice works here.", entities)
 
     assert set(captured_questions.keys()) == {"person-alice::name", "person-alice::__self__"}
+    assert captured_state["source_text"] == "Alice works here."
     assert result == {"person-alice": {"name": 0.95, "__self__": 0.9}}
 
 
@@ -309,7 +329,7 @@ def test_grade_chunk_skips_entities_with_no_attributes():
 
     def fake_system_one(state, questions, **kwargs):
         response = MagicMock()
-        response.nouls = {k: _mock_noul_result(1.0) for k in questions}
+        response.answers = {k: _mock_answer(1.0) for k in questions}
         return response
 
     grader._client.system_one = fake_system_one
@@ -331,7 +351,7 @@ def test_grade_chunk_skips_null_valued_attributes():
     def fake_system_one(state, questions, **kwargs):
         captured_questions.update(questions)
         response = MagicMock()
-        response.nouls = {k: _mock_noul_result(1.0) for k in questions}
+        response.answers = {k: _mock_answer(1.0) for k in questions}
         return response
 
     grader._client.system_one = fake_system_one
@@ -355,7 +375,7 @@ def test_grade_chunk_asks_self_question_when_every_attribute_is_null():
 
     def fake_system_one(state, questions, **kwargs):
         response = MagicMock()
-        response.nouls = {k: _mock_noul_result(1.0) for k in questions}
+        response.answers = {k: _mock_answer(1.0) for k in questions}
         return response
 
     grader._client.system_one = fake_system_one
@@ -364,6 +384,31 @@ def test_grade_chunk_asks_self_question_when_every_attribute_is_null():
     result = grader.grade_chunk("text", entities)
 
     assert result == {"person-ghost": {"__self__": 1.0}}
+
+
+def test_grade_chunk_passes_extraction_json_in_state():
+    """state must carry the chunk's extraction JSON alongside source_text —
+    mirrors sde_cascade's verify(), which passes the full record next to its
+    evidence rather than re-stating context per question. `entities` is a
+    flat list (node or edge — grade_chunk deliberately doesn't distinguish,
+    per EntityAttrs' own contract), so `extraction` is that same flat list,
+    not a nodes/edges split grade_chunk has no way to reconstruct on its own."""
+    grader = TypeSafeGrader(api_key="fake-key")
+
+    captured_state = {}
+
+    def fake_system_one(state, questions, **kwargs):
+        captured_state.update(state)
+        response = MagicMock()
+        response.answers = {k: _mock_answer(1.0) for k in questions}
+        return response
+
+    grader._client.system_one = fake_system_one
+
+    entities = [{"id": "person-alice", "type": "Person", "attributes": {"name": "Alice"}}]
+    grader.grade_chunk("Alice works here.", entities)
+
+    assert captured_state["extraction"] == entities
 
 
 def test_missing_api_key_raises_value_error(monkeypatch):
@@ -424,6 +469,21 @@ class EntityAttrs(TypedDict):
     attributes: dict[str, Any]
 
 
+# NoulCriteria(true=, false=) states in domain terms what each answer means —
+# sharper than a bare question string, and the real pattern TypeSafe's own
+# sde_cascade cookbook uses (https://docs.typesafe.ai/cookbooks/sde_cascade).
+# These are module-level constants (not rebuilt per call) since their wording
+# is fixed and identical across every question of each kind.
+_FIELD_CRITERIA_KWARGS = {
+    "true": "the extracted value at `field_path` is correct and fully supported by `source_text`",
+    "false": "the extracted value at `field_path` is wrong, unsupported, or not present in `source_text`",
+}
+_SELF_CRITERIA_KWARGS = {
+    "true": "this entity, as a whole, is correctly identified in `source_text`",
+    "false": "this entity is not actually present in, or is misidentified from, `source_text`",
+}
+
+
 class TypeSafeGrader:
     """Grades extracted attribute values against source chunk text via Jev's
     Noul primitive. One instance owns one typesafe_sdk.TypeSafeClient — callers
@@ -447,9 +507,11 @@ class TypeSafeGrader:
                 "set grader.enabled: false in mykg_config.yaml."
             )
 
-        from typesafe_sdk import RetryPolicy, TypeSafeClient
+        from typesafe_sdk import NoulCriteria, RetryPolicy, TypeSafeClient
 
         self._max_questions_per_call = max_questions_per_call
+        self._field_criteria = NoulCriteria(**_FIELD_CRITERIA_KWARGS)
+        self._self_criteria = NoulCriteria(**_SELF_CRITERIA_KWARGS)
         self._client = TypeSafeClient(
             api_key=api_key,
             timeout=timeout,
@@ -463,11 +525,19 @@ class TypeSafeGrader:
 
         Builds one Noul question per (entity, attribute) pair plus one Noul
         question per entity for its own overall confidence, batches them into
-        one or more system_one calls (split at max_questions_per_call), and
-        flattens the response back into a per-entity map. Entities/attributes
-        whose question fails to come back in the response are simply absent
-        from the result — callers (step_grade_confidence) treat an absent
-        entry as "not graded" and fall back to self-reported confidence.
+        one or more system_one calls (split at max_questions_per_call, state
+        repeated unchanged on each split call), and flattens the response
+        back into a per-entity map. Entities/attributes whose question fails
+        to come back in the response are simply absent from the result —
+        callers (step_grade_confidence) treat an absent entry as "not graded"
+        and fall back to self-reported confidence.
+
+        `state` is a structured dict — {"source_text": chunk_text,
+        "extraction": entities} — not a bare string, mirroring sde_cascade's
+        verify(), which passes the full extraction record alongside the
+        source text rather than re-stating context per question. `entities`
+        is passed through as-is (a flat node/edge list — grade_chunk doesn't
+        distinguish the two, per EntityAttrs' own contract).
 
         Attributes whose value is None are skipped entirely — no question is
         built for them. A null value is pass2's _backfill_extraction marker
@@ -490,34 +560,26 @@ class TypeSafeGrader:
                 key = f"{eid}{_SEPARATOR}{attr_name}"
                 questions[key] = Noul(
                     instructions={
-                        "field": {"name": attr_name, "type": "string", "description": attr_name},
+                        "field_path": f"{etype}.{attr_name}",
                         "extracted_value": value,
-                        "entity_type": etype,
-                        "question": (
-                            "Is `extracted_value` correct for `field`, given the "
-                            "source text in `state`?"
-                        ),
-                    }
+                    },
+                    criteria=self._field_criteria,
                 )
             self_key = f"{eid}{_SEPARATOR}{_SELF_KEY}"
             questions[self_key] = Noul(
-                instructions={
-                    "entity_type": etype,
-                    "question": (
-                        f"Is this {etype} entity, as a whole, correctly identified "
-                        "in the source text in `state`?"
-                    ),
-                }
+                instructions={"entity_type": etype, "entity_id": eid},
+                criteria=self._self_criteria,
             )
 
+        state = {"source_text": chunk_text, "extraction": entities}
         result: dict[str, dict[str, float]] = {}
         items = list(questions.items())
         for start in range(0, len(items), self._max_questions_per_call):
             batch = dict(items[start : start + self._max_questions_per_call])
-            response = self._client.system_one(state=chunk_text, questions=batch)
-            for key, noul_result in response.nouls.items():
+            response = self._client.system_one(state=state, questions=batch)
+            for key, answer in response.answers.items():
                 eid, _, attr_or_self = key.rpartition(_SEPARATOR)
-                result.setdefault(eid, {})[attr_or_self] = noul_result.noul
+                result.setdefault(eid, {})[attr_or_self] = answer.noul
 
         return result
 
@@ -538,7 +600,7 @@ def build_grader(raw_config: dict | None) -> TypeSafeGrader | None:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_typesafe_grader.py -v`
-Expected: PASS (all 7 tests). Note: most of these construct a real `TypeSafeGrader(api_key="fake-key")`, which calls the real `TypeSafeClient(...)` constructor — this does not make a network call (constructing a client is not a request), only `system_one` does, and that's replaced with `fake_system_one` before it's ever called. If `typesafe-sdk` is not installed in the test environment, install it first: `uv pip install -e ".[grader]"`.
+Expected: PASS (all 8 tests). Note: most of these construct a real `TypeSafeGrader(api_key="fake-key")`, which calls the real `TypeSafeClient(...)`/`NoulCriteria(...)` constructors — this does not make a network call (constructing a client is not a request), only `system_one` does, and that's replaced with `fake_system_one` before it's ever called. If `typesafe-sdk` is not installed in the test environment, install it first: `uv pip install -e ".[grader]"`.
 
 - [ ] **Step 5: Commit**
 
@@ -548,7 +610,10 @@ git commit -m "feat(grader): add TypeSafeGrader — Noul-based per-attribute con
 
 New parallel interface, not an LLMAdapter subclass. One Noul question
 per extracted attribute plus one per entity for overall confidence,
-batched into system_one calls capped at max_questions_per_call.
+batched into system_one calls capped at max_questions_per_call. Uses
+NoulCriteria(true=, false=) and a structured state dict carrying the
+chunk's extraction JSON alongside source_text, mirroring TypeSafe's
+own sde_cascade cookbook pattern for grading LLM extractions.
 typesafe_sdk is imported lazily so it stays an optional dependency."
 ```
 
