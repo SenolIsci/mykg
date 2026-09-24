@@ -29,8 +29,8 @@
 - **`grader.enabled: false` (the default) must be a true no-op.** A user who never touches `grader:` config should see byte-identical pipeline output to before this feature existed — no new files with unexpected content, no attempted `typesafe_sdk` import, no behavior change in `step_assemble`. Task 4's tests pin this explicitly.
 - **A null-valued attribute (`{value: null, confidence: 0.0}` from `_backfill_extraction`) must never be sent to the grader, and must never gain a `self_reported_confidence` field or a changed `confidence`.** `0.0` there is a "not found" placeholder, not a measurement — there is nothing for `Noul` to verify against a null, and asking anyway lets an unrelated answer overwrite the one piece of already-correct information. Covered in Task 3 (`grade_chunk` skips null values before building questions) and re-verified in Task 8 (an attribute absent from the grades map is left completely untouched, which is what the null-skip in Task 3 produces).
 - **A chunk whose grader call raises must not abort the pipeline or lose other chunks' grades**, and separately, **an entity/attribute with no grade entry (whether from a null-skip or a failed call) must fall through to its self-reported confidence unchanged**, not `None`/`0.0`/a KeyError. Covered in Task 4 (per-chunk `except Exception`, matching `run_pass2._process_file`'s breadth) and Task 8 (`_apply_grades` never assumes every attribute was graded).
-- **Missing `TYPESAFE_API_KEY` with `grader.enabled: true` must fail fast with a clear message**, not a bare `KeyError`/`AttributeError` deep in the SDK — mirrors `openai_adapter.py`'s `ValueError` pattern. Covered in Task 3.
-- **Re-running `--from-step pass2` (or earlier) after grading has already happened must not leave stale grades for content that gets re-extracted differently.** This is easy to get wrong because `grade_confidence` sits *after* pass2 in step order, so the existing `idx <= pass2_idx` shard-clearing condition in `cli.py` is the wrong boundary — a separate `idx <= grade_confidence_idx` condition is needed (a superset of the pass2 one). Covered in Task 7.
+- **An edge whose type isn't a declared schema property, or whose endpoint node types violate that property's declared `domain`/`range`, must never reach `grade_chunk`.** Grading a structurally invalid edge wastes an API call on something already known to be wrong, and (worse) could hand the grader a `field_path` like `bad_type.role` that doesn't correspond to anything in the schema it was also given — a confusing, ungrounded question. Covered in Task 4 (`_index_entities` filters before building the entities list, at zero grader-call cost).
+- **Missing `TYPESAFE_API_KEY` with `grader.enabled: true` must fail fast**, and **re-running `--from-step pass2` (or earlier) must not leave stale grades** — the first mirrors `openai_adapter.py`'s `ValueError` pattern (Task 3); the second needs a separate `idx <= grade_confidence_idx` shard-clearing condition in `cli.py` since `grade_confidence` sits *after* pass2 in step order, so the existing `idx <= pass2_idx` check is the wrong boundary (Task 7).
 
 ---
 
@@ -238,9 +238,10 @@ Install via 'pip install mykg[grader]'."
 **Interfaces:**
 - Consumes: `mykg.config.RAW.get("grader", {})` (from Task 1) for its config values; `TYPESAFE_API_KEY` from `os.environ` (sourced via the existing `load_dotenv(".env.mykg")` call already in `cli.py` — no change needed there, `os.environ.get` reads whatever dotenv already populated).
 - Produces:
-  - `class TypeSafeGrader` with constructor `TypeSafeGrader(api_key: str | None = None, timeout: float = 600, retry_max: int = 2, max_questions_per_call: int = 50)`.
+  - `class TypeSafeGrader` with constructor `TypeSafeGrader(api_key: str | None = None, timeout: float = 600, retry_max: int = 2, max_questions_per_call: int = 50)`. **Does not** take `schema_block` at construction — `build_grader`/`ctx.grader` are populated in `cli.py` at CLI startup (Task 6), before `pass1` has run and `schema.json` even exists, so the schema cannot be known at construction time. Instead `TypeSafeGrader` exposes a public, mutable `schema_block: dict | None` attribute (`None` until set), which `grade_confidence` (Task 4) sets exactly once, right after it loads `schema.json`, before dispatching any chunk. `grade_chunk` reads `self.schema_block` at call time.
   - `TypeSafeGrader.grade_chunk(chunk_text: str, entities: list[EntityAttrs]) -> dict[str, dict[str, float]]` where `EntityAttrs` is a small `dict`-shaped record `{"id": str, "type": str, "attributes": dict[str, Any]}` (node or edge — same shape either way, the grader doesn't need to distinguish). Returns `{stable_id: {attr_name: confidence_float, "__self__": confidence_float}}` — exactly the flat map shape `step_grade_confidence.py` (Task 4) expects to write into shards.
-  - `build_grader(raw_config: dict | None = None) -> TypeSafeGrader | None` factory function: returns `None` when `grader.enabled` is falsy or absent; otherwise constructs and returns a `TypeSafeGrader`. This is what `cli.py` (Task 6) calls to populate `ctx.grader`.
+  - `build_grader(raw_config: dict | None = None) -> TypeSafeGrader | None` factory function: returns `None` when `grader.enabled` is falsy or absent; otherwise constructs and returns a `TypeSafeGrader` with `schema_block` still `None`. This is what `cli.py` (Task 6) calls to populate `ctx.grader`.
+  - `build_schema_block(schema: dict, flat_schema: dict) -> dict` module-level function: converts mykg's `schema.json` + `flattened_schema.json` shape into the compact JSON block `state["schema"]` carries — `{"concepts": {type: {"attributes": [...], "outgoing_edges": [...], "incoming_edges": [...]}}, "properties": {name: {"domain": ..., "range": ..., "attributes": [...]}}}`. Structurally mirrors `pass2._build_extraction_prompt`'s text-block logic (`src/mykg/pass2.py:101-148`) but produces JSON, not a formatted string — see Task 4 for where it's called.
 
 **Context:** Per the spec's "Adapter shape" section — this is a new, small, purpose-built class, **not** an `LLMAdapter` subclass, **not** registered in `llm/config.py:load_adapter()`. `typesafe_sdk` is imported lazily inside this module's functions (not at module top level) so importing `mykg.llm.typesafe_grader` itself doesn't require the package to be installed — only calling `build_grader()` with `enabled: true` does. Mirror `openai_adapter.py:60-66`'s fail-fast `ValueError` pattern for a missing API key. One `TypeSafeClient` instance is constructed **per `TypeSafeGrader` instance** (the constructor builds it), so callers construct one `TypeSafeGrader` per worker thread (Task 4) rather than sharing one across threads — sidesteps the SDK's undocumented thread-safety question entirely (spec's "Adapter shape" section).
 
@@ -274,7 +275,7 @@ plus one additional `Noul` per entity keyed `f"{entity_id}::__self__"` with `ins
 
 Question keys use `f"{entity_id}::{attr_name}"` (and `f"{entity_id}::__self__"` for the entity-level question) — the `::` separator was chosen because it cannot appear in a stable ID (`ids.py`'s `stable_id()` uses hyphens/lowercase only) or a schema attribute name, so splitting `key.rpartition("::")` to recover `(entity_id, attr_name)` on the response side is unambiguous.
 
-`state` is a structured dict, not the bare chunk text: `{"source_text": chunk_text, "extraction": {"nodes": [...], "edges": [...]}}` — the `extraction` value is the subset of that chunk's nodes/edges (as pulled from `raw_extractions.json` by `entity_id`), passed alongside the source text so Jev sees the full extracted record next to its evidence, exactly as `sde_cascade`'s `verify()` does (`state = {"source_text": row["content"], "schema": schema, "extraction": record}` — mykg's version omits `schema`/`system_message`/`instruction`, since mykg's `Noul` instructions already carry the equivalent context per-question via `field_path`).
+`state` is a structured dict, not the bare chunk text: `{"schema": self.schema_block, "source_text": chunk_text, "extraction": entities}` — `extraction` is the flat list of node/edge records attributed to that chunk (as pulled from `raw_extractions.json` by `entity_id`, filtered per Task 4's schema-violation check below), and `schema` is the pre-built JSON block from `build_schema_block()` (see the Interfaces section above), matching `sde_cascade`'s own `verify()` (`state = {"source_text": row["content"], "schema": schema, "extraction": record}` almost exactly — mykg's version omits `system_message`/`instruction`, since mykg's `Noul` instructions already carry the equivalent context per-question via `field_path`).
 
 **Response access is `response.answers[qid].noul`, not `response.nouls`.** This corrects an earlier draft of this plan that assumed a `.nouls` shortcut attribute on the response object — the cookbook's own code reads `answers = ts.system_one(...).answers` then `ans.noul` per answer, and that is the shape used throughout this task's implementation and tests.
 
@@ -289,7 +290,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from mykg.llm.typesafe_grader import TypeSafeGrader, build_grader
+from mykg.llm.typesafe_grader import TypeSafeGrader, build_grader, build_schema_block
 
 
 def _mock_answer(value: float) -> MagicMock:
@@ -411,6 +412,78 @@ def test_grade_chunk_passes_extraction_json_in_state():
     assert captured_state["extraction"] == entities
 
 
+def test_grade_chunk_omits_schema_from_state_when_not_yet_set():
+    """schema_block defaults to None (grade_confidence sets it later, after
+    loading schema.json) — state must not carry a "schema": null key, it
+    must simply not have the key at all."""
+    grader = TypeSafeGrader(api_key="fake-key")
+    assert grader.schema_block is None
+
+    captured_state = {}
+
+    def fake_system_one(state, questions, **kwargs):
+        captured_state.update(state)
+        response = MagicMock()
+        response.answers = {k: _mock_answer(1.0) for k in questions}
+        return response
+
+    grader._client.system_one = fake_system_one
+    grader.grade_chunk("text", [{"id": "x", "type": "Person", "attributes": {}}])
+
+    assert "schema" not in captured_state
+
+
+def test_grade_chunk_includes_schema_in_state_once_set():
+    grader = TypeSafeGrader(api_key="fake-key")
+    grader.schema_block = {"concepts": {"Person": {"attributes": ["name"]}}, "properties": {}}
+
+    captured_state = {}
+
+    def fake_system_one(state, questions, **kwargs):
+        captured_state.update(state)
+        response = MagicMock()
+        response.answers = {k: _mock_answer(1.0) for k in questions}
+        return response
+
+    grader._client.system_one = fake_system_one
+    grader.grade_chunk("text", [{"id": "x", "type": "Person", "attributes": {}}])
+
+    assert captured_state["schema"] == grader.schema_block
+
+
+def test_build_schema_block_converts_schema_json_shape():
+    """Mirrors pass2._build_extraction_prompt's concept_lines/prop_lines
+    logic (src/mykg/pass2.py) but produces JSON instead of a text block."""
+    schema = {
+        "concepts": [
+            {"type": "Person", "parent": None, "attributes": ["name", "email"]},
+            {"type": "Organization", "parent": None, "attributes": ["name"]},
+        ],
+        "properties": [
+            {"name": "works_at", "domain": "Person", "range": "Organization", "attributes": ["role"]},
+        ],
+    }
+    flat_schema = {"Person": ["name", "email"], "Organization": ["name"]}
+
+    block = build_schema_block(schema, flat_schema)
+
+    assert block["concepts"]["Person"] == {
+        "attributes": ["name", "email"],
+        "outgoing_edges": ["works_at → Organization"],
+        "incoming_edges": [],
+    }
+    assert block["concepts"]["Organization"] == {
+        "attributes": ["name"],
+        "outgoing_edges": [],
+        "incoming_edges": ["Person → works_at"],
+    }
+    assert block["properties"]["works_at"] == {
+        "domain": "Person",
+        "range": "Organization",
+        "attributes": ["role"],
+    }
+
+
 def test_missing_api_key_raises_value_error(monkeypatch):
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
     with pytest.raises(ValueError, match="TYPESAFE_API_KEY"):
@@ -484,12 +557,47 @@ _SELF_CRITERIA_KWARGS = {
 }
 
 
+def build_schema_block(schema: dict, flat_schema: dict) -> dict:
+    """Convert mykg's schema.json + flattened_schema.json into the compact
+    JSON block state["schema"] carries. Structurally mirrors
+    pass2._build_extraction_prompt's text-block logic (src/mykg/pass2.py,
+    the concept_lines/prop_lines loops) but produces JSON, not a formatted
+    string, since Jev's state accepts arbitrary JSON directly."""
+    outgoing: dict[str, list[str]] = {}
+    incoming: dict[str, list[str]] = {}
+    for prop in schema["properties"]:
+        outgoing.setdefault(prop["domain"], []).append(f"{prop['name']} → {prop['range']}")
+        incoming.setdefault(prop["range"], []).append(f"{prop['domain']} → {prop['name']}")
+
+    concepts: dict[str, dict] = {}
+    for concept in schema["concepts"]:
+        t = concept["type"]
+        concepts[t] = {
+            "attributes": flat_schema.get(t, concept.get("attributes", [])),
+            "outgoing_edges": outgoing.get(t, []),
+            "incoming_edges": incoming.get(t, []),
+        }
+
+    properties = {
+        p["name"]: {"domain": p["domain"], "range": p["range"], "attributes": p.get("attributes", [])}
+        for p in schema["properties"]
+    }
+
+    return {"concepts": concepts, "properties": properties}
+
+
 class TypeSafeGrader:
     """Grades extracted attribute values against source chunk text via Jev's
     Noul primitive. One instance owns one typesafe_sdk.TypeSafeClient — callers
     construct one TypeSafeGrader per worker thread rather than sharing an
     instance across threads (the SDK does not document thread-safety for
-    concurrent reuse of one client)."""
+    concurrent reuse of one client).
+
+    schema_block starts as None and is set once by grade_confidence right
+    after it loads schema.json — TypeSafeGrader cannot receive it at
+    construction time because build_grader()/ctx.grader are populated in
+    cli.py at CLI startup, before pass1 has run and schema.json even exists.
+    """
 
     def __init__(
         self,
@@ -517,6 +625,12 @@ class TypeSafeGrader:
             timeout=timeout,
             retry=RetryPolicy(max_retries=retry_max),
         )
+        # Set once by grade_confidence right after it loads schema.json —
+        # None here because this constructor runs at CLI startup (Task 6),
+        # before pass1 has produced a schema. grade_chunk tolerates None
+        # (omits "schema" from state) so an early/misordered call degrades
+        # gracefully rather than crashing.
+        self.schema_block: dict | None = None
 
     def grade_chunk(
         self, chunk_text: str, entities: list[EntityAttrs]
@@ -532,12 +646,16 @@ class TypeSafeGrader:
         callers (step_grade_confidence) treat an absent entry as "not graded"
         and fall back to self-reported confidence.
 
-        `state` is a structured dict — {"source_text": chunk_text,
-        "extraction": entities} — not a bare string, mirroring sde_cascade's
-        verify(), which passes the full extraction record alongside the
-        source text rather than re-stating context per question. `entities`
-        is passed through as-is (a flat node/edge list — grade_chunk doesn't
-        distinguish the two, per EntityAttrs' own contract).
+        `state` is a structured dict — {"schema": self.schema_block,
+        "source_text": chunk_text, "extraction": entities} — not a bare
+        string, mirroring sde_cascade's verify(), which passes the full
+        extraction record and the schema alongside the source text rather
+        than re-stating context per question. `entities` is passed through
+        as-is (a flat node/edge list — grade_chunk doesn't distinguish the
+        two, per EntityAttrs' own contract). "schema" is omitted from state
+        entirely when self.schema_block is still None (grade_confidence
+        hasn't set it yet) rather than sent as a null — degrades gracefully
+        to a schema-less grading call instead of crashing.
 
         Attributes whose value is None are skipped entirely — no question is
         built for them. A null value is pass2's _backfill_extraction marker
@@ -571,7 +689,9 @@ class TypeSafeGrader:
                 criteria=self._self_criteria,
             )
 
-        state = {"source_text": chunk_text, "extraction": entities}
+        state: dict[str, Any] = {"source_text": chunk_text, "extraction": entities}
+        if self.schema_block is not None:
+            state["schema"] = self.schema_block
         result: dict[str, dict[str, float]] = {}
         items = list(questions.items())
         for start in range(0, len(items), self._max_questions_per_call):
@@ -600,7 +720,7 @@ def build_grader(raw_config: dict | None) -> TypeSafeGrader | None:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_typesafe_grader.py -v`
-Expected: PASS (all 8 tests). Note: most of these construct a real `TypeSafeGrader(api_key="fake-key")`, which calls the real `TypeSafeClient(...)`/`NoulCriteria(...)` constructors — this does not make a network call (constructing a client is not a request), only `system_one` does, and that's replaced with `fake_system_one` before it's ever called. If `typesafe-sdk` is not installed in the test environment, install it first: `uv pip install -e ".[grader]"`.
+Expected: PASS (all 12 tests). Note: most of these construct a real `TypeSafeGrader(api_key="fake-key")`, which calls the real `TypeSafeClient(...)`/`NoulCriteria(...)` constructors — this does not make a network call (constructing a client is not a request), only `system_one` does, and that's replaced with `fake_system_one` before it's ever called. If `typesafe-sdk` is not installed in the test environment, install it first: `uv pip install -e ".[grader]"`.
 
 - [ ] **Step 5: Commit**
 
@@ -612,8 +732,14 @@ New parallel interface, not an LLMAdapter subclass. One Noul question
 per extracted attribute plus one per entity for overall confidence,
 batched into system_one calls capped at max_questions_per_call. Uses
 NoulCriteria(true=, false=) and a structured state dict carrying the
-chunk's extraction JSON alongside source_text, mirroring TypeSafe's
-own sde_cascade cookbook pattern for grading LLM extractions.
+schema, the chunk's extraction JSON, and source_text side by side,
+mirroring TypeSafe's own sde_cascade cookbook pattern for grading LLM
+extractions. build_schema_block() converts mykg's schema.json +
+flattened_schema.json into the compact JSON block state[\"schema\"]
+carries (mirrors pass2._build_extraction_prompt's text-block logic).
+schema_block is a mutable attribute set once by grade_confidence after
+schema.json loads — not a constructor param, since build_grader() runs
+at CLI startup before schema.json exists.
 typesafe_sdk is imported lazily so it stays an optional dependency."
 ```
 
@@ -626,14 +752,14 @@ typesafe_sdk is imported lazily so it stays an optional dependency."
 - Test: `tests/test_step_grade_confidence.py`
 
 **Interfaces:**
-- Consumes: `TypeSafeGrader.grade_chunk(chunk_text, entities) -> dict[str, dict[str, float]]` (Task 3); `ctx.grader: TypeSafeGrader | None` (Task 6 adds this field, but this task can write against a plain `PipelineContext` attribute access — Task 6 is what makes it a real declared field); `chunker.chunk_file(source_file, content) -> list[Chunk]` (existing, `src/mykg/chunker.py:49`); `raw_extractions.json` / `raw_extractions_shards/` (existing pass2 outputs); `chunk_node_index.json` (existing pass2 output, format `{filename: {chunk_idx_str: [stable_id, ...]}}`).
+- Consumes: `TypeSafeGrader.grade_chunk(chunk_text, entities) -> dict[str, dict[str, float]]` and `TypeSafeGrader.schema_block` (settable attribute) and `build_schema_block(schema, flat_schema) -> dict` (Task 3); `ctx.grader: TypeSafeGrader | None` (Task 6 adds this field, but this task can write against a plain `PipelineContext` attribute access — Task 6 is what makes it a real declared field); `chunker.chunk_file(source_file, content) -> list[Chunk]` (existing, `src/mykg/chunker.py:49`); `raw_extractions.json` / `raw_extractions_shards/` (existing pass2 outputs); `chunk_node_index.json` (existing pass2 output, format `{filename: {chunk_idx_str: [stable_id, ...]}}`); `schema.json` and `flattened_schema.json` (existing, written before `pass2` runs, so both are guaranteed present by the time `grade_confidence` runs).
 - Produces: `run_grade_confidence(ctx: PipelineContext) -> None` — the step function registered in `pipeline.py` (Task 5). Writes `intermediate/confidence_grades_shards/<slug>.json` (shape `{"_fname": fname, "data": {stable_id: {attr: confidence, "__self__": confidence}}}`, mirrors `raw_extractions_shards/`'s shape exactly) and the merged `intermediate/confidence_grades.json` (`{stable_id: {attr: confidence, "__self__": confidence}}` across all files) plus `intermediate/confidence_grades.done`.
 
 **Context:** Mirrors `run_pass2`'s structure (`src/mykg/pass2.py:416-601`) at a smaller scale: per-file `ThreadPoolExecutor`, per-file shard flush inside the `as_completed` loop (D57 incremental-flush pattern — not the "submit everything, finalize once at the end" anti-pattern D57 documents as a bug). Reuses `_fname_slug` naming (mirror `step_pass2.py:18-19`'s `_fname_slug` helper — either import it or duplicate the one-liner; duplicating is fine here since it's a trivial pure function and importing from `step_pass2` would create an odd cross-step dependency).
 
-When `ctx.grader is None` (disabled), write `confidence_grades.json` as `{}` and the `.done` sentinel, return immediately — no `ThreadPoolExecutor`, no file iteration.
+When `ctx.grader is None` (disabled), write `confidence_grades.json` as `{}` and the `.done` sentinel, return immediately — no `ThreadPoolExecutor`, no file iteration, no schema loading.
 
-When enabled: for each file in `raw_extractions.json`, re-derive its chunks via `chunk_file(fname, content)` (content from `file_manifest.json`/`ctx.file_contents`, same loader pattern `step_pass2.py:_load_manifest` already uses), then for each chunk look up `chunk_node_index[fname][str(chunk_idx_1based)]` → the list of stable IDs extracted from that chunk, pull each one's current `type`+`attributes` from that file's raw nodes/edges (search both `nodes` and `edges` lists by `id`), call `ctx.grader.grade_chunk(chunk.text, entities)`, and merge the per-chunk result into that file's accumulated grades dict. A `TypeSafeError` (or any exception) from `grade_chunk` for one chunk is caught, logged as a warning, and that chunk's entities simply contribute nothing to the file's grades — matches `run_pass2._process_file`'s exception breadth.
+When enabled: **first**, load `schema.json` + `flattened_schema.json`, call `build_schema_block(schema, flat_schema)`, and set `ctx.grader.schema_block = <that block>` — once, before any file/chunk processing begins, since the schema is identical for every call this run (mirrors `step_pass2.py` building `flattened_schema.json` once and handing it to every pass2 chunk call rather than rebuilding it per chunk). Then, for each file in `raw_extractions.json`, re-derive its chunks via `chunk_file(fname, content)` (content from `file_manifest.json`/`ctx.file_contents`, same loader pattern `step_pass2.py:_load_manifest` already uses), then for each chunk look up `chunk_node_index[fname][str(chunk_idx_1based)]` → the list of stable IDs extracted from that chunk, pull each one's current `type`+`attributes` from that file's raw nodes/edges (search both `nodes` and `edges` lists by `id`). **Before grading**, drop any edge whose `type` is not a declared property in `schema["properties"]`, or whose endpoint node types don't match that property's `domain`/`range` — log a warning and exclude it from `entities`, the same schema check `pass2.validate_extraction` already performs, applied here so a structurally invalid edge never wastes a grader call (see spec's "schema-violation" note in the step-mechanics list). Then call `ctx.grader.grade_chunk(chunk.text, entities)`, and merge the per-chunk result into that file's accumulated grades dict. A `TypeSafeError` (or any exception) from `grade_chunk` for one chunk is caught, logged as a warning, and that chunk's entities simply contribute nothing to the file's grades — matches `run_pass2._process_file`'s exception breadth.
 
 - [ ] **Step 1: Write the failing test — disabled grader is a no-op**
 
@@ -710,6 +836,7 @@ from pathlib import Path
 
 from mykg import config as _cfg
 from mykg.chunker import chunk_file
+from mykg.llm.typesafe_grader import build_schema_block
 from mykg.logging import get
 from mykg.orchestrator import PipelineContext
 from mykg.utility.atomic_io import atomic_write_json
@@ -725,26 +852,63 @@ def _content_from_entry(entry: str | dict) -> str:
     return entry["content"] if isinstance(entry, dict) else entry
 
 
-def _index_entities(file_data: dict) -> dict[str, dict]:
+def _edge_type_map(schema: dict) -> dict[str, tuple[str, str]]:
+    """Map property name -> (domain, range) for the schema-violation check
+    below. Built once per run (schema is fixed), not per chunk."""
+    return {p["name"]: (p["domain"], p["range"]) for p in schema.get("properties", [])}
+
+
+def _index_entities(file_data: dict, edge_types: dict[str, tuple[str, str]]) -> dict[str, dict]:
     """Map stable_id -> {"id", "type", "attributes"} for every node/edge in a
     file's raw extraction, so a chunk's stable-id list can be resolved to full
-    entity records for grading."""
+    entity records for grading.
+
+    An edge whose type is not a declared property in the schema, or whose
+    endpoint node types don't match that property's declared domain/range, is
+    dropped here (logged at warning) and never reaches grading — the same
+    check pass2.validate_extraction already performs at extraction time,
+    applied again here so a structurally invalid edge never wastes a grader
+    call. Node types are looked up from the already-indexed nodes, so nodes
+    must be indexed before edges within this function (they are, below).
+    """
     by_id: dict[str, dict] = {}
+    node_types: dict[str, str] = {}
     for node in file_data.get("nodes", []):
         if node and node.get("id"):
             attrs = {
                 k: (v.get("value") if isinstance(v, dict) else v)
                 for k, v in (node.get("attributes") or {}).items()
             }
-            by_id[node["id"]] = {"id": node["id"], "type": node.get("type", ""), "attributes": attrs}
+            ntype = node.get("type", "")
+            node_types[node["id"]] = ntype
+            by_id[node["id"]] = {"id": node["id"], "type": ntype, "attributes": attrs}
     for edge in file_data.get("edges", []):
-        if edge and edge.get("from") and edge.get("to"):
-            eid = f"{edge['type']}::{edge['from']}::{edge['to']}"
-            attrs = {
-                k: (v.get("value") if isinstance(v, dict) else v)
-                for k, v in (edge.get("attributes") or {}).items()
-            }
-            by_id[eid] = {"id": eid, "type": edge.get("type", ""), "attributes": attrs}
+        if not edge or not edge.get("from") or not edge.get("to"):
+            continue
+        etype = edge.get("type", "")
+        domain_range = edge_types.get(etype)
+        if domain_range is None:
+            log.warning("  edge type %r not in schema — excluding from grading", etype)
+            continue
+        domain, range_ = domain_range
+        from_type = node_types.get(edge["from"])
+        to_type = node_types.get(edge["to"])
+        if from_type != domain or to_type != range_:
+            log.warning(
+                "  edge %s (%s→%s) violates declared domain/range (%s→%s) — excluding from grading",
+                etype,
+                from_type,
+                to_type,
+                domain,
+                range_,
+            )
+            continue
+        eid = f"{etype}::{edge['from']}::{edge['to']}"
+        attrs = {
+            k: (v.get("value") if isinstance(v, dict) else v)
+            for k, v in (edge.get("attributes") or {}).items()
+        }
+        by_id[eid] = {"id": eid, "type": etype, "attributes": attrs}
     return by_id
 
 
@@ -754,11 +918,12 @@ def _grade_file(
     file_data: dict,
     chunk_index: dict[str, list[str]],
     grader,
+    edge_types: dict[str, tuple[str, str]],
 ) -> dict[str, dict[str, float]]:
     """Grade every chunk of one file, returning the merged per-entity grades
     for that file. A single chunk's grading failure is caught and logged —
     other chunks in the same file still contribute their grades."""
-    entities_by_id = _index_entities(file_data)
+    entities_by_id = _index_entities(file_data, edge_types)
     chunks = chunk_file(fname, content)
     file_grades: dict[str, dict[str, float]] = {}
 
@@ -788,6 +953,15 @@ def run_grade_confidence(ctx: PipelineContext) -> None:
         log.info("Step — grading disabled (grader.enabled: false); confidence_grades.json is empty")
         return
 
+    schema = json.loads((ctx.intermediate_dir / "schema.json").read_text(encoding="utf-8"))
+    flat_schema = json.loads(
+        (ctx.intermediate_dir / "flattened_schema.json").read_text(encoding="utf-8")
+    )
+    # Built once per run — schema is fixed for every call, not rebuilt per
+    # chunk (mirrors step_pass2.py building flattened_schema.json once).
+    ctx.grader.schema_block = build_schema_block(schema, flat_schema)
+    edge_types = _edge_type_map(schema)
+
     raw = json.loads((ctx.intermediate_dir / "raw_extractions.json").read_text(encoding="utf-8"))
     chunk_node_index = json.loads(
         (ctx.intermediate_dir / "chunk_node_index.json").read_text(encoding="utf-8")
@@ -807,7 +981,7 @@ def run_grade_confidence(ctx: PipelineContext) -> None:
         content = _content_from_entry(manifest.get(fname, ""))
         file_data = raw.get(fname, {})
         chunk_index = chunk_node_index.get(fname, {})
-        return fname, _grade_file(fname, content, file_data, chunk_index, grader)
+        return fname, _grade_file(fname, content, file_data, chunk_index, grader, edge_types)
 
     max_workers = _cfg.RAW.get("grader", {}).get("max_workers", 4)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -838,12 +1012,27 @@ Expected: FAIL at `ctx.grader = grader` with a Pydantic validation error (`Pipel
 - [ ] **Step 5: Add the enabled-path test (also blocked on Task 6 — write now, verify after)**
 
 ```python
+_SCHEMA = {
+    "concepts": [{"type": "Person", "parent": None, "attributes": ["name"]}],
+    "properties": [],
+}
+_FLAT_SCHEMA = {"Person": ["name"]}
+
+
+def _write_schema(ctx):
+    (ctx.intermediate_dir / "schema.json").write_text(json.dumps(_SCHEMA))
+    (ctx.intermediate_dir / "flattened_schema.json").write_text(json.dumps(_FLAT_SCHEMA))
+
+
 def test_enabled_grader_grades_and_writes_shard(tmp_path):
     class FakeGrader:
+        schema_block = None
+
         def grade_chunk(self, chunk_text, entities):
             return {e["id"]: {**{a: 0.8 for a in e["attributes"]}, "__self__": 0.9} for e in entities}
 
     ctx = _make_ctx(tmp_path, grader=FakeGrader())
+    _write_schema(ctx)
     raw = {
         "doc.md": {
             "nodes": [
@@ -872,16 +1061,24 @@ def test_enabled_grader_grades_and_writes_shard(tmp_path):
     assert shard_path.exists()
     shard = json.loads(shard_path.read_text())
     assert shard["_fname"] == "doc.md"
+    # schema_block was set on ctx.grader before any grade_chunk call.
+    assert ctx.grader.schema_block == {
+        "concepts": {"Person": {"attributes": ["name"], "outgoing_edges": [], "incoming_edges": []}},
+        "properties": {},
+    }
 
 
 def test_chunk_grading_failure_does_not_lose_other_chunks(tmp_path):
     class FlakyGrader:
+        schema_block = None
+
         def grade_chunk(self, chunk_text, entities):
             if "bob" in entities[0]["id"]:
                 raise RuntimeError("simulated grader failure")
             return {e["id"]: {"__self__": 0.7} for e in entities}
 
     ctx = _make_ctx(tmp_path, grader=FlakyGrader())
+    _write_schema(ctx)
     raw = {
         "doc.md": {
             "nodes": [
@@ -904,12 +1101,72 @@ def test_chunk_grading_failure_does_not_lose_other_chunks(tmp_path):
     grades = json.loads((ctx.intermediate_dir / "confidence_grades.json").read_text())
     assert grades.get("person-alice") == {"__self__": 0.7}
     assert "person-bob" not in grades
+
+
+def test_edge_violating_schema_domain_range_excluded_from_grading(tmp_path):
+    """An edge whose from/to node types don't match its property's declared
+    domain/range must never reach grade_chunk — the check happens before any
+    entities list is built, so it costs zero grader calls."""
+
+    class RecordingGrader:
+        schema_block = None
+
+        def __init__(self):
+            self.seen_ids: set[str] = set()
+
+        def grade_chunk(self, chunk_text, entities):
+            self.seen_ids |= {e["id"] for e in entities}
+            return {e["id"]: {"__self__": 0.9} for e in entities}
+
+    grader = RecordingGrader()
+    ctx = _make_ctx(tmp_path, grader=grader)
+    schema = {
+        "concepts": [
+            {"type": "Person", "parent": None, "attributes": ["name"]},
+            {"type": "Organization", "parent": None, "attributes": ["name"]},
+        ],
+        "properties": [
+            {"name": "works_at", "domain": "Person", "range": "Organization", "attributes": []}
+        ],
+    }
+    (ctx.intermediate_dir / "schema.json").write_text(json.dumps(schema))
+    (ctx.intermediate_dir / "flattened_schema.json").write_text(
+        json.dumps({"Person": ["name"], "Organization": ["name"]})
+    )
+    raw = {
+        "doc.md": {
+            "nodes": [
+                {"id": "person-alice", "type": "Person", "attributes": {"name": "Alice"}},
+                {"id": "person-bob", "type": "Person", "attributes": {"name": "Bob"}},
+            ],
+            # works_at requires (Person → Organization); this one is (Person → Person),
+            # a schema violation that must be excluded before grading.
+            "edges": [
+                {
+                    "type": "works_at",
+                    "from": "person-alice",
+                    "to": "person-bob",
+                    "attributes": {},
+                }
+            ],
+        }
+    }
+    (ctx.intermediate_dir / "raw_extractions.json").write_text(json.dumps(raw))
+    (ctx.intermediate_dir / "chunk_node_index.json").write_text(
+        json.dumps({"doc.md": {"1": ["person-alice", "person-bob", "works_at::person-alice::person-bob"]}})
+    )
+    (ctx.intermediate_dir / "file_manifest.json").write_text(json.dumps({"doc.md": "Alice and Bob."}))
+
+    run_grade_confidence(ctx)
+
+    assert not any(sid.startswith("works_at::") for sid in grader.seen_ids)
+    assert grader.seen_ids == {"person-alice", "person-bob"}
 ```
 
 - [ ] **Step 6: After Task 6 lands, run all step_grade_confidence tests and verify pass**
 
 Run: `pytest tests/test_step_grade_confidence.py -v`
-Expected: PASS (all 4 tests).
+Expected: PASS (all 5 tests).
 
 - [ ] **Step 7: Commit**
 
@@ -920,7 +1177,15 @@ git commit -m "feat(pipeline): add grade_confidence step
 Per-file ThreadPoolExecutor mirroring pass2's shard/resume pattern.
 Disabled grader (ctx.grader is None) writes an empty confidence_grades.json
 and .done sentinel as a no-op passthrough. A chunk's grading failure is
-caught and logged; other chunks and files still contribute their grades."
+caught and logged; other chunks and files still contribute their grades.
+
+Loads schema.json + flattened_schema.json once per run, builds the
+grader's schema_block via build_schema_block(), and sets it on
+ctx.grader before any chunk is dispatched. Edges whose type isn't a
+declared schema property, or whose endpoint types violate the
+property's domain/range, are excluded before grading — same check
+pass2.validate_extraction performs at extraction time, applied here
+so a structurally invalid edge never costs a grader call."
 ```
 
 ---

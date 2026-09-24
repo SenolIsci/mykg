@@ -186,9 +186,9 @@ labeled JSON fields alongside the source text, rather than making
 `instructions` re-state that context per question.
 
 Applying both to mykg's shape — one call per chunk, `state` carrying the
-chunk's full extraction (mirroring the actual `nodes`/`edges` JSON pass2
-produced for that chunk, not just one attribute at a time) and the source
-text side by side, one `Noul` question per `{entity_id, attr_name}`:
+chunk's full extraction (the flat list of node/edge records attributed to
+that chunk, not just one attribute at a time) and the source text side by
+side, one `Noul` question per `{entity_id, attr_name}`:
 
 ```python
 from typesafe_sdk import Noul, NoulCriteria
@@ -225,12 +225,15 @@ def build_questions(entities: list[EntityAttrs]) -> dict[str, Noul]:
         )
     return questions
 
-# One call per chunk. `state` carries the chunk's full extraction JSON
-# (every node/edge attributed to this chunk, via chunk_node_index.json)
-# alongside the source text, mirroring sde_cascade's verify():
+# One call per chunk. `state` carries the schema, the chunk's full
+# extraction (every node/edge attributed to this chunk, via
+# chunk_node_index.json), and the source text — mirroring sde_cascade's
+# verify(), which passes {"source_text":, "schema":, "extraction":} as one
+# structured state:
 state = {
+    "schema": schema_block,   # see "Schema in state" below — built once per run, not per chunk
     "source_text": chunk_text,
-    "extraction": {"nodes": chunk_nodes, "edges": chunk_edges},
+    "extraction": entities,
 }
 questions = build_questions(entities)
 answers = client.system_one(state=state, questions=questions).answers
@@ -245,6 +248,43 @@ every node/edge attributed to that chunk (via `chunk_node_index.json`) in
 one round trip — `.answers[qid].noul` is read back per question exactly as
 `sde_cascade`'s `verify()` does (`{qid: ans.noul for qid, ans in
 answers.items()}`).
+
+### Schema in `state`
+
+The extractor's own Pass 2 prompt includes a full `SCHEMA` block — every
+concept's attributes plus its outgoing/incoming edge types — so the
+extractor knows what's structurally valid before it extracts
+(`pass2._build_extraction_prompt`, private to `pass2.py`, builds this as a
+text block). The grader was missing this entirely in the first draft of
+this design: without it, Jev has no notion of what `manages` or `works_at`
+*mean* as relationship types, or which attributes are declared for a given
+concept — it can only judge a bare `field_path` string against prose, with
+no structural context. Two concrete things the schema unlocks:
+
+- Jev can judge an edge like `manages (Person → Organization)` against
+  "does this specific relationship type, as the schema defines it, actually
+  hold between these two entities in the text" rather than judging
+  plausibility in the abstract.
+- mykg's own code can catch a **schema violation before spending an API
+  call** — an edge whose `type` isn't in `schema["properties"]`, or whose
+  `domain`/`range` doesn't match its `from`/`to` node types, is invalid by
+  construction and needs no grader round-trip to flag (this mirrors
+  `validate_extraction`'s existing schema checks in `pass2.py`, applied one
+  step later in the pipeline).
+
+`TypeSafeGrader` is not handed the raw `schema.json`/`flattened_schema.json`
+files — it receives a small, pre-built JSON block, structurally equivalent
+to the text `SCHEMA` block pass2's prompt already builds, but as native JSON
+rather than a formatted string (mirroring the shape used in the Team Notes
+worked example above: `{"concepts": {type: {attributes, outgoing_edges,
+incoming_edges}}, "properties": {name: {domain, range, attributes}}}`).
+This block is **built once per pipeline run** (schema does not change
+per-chunk) and passed into every `grade_chunk` call — `grade_confidence`
+(the pipeline step, not `TypeSafeGrader` itself) is responsible for loading
+`schema.json` + `flattened_schema.json` and building it once before
+dispatching any chunk, exactly the same "build once, reuse per call" shape
+`step_pass2.py` already uses for the flattened schema it hands to every
+pass2 chunk call.
 
 **Null-valued attributes are never sent to the grader.** `_backfill_extraction`
 (D9) fills every schema-declared attribute the extractor didn't find with
@@ -301,16 +341,24 @@ confidence, no JSON-parse brittleness). Instead:
   **one `TypeSafeGrader`/`TypeSafeClient` instance per worker thread**
   rather than sharing one across threads — sidesteps the undocumented
   thread-safety question entirely.
+- Takes an additional constructor parameter, `schema_block: dict`, holding
+  the pre-built JSON schema description (see "Schema in `state`" above).
+  Since the schema is fixed for the whole run (built once before dispatch,
+  not per chunk), it lives on the `TypeSafeGrader` instance rather than
+  being passed into every `grade_chunk` call — each worker thread's
+  `TypeSafeGrader` is constructed once with the same `schema_block`, mirrors
+  how `step_pass2.py` builds `flattened_schema.json` once and hands it to
+  every chunk call rather than rebuilding it per chunk.
 - One method, shaped after the actual need: `grade_chunk(chunk_text: str,
   entities: list[EntityAttrs]) -> dict[str, dict[str, float]]` — internally
-  builds the structured `state` dict (`{"source_text": chunk_text,
-  "extraction": {"nodes": ..., "edges": ...}}`) and the `Noul` questions
-  dict per the "Primitive selection" snippet above, calls
+  builds the structured `state` dict (`{"schema": self._schema_block,
+  "source_text": chunk_text, "extraction": entities}`) and the `Noul`
+  questions dict per the "Primitive selection" snippet above, calls
   `client.system_one(state=state, questions=questions)` once (or N times if
   `max_questions_per_call` requires splitting a dense chunk's questions
-  across calls — `state` is repeated unchanged on each split call), catches
-  `TypeSafeError` around the call for the step's per-chunk
-  graceful-degradation behavior, and returns the flat
+  across calls — `state`, schema included, is repeated unchanged on each
+  split call), catches `TypeSafeError` around the call for the step's
+  per-chunk graceful-degradation behavior, and returns the flat
   `{stable_id: {attr_name: confidence_float, "__self__": confidence_float}}`
   map the `grade_confidence` step writes into `confidence_grades_shards/`.
 - `typesafe-sdk` (`pip install typesafe-sdk`, Python ≥3.10) is added as an
@@ -411,28 +459,37 @@ special-casing in the orchestrator or in `step_assemble`.
 
 **When enabled**, the step mirrors `run_pass2`'s structure:
 
-1. Load `raw_extractions.json` (or its shards, matching whichever
+1. Load `schema.json` and `flattened_schema.json`, and build the JSON
+   `schema_block` once (see "Schema in `state`" above) — this happens
+   **before** any file/chunk processing begins, since it's identical for
+   every call this run.
+2. Load `raw_extractions.json` (or its shards, matching whichever
    `raw_extractions_shards/` are present, same as `step_pass2._run` does).
-2. Load `chunk_node_index.json` — `{filename: {chunk_idx: [stable_ids]}}`.
-3. For each file, re-derive its chunks via `chunk_file` (identical call
+3. Load `chunk_node_index.json` — `{filename: {chunk_idx: [stable_ids]}}`.
+4. For each file, re-derive its chunks via `chunk_file` (identical call
    pass2 made, so chunk text is reproduced exactly — chunk boundaries are
    deterministic given the same content and `pipeline.chunking` config).
-4. For each chunk, resolve its stable IDs → pull each node's/edge's current
+5. For each chunk, resolve its stable IDs → pull each node's/edge's current
    `type` + `attributes` (value only, not confidence) from that file's raw
-   extraction.
-5. One `TypeSafeGrader.grade_chunk(chunk_text, entities)` call per chunk —
-   internally one `client.system_one(state=chunk_text, questions={...})`
-   call (or several, if `grader.max_questions_per_call` requires splitting
-   a dense chunk), with one `Noul` question per `{entity_id, attribute}`
-   pair plus one `Noul` question per entity for its own overall confidence.
-6. The call returns a flat map:
+   extraction. An edge whose `type` is not in `schema["properties"]`, or
+   whose endpoint types don't match the property's declared `domain`/
+   `range`, is dropped before grading and logged as a warning — same
+   validation `validate_extraction` already performs in `pass2.py`, applied
+   here so a structurally invalid edge never wastes a grader call.
+6. One `TypeSafeGrader.grade_chunk(chunk_text, entities)` call per chunk —
+   internally one `client.system_one(state=state, questions={...})` call
+   (or several, if `grader.max_questions_per_call` requires splitting a
+   dense chunk), `state` carrying `schema_block` + `chunk_text` +
+   `entities`, with one `Noul` question per `{entity_id, attribute}` pair
+   plus one `Noul` question per entity for its own overall confidence.
+7. The call returns a flat map:
    `{stable_id: {attr_name: confidence_float, "__self__": confidence_float}}`
    — `__self__` is the entity's own overall confidence (node or edge
    level, from its dedicated `Noul` question), keeping node/edge- and
    attribute-level scores in one response format. `confidence_float` here
    is each question's `.noul` value directly (already a 0–1 probability,
    no further derivation needed).
-7. Files with zero chunks needing grading (e.g. produced zero nodes) are
+8. Files with zero chunks needing grading (e.g. produced zero nodes) are
    skipped without a call.
 
 **Shard format** — `intermediate/confidence_grades_shards/<slug>.json`,
