@@ -10,7 +10,7 @@
 
 **Tech Stack:** Python 3.11+, `typesafe-sdk` (new dependency, Python ≥3.10 — compatible), Pydantic `BaseModel` for config/context fields, `ThreadPoolExecutor` for per-file parallelism (Invariant 12), `pytest` + `monkeypatch` for tests (no live API calls in unit tests).
 
-**Spec:** `docs/superpowers/specs/2026-09-24-confidence-grader-design.md` — the plan argues from this spec; read both. In particular read the spec's "Addendum" section (TypeSafe/Jev backend, `Noul` primitive selection, adapter shape, resolved SDK details) before Task 1.
+**Spec:** `docs/superpowers/specs/2026-09-24-confidence-grader-design.md` — the plan argues from this spec; read both. In particular read the spec's "Grader backend: TypeSafe AI (Jev)" section (`Noul` primitive selection, adapter shape, exception hierarchy) before Task 1.
 
 ## Global Constraints
 
@@ -242,9 +242,9 @@ Install via 'pip install mykg[grader]'."
   - `TypeSafeGrader.grade_chunk(chunk_text: str, entities: list[EntityAttrs]) -> dict[str, dict[str, float]]` where `EntityAttrs` is a small `dict`-shaped record `{"id": str, "type": str, "attributes": dict[str, Any]}` (node or edge — same shape either way, the grader doesn't need to distinguish). Returns `{stable_id: {attr_name: confidence_float, "__self__": confidence_float}}` — exactly the flat map shape `step_grade_confidence.py` (Task 4) expects to write into shards.
   - `build_grader(raw_config: dict | None = None) -> TypeSafeGrader | None` factory function: returns `None` when `grader.enabled` is falsy or absent; otherwise constructs and returns a `TypeSafeGrader`. This is what `cli.py` (Task 6) calls to populate `ctx.grader`.
 
-**Context:** Per the spec's "Adapter shape" section — this is a new, small, purpose-built class, **not** an `LLMAdapter` subclass, **not** registered in `llm/config.py:load_adapter()`. `typesafe_sdk` is imported lazily inside this module's functions (not at module top level) so importing `mykg.llm.typesafe_grader` itself doesn't require the package to be installed — only calling `build_grader()` with `enabled: true` does. Mirror `openai_adapter.py:60-66`'s fail-fast `ValueError` pattern for a missing API key. One `TypeSafeClient` instance is constructed **per `TypeSafeGrader` instance** (the constructor builds it), so callers construct one `TypeSafeGrader` per worker thread (Task 4) rather than sharing one across threads — sidesteps the SDK's undocumented thread-safety question entirely (spec, resolved item 2).
+**Context:** Per the spec's "Adapter shape" section — this is a new, small, purpose-built class, **not** an `LLMAdapter` subclass, **not** registered in `llm/config.py:load_adapter()`. `typesafe_sdk` is imported lazily inside this module's functions (not at module top level) so importing `mykg.llm.typesafe_grader` itself doesn't require the package to be installed — only calling `build_grader()` with `enabled: true` does. Mirror `openai_adapter.py:60-66`'s fail-fast `ValueError` pattern for a missing API key. One `TypeSafeClient` instance is constructed **per `TypeSafeGrader` instance** (the constructor builds it), so callers construct one `TypeSafeGrader` per worker thread (Task 4) rather than sharing one across threads — sidesteps the SDK's undocumented thread-safety question entirely (spec's "Adapter shape" section).
 
-For the `Noul` question shape, follow the spec's addendum exactly:
+For the `Noul` question shape, follow the spec exactly:
 
 ```python
 Noul(
