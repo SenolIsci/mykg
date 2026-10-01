@@ -16,7 +16,7 @@ from types import SimpleNamespace
 import pytest
 from click.testing import CliRunner
 
-from mykg.query import QueryGraph, build_query_graph, query_graph
+from mykg.query import QueryGraph, _bm25_seed_nodes, build_query_graph, query_graph
 
 
 SCHEMA = {
@@ -170,6 +170,18 @@ class TestSeedLimit:
         seeds_line = next(line for line in out.splitlines() if line.startswith("Seeds:"))
         seed_list = seeds_line.split("Seeds:")[1].split("|")[0].strip()
         assert len(seed_list.split(", ")) == 1
+
+    def test_bm25_seed_nodes_empty_corpus(self, tmp_path: Path):
+        output = tmp_path / "output"
+        output.mkdir()
+        intermediate = tmp_path / "intermediate"
+        intermediate.mkdir()
+        (output / "nodes.jsonl").write_text("", encoding="utf-8")
+        (output / "edges.jsonl").write_text("", encoding="utf-8")
+        (intermediate / "schema.json").write_text(json.dumps(SCHEMA), encoding="utf-8")
+        empty_qg = build_query_graph(tmp_path)
+        assert empty_qg.bm25_index is None
+        assert _bm25_seed_nodes(empty_qg, "anything", limit=3) == []
 
 
 def _invoke_mcp_tool(session_dir: Path, question: str, **kwargs) -> str:

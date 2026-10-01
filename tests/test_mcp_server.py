@@ -332,6 +332,45 @@ def rarity_kg(rarity_session_dir: Path) -> KnowledgeGraph:
     return KnowledgeGraph(session_root=rarity_session_dir)
 
 
+WIDGET_NODES = [
+    {
+        "id": f"person-widget-{i}",
+        "type": "Person",
+        "confidence": 0.9,
+        "attributes": {"name": {"value": f"Widget Person {i}", "confidence": 1.0}},
+        "source_files": ["a.md"],
+    }
+    for i in range(5)
+] + [
+    {
+        "id": "organization-widget",
+        "type": "Organization",
+        "confidence": 0.9,
+        "attributes": {"name": {"value": "Widget Org", "confidence": 1.0}},
+        "source_files": ["a.md"],
+    }
+]
+
+
+@pytest.fixture
+def widget_session_dir(tmp_path: Path) -> Path:
+    output = tmp_path / "output"
+    output.mkdir()
+    intermediate = tmp_path / "intermediate"
+    intermediate.mkdir()
+    (output / "nodes.jsonl").write_text(
+        "\n".join(json.dumps(n) for n in WIDGET_NODES), encoding="utf-8"
+    )
+    (output / "edges.jsonl").write_text("", encoding="utf-8")
+    (intermediate / "schema.json").write_text(json.dumps(SCHEMA), encoding="utf-8")
+    return tmp_path
+
+
+@pytest.fixture
+def widget_kg(widget_session_dir: Path) -> KnowledgeGraph:
+    return KnowledgeGraph(session_root=widget_session_dir)
+
+
 def _invoke_search_nodes_tool(session_dir: Path, query: str, **kwargs) -> str:
     """Invoke the real MCP mykg_search_nodes tool via its underlying .fn."""
     from mykg.mcp_server import mcp
@@ -408,6 +447,57 @@ class TestSearchBM25:
         results = json.loads(out)
         assert results[0]["id"] == "organization-acme"
         assert results[0]["match_field"].startswith("exact")
+
+    def test_type_filter_skips_a_scored_node_of_another_type(self, widget_kg: KnowledgeGraph):
+        # "Widget" matches both Person and Organization nodes; filtering to
+        # Person must skip the scored Organization node rather than include
+        # it — exercises the continue inside the type-filter check, not just
+        # the "no valid match exists at all" case covered elsewhere.
+        results = widget_kg.search_nodes_bm25("Widget", limit=10, type_filter="Person")
+        assert results
+        assert all(node["type"] == "Person" for _score, node, _match_field in results)
+        assert "organization-widget" not in {node["id"] for _score, node, _mf in results}
+
+    def test_limit_truncates_more_matches_than_requested(self, widget_kg: KnowledgeGraph):
+        # 6 nodes match "Widget"; limit=2 must stop early rather than return
+        # everything — exercises the break once len(scored) reaches limit.
+        results = widget_kg.search_nodes_bm25("Widget", limit=2)
+        assert len(results) == 2
+
+    def test_match_field_substring_name_branch(self):
+        import tempfile
+
+        nodes = [
+            {
+                "id": "project-rare",
+                "type": "Project",
+                "confidence": 0.9,
+                "attributes": {"name": {"value": "Database Migration Service", "confidence": 1.0}},
+                "source_files": ["a.md"],
+            }
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            tp = Path(td)
+            (tp / "output").mkdir()
+            (tp / "intermediate").mkdir()
+            (tp / "output" / "nodes.jsonl").write_text(
+                "\n".join(json.dumps(n) for n in nodes), encoding="utf-8"
+            )
+            (tp / "output" / "edges.jsonl").write_text("", encoding="utf-8")
+            (tp / "intermediate" / "schema.json").write_text(json.dumps(SCHEMA), encoding="utf-8")
+            kg = KnowledgeGraph(session_root=tp)
+            # "Migration" is a middle word — not an exact match, not a prefix —
+            # so this is the only way to reach the plain `substring:` branch.
+            results = kg.search_nodes_bm25("Migration", limit=10)
+            assert results
+            assert results[0][2] == "substring: Database Migration Service"
+
+    def test_match_field_alias_substring_branch(self, kg: KnowledgeGraph):
+        # "corporation" matches the "Acme Corporation" alias as a substring,
+        # not an exact alias match — exercises the non-exact alias branch.
+        results = kg.search_nodes_bm25("corporation", limit=10)
+        assert results
+        assert results[0][2] == "alias: Acme Corporation"
 
 
 class TestNeighbors:
