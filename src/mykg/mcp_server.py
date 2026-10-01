@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import bm25s
 import networkx as nx
 
 from mykg import config as _cfg
@@ -44,6 +45,9 @@ class KnowledgeGraph:
     edges_by_id: dict[str, dict] = field(default_factory=dict)
     name_index: list[tuple[str, str, str]] = field(default_factory=list)
     alias_index: dict[str, str] = field(default_factory=dict)
+
+    bm25_index: bm25s.BM25 | None = field(default=None, repr=False)
+    bm25_node_ids: list[str] = field(default_factory=list)
 
     file_manifest: dict | None = field(default=None)
     raw_chunk_node_index: dict | None = field(default=None)
@@ -103,6 +107,56 @@ class KnowledgeGraph:
                     for sid in ids:
                         self.chunk_node_index_by_id.setdefault(sid, []).append(chunk_key)
 
+        self._build_bm25_index()
+
+    def _build_bm25_index(self) -> None:
+        self.bm25_node_ids = [n["id"] for n in self.nodes]
+        if not self.bm25_node_ids:
+            self.bm25_index = None
+            return
+        corpus_texts = [_node_search_text(n) for n in self.nodes]
+        tokenized = bm25s.tokenize(corpus_texts, stopwords=None, show_progress=False)
+        index = bm25s.BM25()
+        index.index(tokenized, show_progress=False)
+        self.bm25_index = index
+
+    def search_nodes_bm25(
+        self,
+        query: str,
+        limit: int = 20,
+        type_filter: str | None = None,
+    ) -> list[tuple[float, dict, str]]:
+        """Rank nodes against ``query`` with BM25; returns (score, node, match_field).
+
+        Only nodes with a nonzero BM25 score are returned — zero overlap means
+        no match, preserving the existing "no match" contract. ``match_field``
+        is a cosmetic exact/prefix/substring/attr label computed post-hoc from
+        the winning node's name/alias/attributes, purely for display — it does
+        not affect ranking.
+        """
+        if self.bm25_index is None or not self.bm25_node_ids:
+            return []
+
+        query_tokenized = bm25s.tokenize([query], stopwords=None, show_progress=False)
+        # When filtering by type, retrieve every scored node (cheap at this
+        # project's scale) so the type filter can't starve out a valid match
+        # that a smaller top-k would have excluded.
+        k = len(self.bm25_node_ids) if type_filter else min(max(limit, 1), len(self.bm25_node_ids))
+        result_ids, scores = self.bm25_index.retrieve(query_tokenized, k=k, show_progress=False)
+
+        query_lower = query.lower()
+        scored: list[tuple[float, dict, str]] = []
+        for idx, score in zip(result_ids[0], scores[0]):
+            if score <= 0.0:
+                continue
+            node = self.nodes[idx]
+            if type_filter and node.get("type") != type_filter:
+                continue
+            scored.append((float(score), node, _match_field(node, query_lower)))
+            if len(scored) >= limit:
+                break
+        return scored
+
     def reload(self, session_root: Path | None = None) -> None:
         """Re-read session files and rebuild the in-memory graph + indexes."""
         if session_root is not None:
@@ -145,6 +199,48 @@ def _node_summary(node: dict) -> dict:
         "name": _node_name(node),
         "confidence": node.get("confidence", 0.0),
     }
+
+
+def _node_search_text(node: dict) -> str:
+    """Concatenate a node's searchable fields into one BM25 document."""
+    parts: list[str] = [_node_name(node), node.get("type", "")]
+    parts.extend(node.get("aliases") or [])
+    for attr_val in (node.get("attributes") or {}).values():
+        val = attr_val.get("value") if isinstance(attr_val, dict) else attr_val
+        if isinstance(val, str):
+            parts.append(val)
+    return " ".join(p for p in parts if p)
+
+
+def _match_field(node: dict, query_lower: str) -> str:
+    """Cosmetic exact/prefix/substring/attr label for a BM25 search hit.
+
+    Checked in priority order: name, then aliases, then string attribute
+    values — mirrors the old substring-tier labels so match_field stays
+    meaningful. Falls back to "bm25" when the node scored (BM25 found term
+    overlap) but no single field contains the literal query string — e.g. a
+    multi-term query where the matched terms are split across two fields.
+    """
+    name = _node_name(node)
+    if name:
+        name_lower = name.lower()
+        if name_lower == query_lower:
+            return f"exact: {name}"
+        if name_lower.startswith(query_lower):
+            return f"prefix: {name}"
+        if query_lower in name_lower:
+            return f"substring: {name}"
+    for alias in node.get("aliases") or []:
+        alias_lower = alias.lower()
+        if alias_lower == query_lower:
+            return f"exact alias: {alias}"
+        if query_lower in alias_lower:
+            return f"alias: {alias}"
+    for attr_name, attr_val in (node.get("attributes") or {}).items():
+        val = attr_val.get("value") if isinstance(attr_val, dict) else attr_val
+        if val and isinstance(val, str) and query_lower in val.lower():
+            return f"attr:{attr_name}={val}"
+    return "bm25"
 
 
 def _node_names_for_excerpt(node: dict) -> list[str]:
@@ -273,43 +369,18 @@ async def mykg_search_nodes(
 ) -> str:
     """Search for entities in the knowledge graph by name, alias, or attribute value.
 
-    Matches are ranked: exact > prefix > substring > alias > attribute value.
+    Ranked by BM25 relevance over each node's name, type, aliases, and string
+    attribute values — rarer query terms and concentrated matches rank higher
+    than a single diffuse substring hit.
     Use this to discover node IDs before calling mykg_get_node or mykg_get_neighbors.
     """
     kg = _get_kg(ctx)
-    query_lower = query.lower()
-    scored: list[tuple[int, dict, str]] = []
+    scored = kg.search_nodes_bm25(query, limit=limit, type_filter=type)
 
-    for name_lower, nid, original in kg.name_index:
-        node = kg.nodes_by_id[nid]
-        if type and node.get("type") != type:
-            continue
-        if name_lower == query_lower:
-            scored.append((100, node, f"exact: {original}"))
-        elif name_lower.startswith(query_lower):
-            scored.append((80, node, f"prefix: {original}"))
-        elif query_lower in name_lower:
-            scored.append((60, node, f"substring: {original}"))
-
-    type_nodes = kg.nodes_by_type.get(type, []) if type else kg.nodes
-    for node in type_nodes:
-        nid = node["id"]
-        if any(nid == s[1]["id"] for s in scored):
-            continue
-        for attr_name, attr_val in (node.get("attributes") or {}).items():
-            val = attr_val.get("value") if isinstance(attr_val, dict) else attr_val
-            if val and isinstance(val, str) and query_lower in val.lower():
-                scored.append((40, node, f"attr:{attr_name}={val}"))
-                break
-
-    scored.sort(key=lambda x: -x[0])
-    results = []
-    seen: set[str] = set()
-    for _score, node, match_field in scored[:limit]:
-        if node["id"] in seen:
-            continue
-        seen.add(node["id"])
-        results.append({**_node_summary(node), "match_field": match_field})
+    results = [
+        {**_node_summary(node), "match_field": match_field}
+        for _score, node, match_field in scored
+    ]
 
     if not results:
         return f"No nodes found matching '{query}'. Use mykg_list_node_types to see available types."
@@ -617,6 +688,7 @@ async def mykg_query_graph(
     mode: str = "bfs",
     depth: int = 2,
     token_budget: int = 2000,
+    seed_limit: int = 3,
 ) -> str:
     """Search the knowledge graph using BFS or DFS traversal from seed nodes.
 
@@ -624,27 +696,8 @@ async def mykg_query_graph(
     text context window of relevant nodes and edges for the LLM to reason over.
     """
     kg = _get_kg(ctx)
-    query_lower = question.lower()
-
-    scored: list[tuple[int, str]] = []
-    for name_lower, nid, _original in kg.name_index:
-        if name_lower == query_lower:
-            scored.append((100, nid))
-        elif query_lower in name_lower or name_lower in query_lower:
-            scored.append((60, nid))
-
-    for node in kg.nodes:
-        nid = node["id"]
-        if any(nid == s[1] for s in scored):
-            continue
-        for _attr_name, attr_val in (node.get("attributes") or {}).items():
-            val = attr_val.get("value") if isinstance(attr_val, dict) else attr_val
-            if val and isinstance(val, str) and query_lower in val.lower():
-                scored.append((40, nid))
-                break
-
-    scored.sort(key=lambda x: -x[0])
-    seeds = list(dict.fromkeys(s[1] for s in scored[:3]))
+    scored = kg.search_nodes_bm25(question, limit=seed_limit)
+    seeds = list(dict.fromkeys(node["id"] for _score, node, _match_field in scored))
 
     if not seeds:
         return f"No nodes found matching '{question}'. Try mykg_search_nodes for more flexible search."

@@ -33,6 +33,7 @@ dependencies = [
     "uv>=0.4",
     "markdownify>=0.13",
     "mcp>=1.0",
+    "bm25s>=0.2",
 ]
 
 [project.scripts]

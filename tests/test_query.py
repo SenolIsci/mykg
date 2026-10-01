@@ -121,6 +121,57 @@ class TestQueryGraph:
         assert "Mode: dfs | Depth: 1" in out
 
 
+SEED_LIMIT_NODES = [
+    {
+        "id": f"person-match-{i}",
+        "type": "Person",
+        "confidence": 0.9,
+        "attributes": {"name": {"value": f"Widget Person {i}", "confidence": 1.0}},
+        "source_files": ["team.md"],
+    }
+    for i in range(5)
+]
+
+
+@pytest.fixture
+def seed_limit_session_dir(tmp_path: Path) -> Path:
+    output = tmp_path / "output"
+    output.mkdir()
+    intermediate = tmp_path / "intermediate"
+    intermediate.mkdir()
+    (output / "nodes.jsonl").write_text(
+        "\n".join(json.dumps(n) for n in SEED_LIMIT_NODES), encoding="utf-8"
+    )
+    (output / "edges.jsonl").write_text("", encoding="utf-8")
+    (intermediate / "schema.json").write_text(json.dumps(SCHEMA), encoding="utf-8")
+    return tmp_path
+
+
+@pytest.fixture
+def seed_limit_qg(seed_limit_session_dir: Path) -> QueryGraph:
+    return build_query_graph(seed_limit_session_dir)
+
+
+class TestSeedLimit:
+    def test_default_seed_limit_is_three(self, seed_limit_qg: QueryGraph):
+        out = query_graph(seed_limit_qg, "Widget Person")
+        seeds_line = next(line for line in out.splitlines() if line.startswith("Seeds:"))
+        seed_list = seeds_line.split("Seeds:")[1].split("|")[0].strip()
+        assert len(seed_list.split(", ")) == 3
+
+    def test_custom_seed_limit_changes_seed_count(self, seed_limit_qg: QueryGraph):
+        out = query_graph(seed_limit_qg, "Widget Person", seed_limit=5)
+        seeds_line = next(line for line in out.splitlines() if line.startswith("Seeds:"))
+        seed_list = seeds_line.split("Seeds:")[1].split("|")[0].strip()
+        assert len(seed_list.split(", ")) == 5
+
+    def test_seed_limit_one(self, seed_limit_qg: QueryGraph):
+        out = query_graph(seed_limit_qg, "Widget Person", seed_limit=1)
+        seeds_line = next(line for line in out.splitlines() if line.startswith("Seeds:"))
+        seed_list = seeds_line.split("Seeds:")[1].split("|")[0].strip()
+        assert len(seed_list.split(", ")) == 1
+
+
 def _invoke_mcp_tool(session_dir: Path, question: str, **kwargs) -> str:
     """Invoke the real MCP mykg_query_graph tool via its underlying .fn."""
     from mykg.mcp_server import KnowledgeGraph, mcp

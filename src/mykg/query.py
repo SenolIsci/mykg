@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import bm25s
 import networkx as nx
 
 from mykg.exporters.neo4j._common import load_session
@@ -24,6 +25,17 @@ def _node_name(node: dict) -> str:
     if isinstance(name_attr, dict):
         return name_attr.get("value") or ""
     return str(name_attr) if name_attr else ""
+
+
+def _node_search_text(node: dict) -> str:
+    """Concatenate a node's searchable fields into one BM25 document."""
+    parts: list[str] = [_node_name(node), node.get("type", "")]
+    parts.extend(node.get("aliases") or [])
+    for attr_val in (node.get("attributes") or {}).values():
+        val = attr_val.get("value") if isinstance(attr_val, dict) else attr_val
+        if isinstance(val, str):
+            parts.append(val)
+    return " ".join(p for p in parts if p)
 
 
 @dataclass
@@ -39,6 +51,9 @@ class QueryGraph:
     name_index: list[tuple[str, str, str]] = field(default_factory=list)
     edges_by_node: dict[str, list[dict]] = field(default_factory=dict)
     graph: nx.DiGraph = field(default_factory=nx.DiGraph)
+
+    bm25_index: bm25s.BM25 | None = field(default=None, repr=False)
+    bm25_node_ids: list[str] = field(default_factory=list)
 
 
 def build_query_graph(session_root: Path) -> QueryGraph:
@@ -64,7 +79,38 @@ def build_query_graph(session_root: Path) -> QueryGraph:
         qg.edges_by_node.setdefault(edge["from"], []).append(edge)
         qg.edges_by_node.setdefault(edge["to"], []).append(edge)
 
+    qg.bm25_node_ids = [n["id"] for n in nodes]
+    if qg.bm25_node_ids:
+        corpus_texts = [_node_search_text(n) for n in nodes]
+        tokenized = bm25s.tokenize(corpus_texts, stopwords=None, show_progress=False)
+        index = bm25s.BM25()
+        index.index(tokenized, show_progress=False)
+        qg.bm25_index = index
+
     return qg
+
+
+def _bm25_seed_nodes(qg: QueryGraph, question: str, limit: int) -> list[str]:
+    """Rank nodes against ``question`` with BM25; return top-``limit`` node IDs.
+
+    Only nonzero-score nodes are returned — zero term overlap means no match,
+    preserving the "no match" contract on the caller side.
+    """
+    if qg.bm25_index is None or not qg.bm25_node_ids:
+        return []
+
+    query_tokenized = bm25s.tokenize([question], stopwords=None, show_progress=False)
+    k = min(max(limit, 1), len(qg.bm25_node_ids))
+    result_ids, scores = qg.bm25_index.retrieve(query_tokenized, k=k, show_progress=False)
+
+    seeds: list[str] = []
+    for idx, score in zip(result_ids[0], scores[0]):
+        if score <= 0.0:
+            continue
+        seeds.append(qg.nodes[idx]["id"])
+        if len(seeds) >= limit:
+            break
+    return seeds
 
 
 def query_graph(
@@ -73,6 +119,7 @@ def query_graph(
     mode: str = "bfs",
     depth: int = 2,
     token_budget: int = 2000,
+    seed_limit: int = 3,
 ) -> str:
     """Search the knowledge graph using BFS or DFS traversal from seed nodes.
 
@@ -80,27 +127,7 @@ def query_graph(
     text context window of relevant nodes and edges. This is a line-for-line
     copy of ``mykg_query_graph``'s body (MCP tool), retargeted at ``qg``.
     """
-    query_lower = question.lower()
-
-    scored: list[tuple[int, str]] = []
-    for name_lower, nid, _original in qg.name_index:
-        if name_lower == query_lower:
-            scored.append((100, nid))
-        elif query_lower in name_lower or name_lower in query_lower:
-            scored.append((60, nid))
-
-    for node in qg.nodes:
-        nid = node["id"]
-        if any(nid == s[1] for s in scored):
-            continue
-        for _attr_name, attr_val in (node.get("attributes") or {}).items():
-            val = attr_val.get("value") if isinstance(attr_val, dict) else attr_val
-            if val and isinstance(val, str) and query_lower in val.lower():
-                scored.append((40, nid))
-                break
-
-    scored.sort(key=lambda x: -x[0])
-    seeds = list(dict.fromkeys(s[1] for s in scored[:3]))
+    seeds = list(dict.fromkeys(_bm25_seed_nodes(qg, question, limit=seed_limit)))
 
     if not seeds:
         return f"No nodes found matching '{question}'. Try mykg_search_nodes for more flexible search."

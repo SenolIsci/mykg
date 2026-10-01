@@ -38,7 +38,7 @@ This document explains how **myKG** works at a conceptual level: the pipelines, 
 | `mykg extract-graph <dir>` | Reads Markdown files, induces a schema, extracts entities and relationships, and exports the graph |
 | `mykg merge-graphs <A> <B>` | Combines two independently-produced sessions into one unified knowledge graph |
 | `mykg fetch-web <url>` | Crawls a website (or shallow-clones a GitHub repo) into a local folder that is a ready-made `extract-graph` input |
-| `mykg mcp-serve` | Starts an MCP server exposing a completed knowledge graph session for LLM-powered Q&A via 13 read-only tools |
+| `mykg mcp-serve` | Starts an MCP server exposing a completed knowledge graph session for LLM-powered Q&A via 15 read-only tools |
 
 Both pipelines run as a sequence of named steps. All intermediate state is written to disk after every step, so any step can be re-entered without repeating upstream work.
 
@@ -568,7 +568,7 @@ Enabled by default via `pipeline.export.obsidian_enabled: true` in `mykg_config.
 
 ## MCP Server (`mykg mcp-serve`)
 
-`mykg mcp-serve` starts a local MCP (Model Context Protocol) server that exposes a completed knowledge graph session for LLM-powered Q&A. Any MCP-compatible client — Claude Desktop, Cherry Studio, MCP Inspector, or a custom agent — can connect and query the graph using 13 read-only tools.
+`mykg mcp-serve` starts a local MCP (Model Context Protocol) server that exposes a completed knowledge graph session for LLM-powered Q&A. Any MCP-compatible client — Claude Desktop, Cherry Studio, MCP Inspector, or a custom agent — can connect and query the graph using 15 read-only tools.
 
 ### Architecture
 
@@ -577,13 +577,13 @@ The server loads three files from a session via `load_session()` (`src/mykg/expo
 - `output/edges.jsonl` — typed relationships with confidence, provenance
 - `intermediate/schema.json` — concept hierarchy and property definitions
 
-At startup, a `KnowledgeGraph` object builds in-memory indexes (nodes by ID, nodes by type, edges by node, name/alias search index) and a NetworkX `DiGraph` for graph algorithms. This data is loaded once via FastMCP's lifespan mechanism and shared across all tool calls.
+At startup, a `KnowledgeGraph` object builds in-memory indexes (nodes by ID, nodes by type, edges by node, name/alias search index, BM25 search index — see D59) and a NetworkX `DiGraph` for graph algorithms. This data is loaded once via FastMCP's lifespan mechanism and shared across all tool calls.
 
 ### Tools
 
 | Tool | What it does |
 |---|---|
-| `mykg_search_nodes` | Substring search across names, aliases, attributes; ranked by relevance |
+| `mykg_search_nodes` | BM25-ranked search across names, aliases, attributes (D59) |
 | `mykg_get_node` | Full node details by stable ID |
 | `mykg_get_neighbors` | Connected nodes with direction and edge type filtering |
 | `mykg_find_path` | Shortest path between two nodes via `nx.shortest_path` |
@@ -636,7 +636,7 @@ The mykg skill (`/mykg`) and the mykg MCP server (`mykg mcp-serve`) are compleme
 | Fetch web / clone repo | **yes** — `fetch-web` | no | Including chained fetch+extract |
 | Start/stop MCP server | **yes** — `mcp-serve` | no | |
 | **— Read / Query Operations —** | | | |
-| Search nodes by name/alias/attr | manual grep/Read | **`mykg_search_nodes`** | MCP has ranked matching (exact > prefix > substring > alias > attr) |
+| Search nodes by name/alias/attr | manual grep/Read | **`mykg_search_nodes`** | MCP has BM25-ranked matching over name/type/aliases/attributes (D59) |
 | Get full node details by ID | manual Read + grep | **`mykg_get_node`** | MCP returns structured JSON with all attributes |
 | Get node neighbors + edges | manual grep on edges.jsonl | **`mykg_get_neighbors`** | MCP supports direction filter (in/out/both), edge type filter |
 | Find shortest path | **no** | **`mykg_find_path`** | MCP uses NetworkX; directed then undirected fallback |
@@ -784,7 +784,7 @@ The Claude Code skill in `src/mykg/data/skills/mykg/SKILL.md` exposes a single s
 | **Pydantic for all data models** | All structured data between pipeline stages uses Pydantic BaseModel | Free JSON serialization, field validation, and type coercion at every pipeline boundary |
 | **Filesystem-backed agent provider** | Seventh `LLMAdapter` subclass that writes JSON tasks to a session-local inbox and polls a `.done` sentinel | Lets a Claude Code skill — or any other host with file access — supply LLM answers without modifying the 12-step pipeline, the orchestrator, or any of the 14 LLM call sites. The contract is JSON files on disk; testable with a mock drainer in `tmp_path` |
 | **Fetch-web as a standalone acquisition command** | `mykg fetch-web` has no session, no LLM calls, and no pipeline step of its own — it just writes a folder shaped like an `extract-graph` input | Acquisition and provenance are decoupled from extraction; the output folder can be inspected, edited, or reused independently before any LLM cost is incurred |
-| **MCP server as a query-only layer** | `mykg mcp-serve` loads a completed session into memory and serves 13 read-only tools via MCP; no extraction, no writes, no LLM calls | Clean separation between the extraction pipeline (expensive, long-running, write-heavy) and the query layer (fast, in-memory, read-only); any MCP client can query without understanding the pipeline |
+| **MCP server as a query-only layer** | `mykg mcp-serve` loads a completed session into memory and serves 15 read-only tools via MCP; no extraction, no writes, no LLM calls | Clean separation between the extraction pipeline (expensive, long-running, write-heavy) and the query layer (fast, in-memory, read-only); any MCP client can query without understanding the pipeline |
 | **GitHub URL → shallow clone, not crawl** | `is_github_repo_url()` routes `github.com/<owner>/<repo>` to `git clone --depth N`, skipping Crawlee and the venv entirely | A repo's source files are better obtained via git than by crawling rendered HTML pages; avoids paying the Crawlee venv cost when it adds no value |
 | **Ephemeral Crawlee venv (mirrors MinerU)** | Crawlee runs in a per-invocation `uv`-managed venv, deleted on exit | Keeps Crawlee's dependency footprint out of mykg's own interpreter, exactly like the MinerU pattern in `preprocess` (D48) |
 | **Per-seed independent caps in `--url-list`** | Each seed in a multi-seed fetch gets its own `max_pages`/`max_depth`; no global budget | One large seed can't starve the others; per-seed manifests stay independently interpretable |
