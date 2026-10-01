@@ -25,6 +25,10 @@
   <img src="https://gcore.jsdelivr.net/gh/SenolIsci/mykg@main/docs/mykg_logo_panel.png" width="95%" style="vertical-align:middle;">
 </p>
 
+## Updates
+
+- **v0.4.8** — `mykg_search_nodes` and `mykg_query_graph`'s seed selection now use BM25 instead of a linear substring scan, ~2,800x faster at 100K nodes (0.5ms vs. 1.4s per query) and no longer degrading to minutes per query as the graph grows. Also fixes multi-word queries (e.g. "db migration") that previously couldn't match a differently-worded name at all, and adds a configurable `seed_limit` for seed-node selection.
+
 ## Contents
 
 - [Features](#features)

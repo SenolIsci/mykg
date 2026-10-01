@@ -285,6 +285,221 @@ class TestSearchLogic:
         assert kg.nodes_by_id.get("nonexistent") is None
 
 
+RARITY_NODES = [
+    {
+        "id": "project-rare-term",
+        "type": "Project",
+        "confidence": 0.95,
+        "attributes": {"name": {"value": "Zyxwvut Migration", "confidence": 1.0}},
+        "source_files": ["a.md"],
+    },
+    {
+        "id": "project-diffuse",
+        "type": "Project",
+        "confidence": 0.9,
+        "attributes": {
+            "name": {"value": "Other Project", "confidence": 1.0},
+            "notes": {
+                "value": (
+                    "This project touches migration tooling as a side effect, "
+                    "mentioned once in passing within a much longer description "
+                    "that is mostly about something else entirely unrelated"
+                ),
+                "confidence": 0.8,
+            },
+        },
+        "source_files": ["b.md"],
+    },
+]
+
+
+@pytest.fixture
+def rarity_session_dir(tmp_path: Path) -> Path:
+    output = tmp_path / "output"
+    output.mkdir()
+    intermediate = tmp_path / "intermediate"
+    intermediate.mkdir()
+    (output / "nodes.jsonl").write_text(
+        "\n".join(json.dumps(n) for n in RARITY_NODES), encoding="utf-8"
+    )
+    (output / "edges.jsonl").write_text("", encoding="utf-8")
+    (intermediate / "schema.json").write_text(json.dumps(SCHEMA), encoding="utf-8")
+    return tmp_path
+
+
+@pytest.fixture
+def rarity_kg(rarity_session_dir: Path) -> KnowledgeGraph:
+    return KnowledgeGraph(session_root=rarity_session_dir)
+
+
+WIDGET_NODES = [
+    {
+        "id": f"person-widget-{i}",
+        "type": "Person",
+        "confidence": 0.9,
+        "attributes": {"name": {"value": f"Widget Person {i}", "confidence": 1.0}},
+        "source_files": ["a.md"],
+    }
+    for i in range(5)
+] + [
+    {
+        "id": "organization-widget",
+        "type": "Organization",
+        "confidence": 0.9,
+        "attributes": {"name": {"value": "Widget Org", "confidence": 1.0}},
+        "source_files": ["a.md"],
+    }
+]
+
+
+@pytest.fixture
+def widget_session_dir(tmp_path: Path) -> Path:
+    output = tmp_path / "output"
+    output.mkdir()
+    intermediate = tmp_path / "intermediate"
+    intermediate.mkdir()
+    (output / "nodes.jsonl").write_text(
+        "\n".join(json.dumps(n) for n in WIDGET_NODES), encoding="utf-8"
+    )
+    (output / "edges.jsonl").write_text("", encoding="utf-8")
+    (intermediate / "schema.json").write_text(json.dumps(SCHEMA), encoding="utf-8")
+    return tmp_path
+
+
+@pytest.fixture
+def widget_kg(widget_session_dir: Path) -> KnowledgeGraph:
+    return KnowledgeGraph(session_root=widget_session_dir)
+
+
+def _invoke_search_nodes_tool(session_dir: Path, query: str, **kwargs) -> str:
+    """Invoke the real MCP mykg_search_nodes tool via its underlying .fn."""
+    from mykg.mcp_server import mcp
+
+    kg = KnowledgeGraph(session_root=session_dir)
+    lifespan_ctx = SimpleNamespace(kg=kg)
+    request_ctx = SimpleNamespace(lifespan_context=lifespan_ctx)
+    ctx = SimpleNamespace(request_context=request_ctx)
+
+    tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "mykg_search_nodes")
+    return asyncio.run(tool.fn(query=query, ctx=ctx, **kwargs))
+
+
+class TestSearchBM25:
+    """BM25 ranking tests for KnowledgeGraph.search_nodes_bm25 / mykg_search_nodes.
+
+    TestSearchLogic above still covers name_index/alias_index directly — those
+    fields are kept, unchanged. These tests exercise the new BM25 ranking path,
+    which TestSearchLogic's direct name_index inspection never did.
+    """
+
+    def test_rare_term_outranks_diffuse_common_term_match(self, rarity_kg: KnowledgeGraph):
+        """A name built almost entirely from the query's rare term should
+        outrank a node where the query's term appears once in a long,
+        otherwise-unrelated attribute value — the thing substring-tier
+        scoring (flat 40 for any attribute hit) could not do."""
+        results = rarity_kg.search_nodes_bm25("Zyxwvut migration", limit=10)
+        assert results, "expected at least one match"
+        ids_in_order = [node["id"] for _score, node, _match_field in results]
+        assert ids_in_order[0] == "project-rare-term"
+
+    def test_zero_overlap_query_returns_empty(self, kg: KnowledgeGraph):
+        assert kg.search_nodes_bm25("zzz_nonexistent_query_term", limit=10) == []
+
+    def test_zero_overlap_tool_returns_no_match_message(self, session_dir: Path):
+        out = _invoke_search_nodes_tool(session_dir, "zzz_nonexistent_query_term")
+        assert out.startswith("No nodes found matching")
+
+    def test_type_filter_does_not_starve_valid_match(self, kg: KnowledgeGraph):
+        # "Acme" scores higher on Organization (exact-ish name/alias match) than
+        # on Person nodes, but a Person-type filter should still find Bob/Alice
+        # if they match on their own terms — here, filter to Person for a query
+        # that only Person nodes can satisfy at all, and confirm it's not
+        # starved by the higher-scoring, filtered-out Organization node.
+        results = kg.search_nodes_bm25("Alice Smith", limit=10, type_filter="Person")
+        assert results
+        assert all(node["type"] == "Person" for _score, node, _match_field in results)
+        ids = [node["id"] for _score, node, _match_field in results]
+        assert "person-alice" in ids
+
+    def test_multiword_query_partial_term_match(self, kg: KnowledgeGraph):
+        # "Alice Jones" shares one term with person-alice (Alice) and one term
+        # with person-bob (Jones) — both should score, neither via a literal
+        # substring match (the old code would find nothing for this phrase).
+        results = kg.search_nodes_bm25("Alice Jones", limit=10)
+        ids = {node["id"] for _score, node, _match_field in results}
+        assert "person-alice" in ids
+        assert "person-bob" in ids
+
+    def test_empty_corpus(self, tmp_path: Path):
+        output = tmp_path / "output"
+        output.mkdir()
+        intermediate = tmp_path / "intermediate"
+        intermediate.mkdir()
+        (output / "nodes.jsonl").write_text("", encoding="utf-8")
+        (output / "edges.jsonl").write_text("", encoding="utf-8")
+        (intermediate / "schema.json").write_text(json.dumps(SCHEMA), encoding="utf-8")
+        empty_kg = KnowledgeGraph(session_root=tmp_path)
+        assert empty_kg.bm25_index is None
+        assert empty_kg.search_nodes_bm25("anything", limit=10) == []
+
+    def test_exact_match_ranks_top_end_to_end(self, session_dir: Path):
+        out = _invoke_search_nodes_tool(session_dir, "Acme Corp", limit=5)
+        results = json.loads(out)
+        assert results[0]["id"] == "organization-acme"
+        assert results[0]["match_field"].startswith("exact")
+
+    def test_type_filter_skips_a_scored_node_of_another_type(self, widget_kg: KnowledgeGraph):
+        # "Widget" matches both Person and Organization nodes; filtering to
+        # Person must skip the scored Organization node rather than include
+        # it — exercises the continue inside the type-filter check, not just
+        # the "no valid match exists at all" case covered elsewhere.
+        results = widget_kg.search_nodes_bm25("Widget", limit=10, type_filter="Person")
+        assert results
+        assert all(node["type"] == "Person" for _score, node, _match_field in results)
+        assert "organization-widget" not in {node["id"] for _score, node, _mf in results}
+
+    def test_limit_truncates_more_matches_than_requested(self, widget_kg: KnowledgeGraph):
+        # 6 nodes match "Widget"; limit=2 must stop early rather than return
+        # everything — exercises the break once len(scored) reaches limit.
+        results = widget_kg.search_nodes_bm25("Widget", limit=2)
+        assert len(results) == 2
+
+    def test_match_field_substring_name_branch(self):
+        import tempfile
+
+        nodes = [
+            {
+                "id": "project-rare",
+                "type": "Project",
+                "confidence": 0.9,
+                "attributes": {"name": {"value": "Database Migration Service", "confidence": 1.0}},
+                "source_files": ["a.md"],
+            }
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            tp = Path(td)
+            (tp / "output").mkdir()
+            (tp / "intermediate").mkdir()
+            (tp / "output" / "nodes.jsonl").write_text(
+                "\n".join(json.dumps(n) for n in nodes), encoding="utf-8"
+            )
+            (tp / "output" / "edges.jsonl").write_text("", encoding="utf-8")
+            (tp / "intermediate" / "schema.json").write_text(json.dumps(SCHEMA), encoding="utf-8")
+            kg = KnowledgeGraph(session_root=tp)
+            # "Migration" is a middle word — not an exact match, not a prefix —
+            # so this is the only way to reach the plain `substring:` branch.
+            results = kg.search_nodes_bm25("Migration", limit=10)
+            assert results
+            assert results[0][2] == "substring: Database Migration Service"
+
+    def test_match_field_alias_substring_branch(self, kg: KnowledgeGraph):
+        # "corporation" matches the "Acme Corporation" alias as a substring,
+        # not an exact alias match — exercises the non-exact alias branch.
+        results = kg.search_nodes_bm25("corporation", limit=10)
+        assert results
+        assert results[0][2] == "alias: Acme Corporation"
+
+
 class TestNeighbors:
     def test_neighbors_both(self, kg: KnowledgeGraph):
         edges = kg.edges_by_node.get("organization-acme", [])

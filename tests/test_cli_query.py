@@ -186,3 +186,21 @@ def test_query_cli_no_match(
     result = CliRunner().invoke(cli, ["query", "zzznotathing", "--session", session_name])
     assert result.exit_code == 0, result.output
     assert result.output.startswith("No nodes found matching")
+
+
+# ---------------------------------------------------------------------------
+# 4. --seed-limit CLI flag
+# ---------------------------------------------------------------------------
+
+
+@requires_query_cmd
+def test_query_cli_seed_limit_flag(
+    session_root: Path, sessions_root: Path, session_name: str, monkeypatch
+):
+    monkeypatch.setattr("mykg.cli._sessions_root", lambda: sessions_root)
+
+    result = CliRunner().invoke(
+        cli, ["query", "Alice", "--session", session_name, "--seed-limit", "1"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Seeds: person-alice | Mode: bfs | Depth: 2" in result.output

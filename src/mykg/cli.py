@@ -2255,12 +2255,13 @@ def mcp_serve(session, transport, host, port, stop):
 @click.option("--mode", type=click.Choice(["bfs", "dfs"]), default="bfs", help="Traversal mode.")
 @click.option("--depth", default=2, type=int, help="Traversal depth limit.")
 @click.option("--token-budget", "token_budget", default=2000, type=int, help="Approx token budget for the returned context.")
-def query(question, session, mode, depth, token_budget):
+@click.option("--seed-limit", "seed_limit", default=3, type=int, help="Max number of seed nodes to start traversal from.")
+def query(question, session, mode, depth, token_budget, seed_limit):
     """Query the knowledge graph from the terminal (mirrors the MCP query tool)."""
     session_root = _resolve_session_root(session)
     from mykg.query import build_query_graph, query_graph
     qg = build_query_graph(session_root)
-    click.echo(query_graph(qg, question, mode=mode, depth=depth, token_budget=token_budget))
+    click.echo(query_graph(qg, question, mode=mode, depth=depth, token_budget=token_budget, seed_limit=seed_limit))
 
 
 def main():
