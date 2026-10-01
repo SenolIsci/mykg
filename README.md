@@ -25,6 +25,10 @@
   <img src="https://gcore.jsdelivr.net/gh/SenolIsci/mykg@main/docs/mykg_logo_panel.png" width="95%" style="vertical-align:middle;">
 </p>
 
+## Updates
+
+- **v0.4.8** — `mykg_search_nodes` and `mykg_query_graph`'s seed selection now rank matches with BM25 instead of fixed substring-match tiers, fixing multi-word queries (e.g. "db migration") that previously couldn't match a differently-worded name at all, and adding a configurable `seed_limit` for seed-node selection.
+
 ## Contents
 
 - [Features](#features)
