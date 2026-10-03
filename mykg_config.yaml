@@ -31,7 +31,7 @@ profiles:
   # ---------------------------------------------------------------------------
     provider: openrouter
     llm_retry:
-      max_retries: 1        # retries on empty/blank response; set to 0 to disable
+      max_retries: 0        # retries on empty/blank response; set to 0 to disable
     llm:
       context_window: 128000     # ① model's total context limit — root anchor for all budget calculations below
       max_output_tokens: 32000   # ② output cap — google/gemma-4-31b-it supports far more; raised from free-tier default
@@ -43,7 +43,7 @@ profiles:
       # (run: context-calculator --context <N> --max-output <M>).
       model: openrouter/free
       timeout: 1800                # seconds per LLM call before raising a timeout error
-      retry_429_max: 1          # max retries on HTTP 429 rate-limit before giving up
+      retry_429_max: 3          # max retries on HTTP 429 rate-limit before giving up
       retry_429_base_delay: 2.0 # initial backoff seconds; doubles on each retry (exponential)
     pipeline:
       # --- Ingestion & chunking -----------------------------------------------
@@ -100,30 +100,30 @@ profiles:
         github_clone_timeout_seconds: 1800  # git clone timeout (30 min)
         max_workers: 2                 # max concurrent seed crawls inside one shared venv for --url-list
       chunking:
-        window_tokens: 6400      # = batch_token_target / 5
-        overlap_tokens: 640      # = window_tokens × 0.10
+        window_tokens: 8000      # = batch_token_target / 2
+        overlap_tokens: 800      # = window_tokens × 0.10
         tiktoken_encoding: cl100k_base  # tokenizer used for token counting (matches most OpenAI-family models)
       # --- Pass 1: schema induction -------------------------------------------
       pass1:
-        batch_token_target: 32000  # MUST stay ≤ context_window − max_output_tokens
+        batch_token_target: 16000  # MUST stay ≤ context_window − max_output_tokens
         max_workers: 8
         per_file_batching: false  # set true for Option B: one batch per source file
         max_schema_proposals: 25  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
         random_seed: 0  # fixed seed for deterministic batch sampling when batches exceed max_schema_proposals; scoped per-call, not shared across repeated Pass 1 invocations
       # --- Pass 2: instance extraction ----------------------------------------
       pass2:
-        max_workers: 8
-        stateful_chunks: true   # pass prior-chunk nodes to next chunk so IDs stay stable across chunk boundaries
+        max_workers: 4
+        stateful_chunks: false   # pass prior-chunk nodes to next chunk so IDs stay stable across chunk boundaries
         prep_mode: batch_chunks                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
         per_file_token_target: 32000   # token cap per file; used when prep_mode=per_file. Files over this are truncated to the first N tokens. 0 = no cap
         concat_batch_token_target: 32000  # target token budget per virtual batch; used when prep_mode=concat
-        batch_token_target: 32000          # token budget per chunk batch; used when prep_mode=batch_chunks
-        batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
-        batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
+        batch_token_target: 16000          # token budget per chunk batch; used when prep_mode=batch_chunks
+        batch_per_file: true              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
+        batch_retry_max: 0                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
         enabled: true           # run the name-normalization LLM step to resolve surface-form variants before deduplication
         max_names_per_type: 50000 # safety-net cap per type; primary batch sizing is controlled by batch_token_target
-        batch_token_target: 32000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
+        batch_token_target: 16000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
       # --- Orphan recovery -----------------------------------------------------
       orphan_pass:
         enabled: false
@@ -211,13 +211,13 @@ profiles:
   # ---------------------------------------------------------------------------
     provider: anthropic
     llm_retry:
-      max_retries: 2        # retries on empty/blank response; set to 0 to disable
+      max_retries: 0        # retries on empty/blank response; set to 0 to disable
     llm:
       context_window: 200000      # ① model's total context limit
       max_output_tokens: 32000     # ② output cap — Sonnet/Opus default max
       model: claude-sonnet-4-5
       timeout: 1800                # seconds per LLM call before raising a timeout error
-      retry_429_max: 5            # max retries on HTTP 429 rate-limit before giving up
+      retry_429_max: 3            # max retries on HTTP 429 rate-limit before giving up
       retry_429_base_delay: 2.0   # initial backoff seconds; doubles on each retry (exponential)
       # base_url:                 # optional: override for Anthropic-compatible endpoint
       # api_key:                  # optional: override ANTHROPIC_API_KEY env var
@@ -276,12 +276,12 @@ profiles:
         github_clone_timeout_seconds: 1800  # git clone timeout (30 min)
         max_workers: 2                 # max concurrent seed crawls inside one shared venv for --url-list
       chunking:
-        window_tokens: 8000     # = batch_token_target / 4
-        overlap_tokens: 800     # = window_tokens × 0.10
+        window_tokens: 8000      # = batch_token_target / 2
+        overlap_tokens: 800      # = window_tokens × 0.10
         tiktoken_encoding: cl100k_base
       # --- Pass 1: schema induction -------------------------------------------
       pass1:
-        batch_token_target: 32000  # conservative; MUST stay ≤ context_window − max_output_tokens
+        batch_token_target: 16000  # conservative; MUST stay ≤ context_window − max_output_tokens
         max_workers: 4
         per_file_batching: false
         max_schema_proposals: 25  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
@@ -289,17 +289,17 @@ profiles:
       # --- Pass 2: instance extraction ----------------------------------------
       pass2:
         max_workers: 4
-        stateful_chunks: true
+        stateful_chunks: false
         prep_mode: batch_chunks                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
         per_file_token_target: 32000   # token cap per file; used when prep_mode=per_file. Files over this are truncated to the first N tokens. 0 = no cap
         concat_batch_token_target: 32000  # target token budget per virtual batch; used when prep_mode=concat
-        batch_token_target: 32000         # token budget per chunk batch; used when prep_mode=batch_chunks
-        batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
-        batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
+        batch_token_target: 16000         # token budget per chunk batch; used when prep_mode=batch_chunks
+        batch_per_file: true              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
+        batch_retry_max: 0                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
         enabled: true
         max_names_per_type: 50000 # safety-net cap per type; primary batch sizing is controlled by batch_token_target
-        batch_token_target: 32000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
+        batch_token_target: 16000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
       # --- Orphan recovery -----------------------------------------------------
       orphan_pass:
         enabled: false
@@ -387,14 +387,14 @@ profiles:
   # ---------------------------------------------------------------------------
     provider: claude-cli
     llm_retry:
-      max_retries: 2
+      max_retries: 0
     llm:
       model: sonnet            # passed as --model to claude -p; "auto" = let CLI pick (no flag sent)
       effort: medium            # passed as --effort to claude -p; "auto" = let CLI pick (no flag sent)
       context_window: 200000    # ① model's total context limit — root anchor for all budget calculations below
       max_output_tokens: 32000  # ② output cap; input_headroom = context_window − this = 100000
       timeout: 1800             # seconds per claude -p subprocess call
-      retry_429_max: 0          # claude-cli does not hit API rate limits
+      retry_429_max: 3          # claude-cli does not hit API rate limits
       retry_429_base_delay: 2.0
     pipeline:
       # --- Ingestion & chunking -----------------------------------------------
@@ -456,7 +456,7 @@ profiles:
         tiktoken_encoding: cl100k_base  # tokenizer used for token counting (matches most OpenAI-family models)
       # --- Pass 1: schema induction -------------------------------------------
       pass1:
-        batch_token_target: 32000  # conservative; MUST stay ≤ context_window − max_output_tokens
+        batch_token_target: 16000  # conservative; MUST stay ≤ context_window − max_output_tokens
         max_workers: 1          # claude-cli is serial — 1 worker only
         per_file_batching: false  # set true for Option B: one batch per source file
         max_schema_proposals: 25  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
@@ -464,17 +464,17 @@ profiles:
       # --- Pass 2: instance extraction ----------------------------------------
       pass2:
         max_workers: 1          # claude-cli is serial — 1 worker only
-        stateful_chunks: true   # pass prior-chunk nodes to next chunk so IDs stay stable across chunk boundaries
+        stateful_chunks: false   # pass prior-chunk nodes to next chunk so IDs stay stable across chunk boundaries
         prep_mode: batch_chunks                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
         per_file_token_target: 32000   # token cap per file; used when prep_mode=per_file. Files over this are truncated to the first N tokens. 0 = no cap
         concat_batch_token_target: 32000  # target token budget per virtual batch; used when prep_mode=concat
-        batch_token_target: 32000         # token budget per chunk batch; used when prep_mode=batch_chunks
-        batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
-        batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
+        batch_token_target: 16000         # token budget per chunk batch; used when prep_mode=batch_chunks
+        batch_per_file: true              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
+        batch_retry_max: 0                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
         enabled: true           # run the name-normalization LLM step to resolve surface-form variants before deduplication
         max_names_per_type: 50000 # safety-net cap per type; primary batch sizing is controlled by batch_token_target
-        batch_token_target: 32000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
+        batch_token_target: 16000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
       # --- Orphan recovery -----------------------------------------------------
       orphan_pass:
         enabled: false
@@ -568,13 +568,13 @@ profiles:
   # ---------------------------------------------------------------------------
     provider: openai
     llm_retry:
-      max_retries: 2        # retries on empty/blank response; set to 0 to disable
+      max_retries: 0        # retries on empty/blank response; set to 0 to disable
     llm:
       context_window: 128000      # ① model's total context limit
       max_output_tokens: 32000    # ② output cap — gpt-4o max structured output
       model: gpt-5.4-mini-2026-03-17
       timeout: 1800                # seconds per LLM call before raising a timeout error
-      retry_429_max: 5            # max retries on HTTP 429 rate-limit before giving up
+      retry_429_max: 3            # max retries on HTTP 429 rate-limit before giving up
       retry_429_base_delay: 2.0   # initial backoff seconds; doubles on each retry (exponential)
       # base_url:                 # optional: override for Azure OpenAI or compatible endpoint
       # api_key:                  # optional: override OPENAI_API_KEY env var
@@ -633,12 +633,12 @@ profiles:
         github_clone_timeout_seconds: 1800  # git clone timeout (30 min)
         max_workers: 2                 # max concurrent seed crawls inside one shared venv for --url-list
       chunking:
-        window_tokens: 8000     # = batch_token_target / 4
-        overlap_tokens: 800     # = window_tokens × 0.10
+        window_tokens: 8000      # = batch_token_target / 2
+        overlap_tokens: 800      # = window_tokens × 0.10
         tiktoken_encoding: cl100k_base
       # --- Pass 1: schema induction -------------------------------------------
       pass1:
-        batch_token_target: 32000  # conservative; MUST stay ≤ context_window − max_output_tokens
+        batch_token_target: 16000  # conservative; MUST stay ≤ context_window − max_output_tokens
         max_workers: 4
         per_file_batching: false
         max_schema_proposals: 25  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
@@ -646,17 +646,17 @@ profiles:
       # --- Pass 2: instance extraction ----------------------------------------
       pass2:
         max_workers: 4
-        stateful_chunks: true
+        stateful_chunks: false
         prep_mode: batch_chunks             # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
         per_file_token_target: 32000   # token cap per file; used when prep_mode=per_file. Files over this are truncated to the first N tokens. 0 = no cap
         concat_batch_token_target: 32000  # target token budget per virtual batch; used when prep_mode=concat
-        batch_token_target: 32000         # token budget per chunk batch; used when prep_mode=batch_chunks
-        batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
-        batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
+        batch_token_target: 16000         # token budget per chunk batch; used when prep_mode=batch_chunks
+        batch_per_file: true              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
+        batch_retry_max: 0                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
         enabled: true
         max_names_per_type: 50000 # safety-net cap per type; primary batch sizing is controlled by batch_token_target
-        batch_token_target: 32000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
+        batch_token_target: 16000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
       # --- Orphan recovery -----------------------------------------------------
       orphan_pass:
         enabled: false
@@ -764,13 +764,13 @@ profiles:
   # ---------------------------------------------------------------------------
     provider: gemini
     llm_retry:
-      max_retries: 2        # retries on empty/blank response; set to 0 to disable
+      max_retries: 0        # retries on empty/blank response; set to 0 to disable
     llm:
       context_window: 128000      # ① model's total context limit
       max_output_tokens: 32000    # ② output cap — shared by thinking + answer
       model: gemini-3.7-flash
       timeout: 1800                # seconds per LLM call before raising a timeout error
-      retry_429_max: 5            # max retries on HTTP 429 rate-limit before giving up
+      retry_429_max: 3            # max retries on HTTP 429 rate-limit before giving up
       retry_429_base_delay: 2.0   # initial backoff seconds; doubles on each retry (exponential)
       # api_key:                  # optional: override GEMINI_API_KEY env var
     pipeline:
@@ -828,12 +828,12 @@ profiles:
         github_clone_timeout_seconds: 1800  # git clone timeout (30 min)
         max_workers: 2                 # max concurrent seed crawls inside one shared venv for --url-list
       chunking:
-        window_tokens: 8000     # = batch_token_target / 4
-        overlap_tokens: 800     # = window_tokens × 0.10
+        window_tokens: 8000      # = batch_token_target / 2
+        overlap_tokens: 800      # = window_tokens × 0.10
         tiktoken_encoding: cl100k_base
       # --- Pass 1: schema induction -------------------------------------------
       pass1:
-        batch_token_target: 32000  # conservative; MUST stay ≤ context_window − max_output_tokens
+        batch_token_target: 16000  # conservative; MUST stay ≤ context_window − max_output_tokens
         max_workers: 4
         per_file_batching: false
         max_schema_proposals: 25  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
@@ -841,17 +841,17 @@ profiles:
       # --- Pass 2: instance extraction ----------------------------------------
       pass2:
         max_workers: 4
-        stateful_chunks: true
+        stateful_chunks: false
         prep_mode: batch_chunks             # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
         per_file_token_target: 32000   # token cap per file; used when prep_mode=per_file. Files over this are truncated to the first N tokens. 0 = no cap
         concat_batch_token_target: 32000  # target token budget per virtual batch; used when prep_mode=concat
-        batch_token_target: 32000         # token budget per chunk batch; used when prep_mode=batch_chunks
-        batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
-        batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
+        batch_token_target: 16000         # token budget per chunk batch; used when prep_mode=batch_chunks
+        batch_per_file: true              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
+        batch_retry_max: 0                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
         enabled: true
         max_names_per_type: 50000 # safety-net cap per type; primary batch sizing is controlled by batch_token_target
-        batch_token_target: 32000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
+        batch_token_target: 16000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
       # --- Orphan recovery -----------------------------------------------------
       orphan_pass:
         enabled: false
@@ -933,18 +933,18 @@ profiles:
   #
   # Token budget chain — adjust for your model's actual context window:
   #   ① context_window    = 64000  (adjust per model; check `ollama show <model>`)
-  #   ② max_output_tokens = 16000
-  #   ③ input_headroom    = ① − ② = 48000
-  #      batch_token_target = 16000  (doubled from 8K baseline)
-  #      window_tokens      = batch_token_target / 4 = 4000
-  #      overlap_tokens     = window_tokens × 0.10 = 400
+  #   ② max_output_tokens = 32000
+  #   ③ input_headroom    = ① − ② = 32000
+  #      batch_token_target = 16000
+  #      window_tokens      = 6400
+  #      overlap_tokens     = window_tokens × 0.10 = 640
   # ---------------------------------------------------------------------------
     provider: ollama
     llm_retry:
-      max_retries: 2        # retries on empty/blank response; set to 0 to disable
+      max_retries: 0        # retries on empty/blank response; set to 0 to disable
     llm:
-      context_window: 64000      # ① model's total context limit — adjust per model
-      max_output_tokens: 16000    # ② output cap (doubled)
+      context_window: 128000      # ① model's total context limit — adjust per model
+      max_output_tokens: 32000    # ② output cap
       model: gemma4:31b-cloud       # any model you have pulled via `ollama pull`
       base_url: http://localhost:11434
       timeout: 1800                # seconds per LLM call; local inference can be slow
@@ -1006,8 +1006,8 @@ profiles:
         github_clone_timeout_seconds: 1800  # git clone timeout (30 min)
         max_workers: 1                 # max concurrent seed crawls inside one shared venv for --url-list
       chunking:
-        window_tokens: 4000      # = batch_token_target / 4
-        overlap_tokens: 400      # = window_tokens × 0.10
+        window_tokens: 8000      # = batch_token_target / 2
+        overlap_tokens: 800      # = window_tokens × 0.10
         tiktoken_encoding: cl100k_base
       # --- Pass 1: schema induction -------------------------------------------
       pass1:
@@ -1019,13 +1019,13 @@ profiles:
       # --- Pass 2: instance extraction ----------------------------------------
       pass2:
         max_workers: 1
-        stateful_chunks: true
+        stateful_chunks: false
         prep_mode: batch_chunks                # per_file | concat | batch_chunks — controls how files are prepared before Pass 2
         per_file_token_target: 16000   # token cap per file; used when prep_mode=per_file. Files over this are truncated to the first N tokens. 0 = no cap
         concat_batch_token_target: 16000  # target token budget per virtual batch; used when prep_mode=concat
         batch_token_target: 16000         # token budget per chunk batch; used when prep_mode=batch_chunks
-        batch_per_file: false              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
-        batch_retry_max: 1                 # max in-run retry rounds for failed batches (0 = disabled)
+        batch_per_file: true              # when true, never mix chunks from different files in one batch; used when prep_mode=batch_chunks
+        batch_retry_max: 0                 # max in-run retry rounds for failed batches (0 = disabled)
       normalize_names:
         enabled: true             # run the name-normalization LLM step to resolve surface-form variants before deduplication
         max_names_per_type: 500   # keep smaller — local models are slower; safety-net cap, primary control is batch_token_target
@@ -1123,7 +1123,7 @@ profiles:
       model: claude-sonnet-4-6  # informational — the skill uses whatever model the host assistant runs
       max_output_tokens: 32000  # passed through to the task envelope; the skill enforces it
       timeout: 1800             # seconds the pipeline will wait for a .done sentinel
-      retry_429_max: 0          # agent provider does not hit API rate limits
+      retry_429_max: 3          # agent provider does not hit API rate limits
       retry_429_base_delay: 2.0
     agent:
       inbox_dir: agent_inbox            # relative to session intermediate/
@@ -1184,24 +1184,24 @@ profiles:
         overlap_tokens: 2500
         tiktoken_encoding: cl100k_base
       pass1:
-        batch_token_target: 15000
+        batch_token_target: 16000
         max_workers: 2                # the skill dispatches up to this many subagents per wave
         per_file_batching: false
         max_schema_proposals: 25  # cap raw proposals sent to harmonize_schema; prevents context overflow on large corpora
         random_seed: 0  # fixed seed for deterministic batch sampling when batches exceed max_schema_proposals; scoped per-call, not shared across repeated Pass 1 invocations
       pass2:
         max_workers: 2
-        stateful_chunks: true
+        stateful_chunks: false
         prep_mode: batch_chunks
         per_file_token_target: 15000   # token cap per file; used when prep_mode=per_file. Files over this are truncated to the first N tokens. 0 = no cap
         concat_batch_token_target: 15000
-        batch_token_target: 15000
-        batch_per_file: false
-        batch_retry_max: 1
+        batch_token_target: 16000
+        batch_per_file: true
+        batch_retry_max: 0
       normalize_names:
         enabled: true
         max_names_per_type: 50000 # safety-net cap per type; primary batch sizing is controlled by batch_token_target
-        batch_token_target: 15000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
+        batch_token_target: 16000 # max tokens per LLM normalization call; types are bin-packed greedily up to this limit
       orphan_pass:
         enabled: false
         min_cooccurrence: 1
