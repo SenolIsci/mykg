@@ -487,10 +487,14 @@ def test_obsidian_entity_note_payload_not_dict_branch(tmp_path: Path) -> None:
 
 
 def test_iter_ttl_joins_to_the_same_document_as_export_ttl():
-    """export_ttl is now a thin wrapper, so the two must agree exactly."""
-    assert "\n".join(iter_ttl(SCHEMA, NODES, EDGE_METADATA)) == export_ttl(
-        SCHEMA, NODES, EDGE_METADATA
-    )
+    """export_ttl is a thin wrapper over iter_ttl, plus the final newline that
+    its write_text callers (schema.ttl) have always emitted. Streaming callers
+    get their newlines from the writer instead, so iter_ttl omits the last one."""
+    streamed = "\n".join(iter_ttl(SCHEMA, NODES, EDGE_METADATA))
+    materialized = export_ttl(SCHEMA, NODES, EDGE_METADATA)
+
+    assert materialized == streamed + "\n"
+    assert not streamed.endswith("\n")
 
 
 def test_iter_ttl_is_lazy():

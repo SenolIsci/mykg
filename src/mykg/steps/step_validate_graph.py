@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 
 from mykg import config as _cfg
-from mykg.exporter import export_networkx, export_ttl, write_edges_jsonl, write_nodes_jsonl
+from mykg.exporter import export_networkx, iter_ttl, write_edges_jsonl, write_nodes_jsonl
 from mykg.logging import get
 from mykg.orchestrator import PipelineContext
-from mykg.ttl_validator import sanitize_abox_ttl, validate_knowledge_graph_ttl
+from mykg.ttl_validator import sanitize_abox_lines, validate_knowledge_graph_ttl_file
+from mykg.utility.atomic_io import atomic_write_lines
 
 log = get("mykg.steps.validate_graph")
 
@@ -24,13 +25,24 @@ def run_validate_graph(ctx: PipelineContext) -> None:
     valid_edge_metadata = {
         eid: e for eid, e in edge_metadata.items() if e["type"] in declared_props
     }
-    ttl = sanitize_abox_ttl(export_ttl(schema, nodes, valid_edge_metadata), schema)
-    result = validate_knowledge_graph_ttl(ttl)
-
     n_nodes = write_nodes_jsonl(ctx.output_dir / "nodes.jsonl", nodes)
     n_edges = write_edges_jsonl(ctx.output_dir / "edges.jsonl", valid_edge_metadata)
     log.debug("Steps 10–12 — wrote %d node(s), %d edge(s) to JSONL", n_nodes, n_edges)
-    (ctx.output_dir / "knowledge_graph.ttl").write_text(ttl, encoding="utf-8")
+
+    # Stream the TTL straight to disk, then let rdflib read the file back. No
+    # copy of the document is ever held in memory, and validation sees exactly
+    # the bytes that shipped. Writing before validating also means a validation
+    # failure leaves the file on disk for inspection, which suits an advisory
+    # check (D25).
+    # trailing_newline=False matches the bytes this file has always had: the old
+    # sanitize_abox_ttl ran splitlines()+join, which dropped the final newline.
+    ttl_path = ctx.output_dir / "knowledge_graph.ttl"
+    atomic_write_lines(
+        ttl_path,
+        sanitize_abox_lines(iter_ttl(schema, nodes, valid_edge_metadata), schema),
+        trailing_newline=False,
+    )
+    result = validate_knowledge_graph_ttl_file(ttl_path)
 
     if _cfg.NETWORKX_ENABLED:
         written = export_networkx(nodes, valid_edge_metadata, ctx.output_dir)

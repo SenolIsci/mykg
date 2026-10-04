@@ -80,7 +80,9 @@ def atomic_write_json(path: Path, data: Any) -> None:
     _fsync_dir(path)
 
 
-def atomic_write_lines(path: Path, lines: Iterable[str]) -> int:
+def atomic_write_lines(
+    path: Path, lines: Iterable[str], *, trailing_newline: bool = True
+) -> int:
     """Write ``lines`` to ``path`` atomically, one per line, streaming.
 
     The streaming counterpart to ``atomic_write_json``: same
@@ -88,6 +90,10 @@ def atomic_write_lines(path: Path, lines: Iterable[str]) -> int:
     but the payload is consumed lazily, so peak memory stays at one line no
     matter how many are written. Each line is written followed by ``\\n``; lines
     must not already end in one. Returns the number of lines written.
+
+    ``trailing_newline=False`` omits the newline after the final line, for
+    callers reproducing an existing file's exact bytes. Prefer the default:
+    a text file should end with a newline.
 
     Atomicity matters more here than for a single JSON document: a truncated
     JSONL file is still *syntactically valid* line-oriented data, so a crash
@@ -99,8 +105,11 @@ def atomic_write_lines(path: Path, lines: Iterable[str]) -> int:
     try:
         with tmp.open("w", encoding="utf-8") as f:
             for line in lines:
+                if count and not trailing_newline:
+                    f.write("\n")
                 f.write(line)
-                f.write("\n")
+                if trailing_newline:
+                    f.write("\n")
                 count += 1
             f.flush()
             os.fsync(f.fileno())

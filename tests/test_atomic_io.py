@@ -271,3 +271,30 @@ def test_dir_fsync_tolerates_unsupported_filesystem(tmp_path: Path, monkeypatch)
     atomic_write_json(tmp_path / "nodes.json", {"ok": True})
 
     assert json.loads((tmp_path / "nodes.json").read_text()) == {"ok": True}
+
+
+def test_write_lines_without_trailing_newline(tmp_path: Path) -> None:
+    """trailing_newline=False separates lines but omits the final newline, for
+    callers reproducing an existing file's exact bytes (knowledge_graph.ttl,
+    whose old splitlines()+join path dropped it)."""
+    target = tmp_path / "kg.ttl"
+
+    assert atomic_write_lines(target, ["a", "b", "c"], trailing_newline=False) == 3
+
+    assert target.read_text(encoding="utf-8") == "a\nb\nc"
+
+
+def test_write_lines_without_trailing_newline_single_line(tmp_path: Path) -> None:
+    target = tmp_path / "kg.ttl"
+
+    atomic_write_lines(target, ["only"], trailing_newline=False)
+
+    assert target.read_text(encoding="utf-8") == "only"
+
+
+def test_write_lines_without_trailing_newline_empty(tmp_path: Path) -> None:
+    target = tmp_path / "kg.ttl"
+
+    assert atomic_write_lines(target, [], trailing_newline=False) == 0
+
+    assert target.read_text(encoding="utf-8") == ""

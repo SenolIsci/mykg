@@ -198,16 +198,17 @@ def iter_ttl(schema: dict, nodes: Sequence[dict], edge_metadata: dict) -> Iterat
         etype = _ttl_local(edge["type"])
         yield f"{data}:{edge['from']} {ex}:{etype} {data}:{edge['to']} ."
 
-    yield ""
-
 
 def export_ttl(schema: dict, nodes: Sequence[dict], edge_metadata: dict) -> str:
     """Materialize the whole TTL document as one string.
 
     Retained for the TBox-only callers (``export_ttl(schema, [], {})``), where the
     document is small. Graph-sized exports should stream ``iter_ttl`` instead.
+
+    The trailing empty element reproduces the final newline that callers writing
+    this string with ``write_text`` have always emitted — notably ``schema.ttl``.
     """
-    return "\n".join(iter_ttl(schema, nodes, edge_metadata))
+    return "\n".join([*iter_ttl(schema, nodes, edge_metadata), ""])
 
 
 # ---------------------------------------------------------------------------
