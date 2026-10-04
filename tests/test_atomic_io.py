@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
 
+from mykg.utility import atomic_io
 from mykg.utility.atomic_io import atomic_write_json, atomic_write_lines
 
 
@@ -75,7 +77,12 @@ def test_crash_mid_replace_preserves_old_file(tmp_path: Path, monkeypatch) -> No
 
 
 def test_fsync_called_before_replace(tmp_path: Path, monkeypatch) -> None:
-    """Bytes are fsync'd to disk before the rename, guarding against power loss."""
+    """Bytes are fsync'd to disk before the rename, guarding against power loss.
+
+    A further fsync of the directory follows the replace (see
+    test_write_json_fsyncs_directory_after_replace), so only the leading order
+    is asserted here.
+    """
     calls: list[str] = []
     real_fsync = os.fsync
     real_replace = os.replace
@@ -93,7 +100,7 @@ def test_fsync_called_before_replace(tmp_path: Path, monkeypatch) -> None:
 
     atomic_write_json(tmp_path / "nodes.json", {"ok": True})
 
-    assert calls == ["fsync", "replace"], "fsync must happen before the atomic rename"
+    assert calls[:2] == ["fsync", "replace"], "fsync must happen before the atomic rename"
 
 
 def test_write_lines_writes_one_line_each_and_returns_count(tmp_path: Path) -> None:
@@ -182,4 +189,85 @@ def test_write_lines_fsync_called_before_replace(tmp_path: Path, monkeypatch) ->
 
     atomic_write_lines(tmp_path / "nodes.jsonl", ['{"a": 1}'])
 
-    assert calls == ["fsync", "replace"], "fsync must happen before the atomic rename"
+    assert calls[:2] == ["fsync", "replace"], "fsync must happen before the atomic rename"
+
+
+def _trace_syncs(monkeypatch) -> list[str]:
+    """Record the order of file-fsync / replace / dir-fsync calls."""
+    calls: list[str] = []
+    real_fsync = os.fsync
+    real_replace = os.replace
+    real_open = os.open
+
+    dir_fds: set[int] = set()
+
+    def traced_open(p, flags, *a, **kw):
+        fd = real_open(p, flags, *a, **kw)
+        if Path(p).is_dir():
+            dir_fds.add(fd)
+        return fd
+
+    def traced_fsync(fd):
+        calls.append("fsync_dir" if fd in dir_fds else "fsync_file")
+        return real_fsync(fd)
+
+    def traced_replace(src, dst):
+        calls.append("replace")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "open", traced_open)
+    monkeypatch.setattr(os, "fsync", traced_fsync)
+    monkeypatch.setattr(os, "replace", traced_replace)
+    return calls
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="no directory fsync on Windows")
+def test_write_json_fsyncs_directory_after_replace(tmp_path: Path, monkeypatch) -> None:
+    """Fsyncing the file persists its contents; the rename that publishes it is
+    separate metadata and needs its own flush, or a power loss just after
+    os.replace can leave the target absent."""
+    calls = _trace_syncs(monkeypatch)
+
+    atomic_write_json(tmp_path / "nodes.json", {"ok": True})
+
+    assert calls == ["fsync_file", "replace", "fsync_dir"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="no directory fsync on Windows")
+def test_write_lines_fsyncs_directory_after_replace(tmp_path: Path, monkeypatch) -> None:
+    calls = _trace_syncs(monkeypatch)
+
+    atomic_write_lines(tmp_path / "nodes.jsonl", ['{"a": 1}'])
+
+    assert calls == ["fsync_file", "replace", "fsync_dir"]
+
+
+def test_dir_fsync_skipped_on_windows(tmp_path: Path, monkeypatch) -> None:
+    """Windows has no directory fd to fsync, so the step is skipped rather than
+    raising — the rename has already succeeded by then."""
+    monkeypatch.setattr(sys, "platform", "win32")
+    opened: list[object] = []
+
+    def traced_open(p, flags, *a, **kw):
+        opened.append(p)
+        raise AssertionError("os.open must not be called on Windows")
+
+    monkeypatch.setattr(os, "open", traced_open)
+
+    atomic_io._fsync_dir(tmp_path / "nodes.json")
+
+    assert opened == [], "should not try to open a directory fd on Windows"
+
+
+def test_dir_fsync_tolerates_unsupported_filesystem(tmp_path: Path, monkeypatch) -> None:
+    """If the directory cannot be opened or synced (some network mounts), the
+    write is still correct — os.replace already happened — so the error is
+    swallowed rather than failing a completed write."""
+    def boom(*a, **kw):
+        raise OSError("directory fsync unsupported")
+
+    monkeypatch.setattr(os, "open", boom)
+
+    atomic_write_json(tmp_path / "nodes.json", {"ok": True})
+
+    assert json.loads((tmp_path / "nodes.json").read_text()) == {"ok": True}
