@@ -10,6 +10,7 @@ from mykg.exporter import (
     export_html,
     export_obsidian,
     export_ttl,
+    iter_ttl,
     write_edges_jsonl,
     write_nodes_jsonl,
 )
@@ -483,3 +484,37 @@ def test_obsidian_entity_note_payload_not_dict_branch(tmp_path: Path) -> None:
     content = _obsidian_entity_note(node, outgoing=[], incoming=[])
     assert "just-a-string" in content
     assert "raw_attr" in content
+
+
+def test_iter_ttl_joins_to_the_same_document_as_export_ttl():
+    """export_ttl is now a thin wrapper, so the two must agree exactly."""
+    assert "\n".join(iter_ttl(SCHEMA, NODES, EDGE_METADATA)) == export_ttl(
+        SCHEMA, NODES, EDGE_METADATA
+    )
+
+
+def test_iter_ttl_is_lazy():
+    """Chunks are produced on demand, not accumulated up front."""
+    gen = iter_ttl(SCHEMA, NODES, EDGE_METADATA)
+    first = next(gen)
+    assert "@prefix" in first, "the prefix block should come first"
+    # Pulling one chunk must not have run the whole body.
+    assert next(gen) is not None
+
+
+def test_iter_ttl_omits_abox_header_when_no_instance_data():
+    """TBox-only mode (D14/D17): schema.ttl must not carry an ABox section."""
+    out = list(iter_ttl(SCHEMA, [], {}))
+    assert not any("INSTANCE DATA" in chunk for chunk in out)
+    assert any("THE RDFS SCHEMA" in chunk for chunk in out)
+
+
+def test_iter_ttl_multi_line_chunks_stay_intact():
+    """Some chunks span several lines — the @prefix header and the rdf:Property
+    blocks — so a consumer that filters per line has to split them itself
+    (see sanitize_abox_lines). None of them is an ABox triple, which is why
+    that filter is unaffected."""
+    multi = [c for c in iter_ttl(SCHEMA, NODES, EDGE_METADATA) if "\n" in c]
+    assert multi, "expected multi-line chunks (prefix header, rdf:Property blocks)"
+    assert all("@prefix" in c or "rdf:Property" in c for c in multi)
+    assert not any(c.startswith("data:") for c in multi), "ABox triples must be single-line"

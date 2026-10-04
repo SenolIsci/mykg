@@ -34,7 +34,7 @@ import json
 import re
 import warnings
 from collections import defaultdict
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 
 import networkx as nx
@@ -94,71 +94,82 @@ def write_edges_jsonl(path: Path, edge_metadata: dict) -> int:
     return atomic_write_lines(path, _records())
 
 
-def export_ttl(schema: dict, nodes: list[dict], edge_metadata: dict) -> str:
+def iter_ttl(schema: dict, nodes: Sequence[dict], edge_metadata: dict) -> Iterator[str]:
+    """Yield ``knowledge_graph.ttl`` one chunk at a time (D14).
+
+    ``nodes`` must be re-iterable (hence ``Sequence``, not ``Iterable``): the
+    ABox is emitted in several passes — an alias probe, type declarations,
+    attribute triples, then alias triples.
+
+    Some yields span multiple lines — the property blocks below embed ``\\n`` —
+    so a consumer that filters per line must split first. ``sanitize_abox_lines``
+    only matches single-line ABox object-property triples, which are never part
+    of those blocks.
+    """
     ex = _cfg.TTL_SCHEMA_PREFIX_LABEL
     data = _cfg.TTL_DATA_PREFIX_LABEL
     sep = "=" * _cfg.TTL_COMMENT_WIDTH
 
     has_aliases = any(node.get("aliases") for node in nodes)
-    parts = [_build_prefixes(include_skos=has_aliases)]
-    parts.append(f"# {sep}")
-    parts.append("# 1. THE RDFS SCHEMA (TBox)")
-    parts.append(f"# {sep}")
-    parts.append("")
+    yield _build_prefixes(include_skos=has_aliases)
+    yield f"# {sep}"
+    yield "# 1. THE RDFS SCHEMA (TBox)"
+    yield f"# {sep}"
+    yield ""
 
     # Classes
     for concept in schema["concepts"]:
         ctype = _ttl_local(concept["type"])
-        parts.append(f"{ex}:{ctype} rdf:type rdfs:Class .")
+        yield f"{ex}:{ctype} rdf:type rdfs:Class ."
 
-    parts.append("")
+    yield ""
 
     # Subclass hierarchy
     for concept in schema["concepts"]:
         if concept["parent"]:
             ctype = _ttl_local(concept["type"])
             parent = _ttl_local(concept["parent"])
-            parts.append(f"{ex}:{ctype} rdfs:subClassOf {ex}:{parent} .")
+            yield f"{ex}:{ctype} rdfs:subClassOf {ex}:{parent} ."
 
-    parts.append("")
+    yield ""
 
     # Datatype properties (concept attributes)
     for concept in schema["concepts"]:
         ctype = _ttl_local(concept["type"])
         for attr in concept.get("attributes", []):
             attr_local = _ttl_local(attr)
-            parts.append(
+            yield (
                 f"{ex}:{attr_local} rdf:type rdf:Property ;\n"
                 f"    rdfs:domain {ex}:{ctype} ;\n"
                 f"    rdfs:range  rdfs:Literal ."
             )
-    parts.append("")
+    yield ""
 
     # Object properties
     for prop in schema["properties"]:
         pname = _ttl_local(prop["name"])
         domain = _ttl_local(prop["domain"])
         range_ = _ttl_local(prop["range"])
-        parts.append(
+        yield (
             f"{ex}:{pname} rdf:type rdf:Property ;\n"
             f"    rdfs:domain {ex}:{domain} ;\n"
             f"    rdfs:range  {ex}:{range_} ."
         )
-    parts.append("")
+    yield ""
 
     # ABox section only emitted when there is instance data (D14/D17: schema.ttl is TBox-only)
     if nodes or edge_metadata:
-        parts.append(f"# {sep}")
-        parts.append("# 2. THE RDF INSTANCE DATA (ABox)")
-        parts.append(f"# {sep}")
-        parts.append("")
+        yield f"# {sep}"
+        yield "# 2. THE RDF INSTANCE DATA (ABox)"
+        yield f"# {sep}"
+        yield ""
 
     # Node type declarations
     for node in nodes:
         ntype = _ttl_local(node["type"])
-        parts.append(f"{data}:{node['id']} rdf:type {ex}:{ntype} .")
+        yield f"{data}:{node['id']} rdf:type {ex}:{ntype} ."
 
-    parts.append("")
+    yield ""
 
     # Datatype attribute triples (skip null values)
     for node in nodes:
@@ -172,23 +183,31 @@ def export_ttl(schema: dict, nodes: list[dict], edge_metadata: dict) -> str:
                     val = ", ".join(str(v) for v in val)
                 escaped = _escape_ttl(str(val))
                 attr_local = _ttl_local(attr)
-                parts.append(f'{data}:{node["id"]} {ex}:{attr_local} "{escaped}" .')
+                yield f'{data}:{node["id"]} {ex}:{attr_local} "{escaped}" .'
 
     # skos:altLabel triples for aliases (D29) — one per alias per node
     if has_aliases:
         for node in nodes:
             for alias in node.get("aliases", []):
                 escaped = _escape_ttl(str(alias))
-                parts.append(f'{data}:{node["id"]} skos:altLabel "{escaped}" .')
-        parts.append("")
+                yield f'{data}:{node["id"]} skos:altLabel "{escaped}" .'
+        yield ""
 
     # Object property triples
     for edge in edge_metadata.values():
         etype = _ttl_local(edge["type"])
-        parts.append(f"{data}:{edge['from']} {ex}:{etype} {data}:{edge['to']} .")
+        yield f"{data}:{edge['from']} {ex}:{etype} {data}:{edge['to']} ."
 
-    parts.append("")
-    return "\n".join(parts)
+    yield ""
+
+
+def export_ttl(schema: dict, nodes: Sequence[dict], edge_metadata: dict) -> str:
+    """Materialize the whole TTL document as one string.
+
+    Retained for the TBox-only callers (``export_ttl(schema, [], {})``), where the
+    document is small. Graph-sized exports should stream ``iter_ttl`` instead.
+    """
+    return "\n".join(iter_ttl(schema, nodes, edge_metadata))
 
 
 # ---------------------------------------------------------------------------
