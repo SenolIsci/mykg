@@ -43,6 +43,7 @@ from networkx.readwrite import json_graph
 
 from mykg import config as _cfg
 from mykg.utility.atomic_io import atomic_write_lines
+from mykg.utility.fs_names import safe_path_component
 
 
 def _build_prefixes(include_skos: bool = False) -> str:
@@ -960,12 +961,16 @@ def export_obsidian(
         outgoing[from_id].append((id_to_name.get(to_id, to_id), edge_type, conf))
         incoming[to_id].append((id_to_name.get(from_id, from_id), edge_type, conf))
 
-    # Pre-create one subdir per concept type to avoid repeated mkdir calls in the node loop
+    # Pre-create one subdir per concept type to avoid repeated mkdir calls in the
+    # node loop. Keyed by the raw type (which is what nodes carry), but named via
+    # safe_path_component: types come from the induced schema, so one containing
+    # ":" or a reserved device name would otherwise fail the mkdir on Windows.
+    # The MCP server derives the same name when reading notes back.
     type_dirs: dict[str, Path] = {}
     for node in nodes:
         node_type = node.get("type", "Unknown")
         if node_type not in type_dirs:
-            d = vault_dir / node_type
+            d = vault_dir / safe_path_component(node_type, fallback="Unknown")
             d.mkdir(exist_ok=True)
             type_dirs[node_type] = d
 

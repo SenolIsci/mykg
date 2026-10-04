@@ -522,3 +522,62 @@ def test_iter_ttl_multi_line_chunks_stay_intact():
     assert multi, "expected multi-line chunks (prefix header, rdf:Property blocks)"
     assert all("@prefix" in c or "rdf:Property" in c for c in multi)
     assert not any(c.startswith("data:") for c in multi), "ABox triples must be single-line"
+
+
+def test_obsidian_sanitizes_filesystem_hostile_type_name(tmp_path: Path) -> None:
+    """Concept types come from the induced schema, so one may contain characters
+    Windows rejects in a path component. Before this was sanitized, the mkdir
+    raised OSError(22) on Windows and aborted the whole export step.
+    """
+    schema = {
+        "concepts": [{"type": "Person:Employee", "parent": None, "attributes": ["name"]}],
+        "properties": [],
+    }
+    nodes = [
+        {
+            "id": "personemployee-alice",
+            "type": "Person:Employee",
+            "confidence": 1.0,
+            "attributes": {"name": {"value": "Alice", "confidence": 1.0}},
+            "source_files": ["a.md"],
+        }
+    ]
+
+    written = export_obsidian(nodes, {}, schema, tmp_path)
+
+    dirs = [p for p in (tmp_path / "obsidian_vault").iterdir() if p.is_dir()]
+    assert len(dirs) == 1
+    assert not set(dirs[0].name) & set('<>:"|?*\\/'), f"unsafe dir name: {dirs[0].name}"
+    # The note still lands inside, and the returned paths still resolve.
+    note = dirs[0] / "personemployee-alice.md"
+    assert note.exists()
+    assert "Alice" in note.read_text(encoding="utf-8")
+    assert any("personemployee-alice.md" in w for w in written)
+
+
+def test_obsidian_sanitizes_reserved_device_name_type(tmp_path: Path) -> None:
+    """CON/NUL/AUX are reserved by Windows regardless of extension."""
+    schema = {"concepts": [{"type": "CON", "parent": None, "attributes": ["name"]}], "properties": []}
+    nodes = [
+        {
+            "id": "con-alice",
+            "type": "CON",
+            "confidence": 1.0,
+            "attributes": {"name": {"value": "Alice", "confidence": 1.0}},
+            "source_files": ["a.md"],
+        }
+    ]
+
+    export_obsidian(nodes, {}, schema, tmp_path)
+
+    dirs = [p.name for p in (tmp_path / "obsidian_vault").iterdir() if p.is_dir()]
+    assert dirs == ["CON_"]
+
+
+def test_obsidian_leaves_ordinary_type_names_unchanged(tmp_path: Path) -> None:
+    """The common case must not churn — existing vaults use these directory
+    names, so sanitizing has to be a no-op for them."""
+    export_obsidian(NODES, EDGE_METADATA, SCHEMA, tmp_path)
+
+    dirs = sorted(p.name for p in (tmp_path / "obsidian_vault").iterdir() if p.is_dir())
+    assert dirs == ["Organization", "Person"]
