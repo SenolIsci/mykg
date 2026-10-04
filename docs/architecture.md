@@ -341,6 +341,16 @@ Pass 2 runs against the induced schema. For each document, it extracts the speci
 
 After each LLM call, the pipeline validates the response: edges whose type is not in the schema are rejected, as are edges that reference node IDs not present in the same extraction. Any node that exists solely to anchor a rejected edge is also dropped. Missing attributes are backfilled with a null value and zero confidence — they are never silently omitted.
 
+**Optional domain/range check (`pass2.domain_range_policy`).** Historically Pass 2 validated only edge type, `from`/`to` node IDs and confidence; a property's `domain`/`range` were prompt hints. The `pass2.domain_range_policy` key (`off` | `warn` | `strict`, default `warn`, exposed as `config.PASS2_DOMAIN_RANGE_POLICY`) adds an inheritance-aware check: endpoint types come from the response's nodes plus `prior_nodes`, and a subclass (walking each concept's `parent` chain) satisfies a domain or range. Edges whose property or endpoint type is unknown are left to the existing checks. The key is read but deliberately not surfaced in either `mykg_config.yaml` (same precedent as `llm.temperature_unsupported_prefixes`); opt in by adding it under a profile's `pass2:` block. An invalid value logs a warning and falls back to `warn`.
+
+`_apply_domain_range_policy` runs in `_extract_chunk` after `_normalize_scalars`, on both the first attempt and the retry:
+
+- **`off`** — no-op.
+- **`warn`** (default) — an edge whose endpoint types match `(range, domain)` exactly is swapped (logged). Remaining violators are kept and tagged `domain_range_violation: true`, which reaches `edge_metadata.json` / `edges.jsonl` via the assembler's deepcopy of the first occurrence.
+- **`strict`** — same swap, then `validate_extraction` reports remaining violations as errors, triggering the existing single LLM retry with those errors as feedback. If the retry still violates, `_partial_recover` drops the violating edges *before* its hallucinated-anchor pass, so their anchor nodes are cleaned up too. Both pieces are required: `validate_extraction` only reports; `_partial_recover` is the only place that enforces.
+
+`warn` is the default because Pass 1 schemas are LLM-induced and often too narrow: dropping edges costs recall and creates orphans the orphan pass must then pay to reconnect, and RDFS `domain`/`range` are inference rules, not constraints. `strict` suits curated `--base-schema` users. `orphan_inferred` edges are not covered by this check.
+
 <p align="center">
   <img src="diagrams/mykg_batching_and_chunking.png" width="90%" style="vertical-align:middle;">
 </p>
