@@ -21,6 +21,7 @@ from mykg import config as _cfg
 from mykg.exporters.neo4j._common import load_session
 from mykg.exporter import _build_nx_graph
 from mykg.orphan_connector import build_chunk_texts
+from mykg.utility.fs_names import safe_path_component
 
 _log = logging.getLogger("mykg.mcp_server")
 
@@ -981,7 +982,11 @@ async def mykg_read_note(node_id: str, ctx: Context) -> str:
 
     vault = kg.vault_dir
     if vault:
-        ntype = node.get("type", "Unknown")
+        # Must mirror export_obsidian's directory naming exactly: a type the
+        # exporter sanitized (e.g. "Person:Employee" -> "Person_Employee")
+        # would otherwise miss here and silently fall through to the generated
+        # summary below instead of returning the real note.
+        ntype = safe_path_component(node.get("type", "Unknown"), fallback="Unknown")
         note_path = vault / ntype / f"{node_id}.md"
         if note_path.exists():
             return note_path.read_text(encoding="utf-8")

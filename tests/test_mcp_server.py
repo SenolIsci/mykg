@@ -596,6 +596,39 @@ class TestReadNote:
         content = note.read_text(encoding="utf-8")
         assert "Alice Smith" in content
 
+    def test_reader_finds_notes_under_a_sanitized_type_dir(self, kg: KnowledgeGraph):
+        """The exporter sanitizes type names into directories, so this reader has
+        to derive the identical name. If the two drift, note_path.exists() is
+        False and mykg_get_source silently returns its generated summary instead
+        of the real note — so write the vault with the real exporter and read it
+        back through the same path logic the tool uses.
+        """
+        from mykg.exporter import export_obsidian
+        from mykg.utility.fs_names import safe_path_component
+
+        hostile_type = "Person:Employee"
+        node = {
+            "id": "personemployee-alice",
+            "type": hostile_type,
+            "confidence": 1.0,
+            "attributes": {"name": {"value": "Alice Smith", "confidence": 1.0}},
+            "source_files": ["team.md"],
+        }
+        schema = {
+            "concepts": [{"type": hostile_type, "parent": None, "attributes": ["name"]}],
+            "properties": [],
+        }
+        export_obsidian([node], {}, schema, kg.session_root / "output")
+
+        vault = kg.vault_dir
+        assert vault is not None
+        # Exactly what mykg_get_source computes.
+        note_path = vault / safe_path_component(hostile_type, fallback="Unknown") / (
+            "personemployee-alice.md"
+        )
+        assert note_path.exists(), "reader path does not match what the exporter wrote"
+        assert "Alice Smith" in note_path.read_text(encoding="utf-8")
+
 
 # ---------------------------------------------------------------------------
 # MCP server registration tests
