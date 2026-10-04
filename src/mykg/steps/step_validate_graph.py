@@ -51,8 +51,21 @@ def run_validate_graph(ctx: PipelineContext) -> None:
     if _cfg.OBSIDIAN_ENABLED:
         from mykg.exporter import export_obsidian
 
-        obs_written = export_obsidian(nodes, valid_edge_metadata, schema, ctx.output_dir)
-        log.info("Step 12d — Obsidian vault export: %d notes written", len(obs_written))
+        # The vault is an optional convenience output (D11/D23), whereas
+        # nodes.jsonl / edges.jsonl / knowledge_graph.ttl are the contract. A
+        # filesystem refusal here — an awkward concept type, a full disk, a
+        # permission or path-length limit — must not discard a completed Pass 1
+        # and Pass 2. Scoped to OSError so genuine bugs still surface.
+        try:
+            obs_written = export_obsidian(nodes, valid_edge_metadata, schema, ctx.output_dir)
+            log.info("Step 12d — Obsidian vault export: %d notes written", len(obs_written))
+        except OSError as exc:
+            log.warning(
+                "Step 12d — Obsidian vault export failed (%s); continuing. "
+                "The graph outputs are unaffected; set export.obsidian_enabled: false "
+                "to skip this export.",
+                exc,
+            )
 
     if _cfg.NEO4J_CSV_ENABLED:
         from mykg.exporters.neo4j.load_csv import export_neo4j_csv

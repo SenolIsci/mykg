@@ -895,3 +895,68 @@ def test_normalize_names_updates_shard_files(tmp_path):
     shard = json.loads(shard_file.read_text())
     assert new_id in shard["data"]["0"]
     assert old_id not in shard["data"]["0"]
+
+
+def test_run_validate_graph_survives_obsidian_oserror(tmp_path, monkeypatch):
+    """A filesystem refusal in the vault export must not discard the run.
+
+    The vault is an optional output (D11/D23); nodes.jsonl, edges.jsonl and
+    knowledge_graph.ttl are the contract. Since this step runs after Pass 1 and
+    Pass 2 are already paid for, an OSError here used to abort Step 12 and lose
+    everything.
+    """
+    from unittest.mock import patch
+
+    import mykg.config as cfg_mod
+
+    monkeypatch.setattr(cfg_mod, "OBSIDIAN_ENABLED", True)
+    monkeypatch.setattr(cfg_mod, "OBSIDIAN_VAULT_DIR", "obsidian_vault")
+
+    ctx = _make_ctx(tmp_path)
+    (ctx.intermediate_dir / "schema.json").write_text(json.dumps(SCHEMA))
+    ctx.nodes = [
+        {
+            "id": "person-alice",
+            "type": "Person",
+            "confidence": 0.9,
+            "source_files": ["doc.md"],
+            "attributes": {"name": {"value": "Alice", "confidence": 0.9}},
+        }
+    ]
+    ctx.edge_metadata = {}
+
+    def boom(*a, **kw):
+        raise OSError(22, "Invalid argument")
+
+    with patch("mykg.exporter.export_obsidian", create=True, side_effect=boom):
+        with patch("mykg.steps.step_validate_graph._cfg", cfg_mod):
+            run_validate_graph(ctx)  # must not raise
+
+    # The three contract outputs survive the vault failure.
+    for name in ("nodes.jsonl", "edges.jsonl", "knowledge_graph.ttl"):
+        assert (ctx.output_dir / name).exists(), f"{name} was lost"
+    assert (ctx.output_dir / "knowledge_graph_validation.json").exists()
+
+
+def test_run_validate_graph_still_raises_non_oserror_from_obsidian(tmp_path, monkeypatch):
+    """The guard is scoped to OSError so genuine bugs are not swallowed."""
+    from unittest.mock import patch
+
+    import pytest as _pytest
+
+    import mykg.config as cfg_mod
+
+    monkeypatch.setattr(cfg_mod, "OBSIDIAN_ENABLED", True)
+    monkeypatch.setattr(cfg_mod, "OBSIDIAN_VAULT_DIR", "obsidian_vault")
+
+    ctx = _make_ctx(tmp_path)
+    (ctx.intermediate_dir / "schema.json").write_text(json.dumps(SCHEMA))
+    ctx.nodes = []
+    ctx.edge_metadata = {}
+
+    with patch(
+        "mykg.exporter.export_obsidian", create=True, side_effect=TypeError("real bug")
+    ):
+        with patch("mykg.steps.step_validate_graph._cfg", cfg_mod):
+            with _pytest.raises(TypeError):
+                run_validate_graph(ctx)
