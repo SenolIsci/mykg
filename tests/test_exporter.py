@@ -7,11 +7,12 @@ from unittest import mock
 import yaml
 
 from mykg.exporter import (
-    export_edges_jsonl,
     export_html,
-    export_nodes_jsonl,
     export_obsidian,
     export_ttl,
+    iter_ttl,
+    write_edges_jsonl,
+    write_nodes_jsonl,
 )
 
 SCHEMA = {
@@ -56,27 +57,41 @@ EDGE_METADATA = {
 }
 
 
-def test_nodes_jsonl_line_count():
-    lines = export_nodes_jsonl(NODES).strip().split("\n")
+def test_nodes_jsonl_line_count(tmp_path: Path):
+    target = tmp_path / "nodes.jsonl"
+    assert write_nodes_jsonl(target, NODES) == 2
+    lines = target.read_text(encoding="utf-8").strip().split("\n")
     assert len(lines) == 2
 
 
-def test_nodes_jsonl_valid_json():
-    output = export_nodes_jsonl(NODES)
-    for line in output.strip().split("\n"):
+def test_nodes_jsonl_valid_json(tmp_path: Path):
+    target = tmp_path / "nodes.jsonl"
+    write_nodes_jsonl(target, NODES)
+    for line in target.read_text(encoding="utf-8").strip().split("\n"):
         obj = json.loads(line)
         assert "id" in obj
         assert "type" in obj
 
 
-def test_edges_jsonl_line_count():
-    lines = export_edges_jsonl(EDGE_METADATA).strip().split("\n")
+def test_nodes_jsonl_accepts_a_lazy_iterable(tmp_path: Path):
+    """The signature takes Iterable, not list, so a generator (or a future
+    GraphStore cursor) can be streamed in without materializing it."""
+    target = tmp_path / "nodes.jsonl"
+    assert write_nodes_jsonl(target, iter(NODES)) == 2
+    assert len(target.read_text(encoding="utf-8").strip().split("\n")) == 2
+
+
+def test_edges_jsonl_line_count(tmp_path: Path):
+    target = tmp_path / "edges.jsonl"
+    assert write_edges_jsonl(target, EDGE_METADATA) == 1
+    lines = target.read_text(encoding="utf-8").strip().split("\n")
     assert len(lines) == 1
 
 
-def test_edges_jsonl_valid_json():
-    output = export_edges_jsonl(EDGE_METADATA)
-    obj = json.loads(output.strip())
+def test_edges_jsonl_valid_json(tmp_path: Path):
+    target = tmp_path / "edges.jsonl"
+    write_edges_jsonl(target, EDGE_METADATA)
+    obj = json.loads(target.read_text(encoding="utf-8").strip())
     assert obj["id"] == "edge-abc123"
     assert obj["type"] == "works_at"
 
@@ -469,3 +484,41 @@ def test_obsidian_entity_note_payload_not_dict_branch(tmp_path: Path) -> None:
     content = _obsidian_entity_note(node, outgoing=[], incoming=[])
     assert "just-a-string" in content
     assert "raw_attr" in content
+
+
+def test_iter_ttl_joins_to_the_same_document_as_export_ttl():
+    """export_ttl is a thin wrapper over iter_ttl, plus the final newline that
+    its write_text callers (schema.ttl) have always emitted. Streaming callers
+    get their newlines from the writer instead, so iter_ttl omits the last one."""
+    streamed = "\n".join(iter_ttl(SCHEMA, NODES, EDGE_METADATA))
+    materialized = export_ttl(SCHEMA, NODES, EDGE_METADATA)
+
+    assert materialized == streamed + "\n"
+    assert not streamed.endswith("\n")
+
+
+def test_iter_ttl_is_lazy():
+    """Chunks are produced on demand, not accumulated up front."""
+    gen = iter_ttl(SCHEMA, NODES, EDGE_METADATA)
+    first = next(gen)
+    assert "@prefix" in first, "the prefix block should come first"
+    # Pulling one chunk must not have run the whole body.
+    assert next(gen) is not None
+
+
+def test_iter_ttl_omits_abox_header_when_no_instance_data():
+    """TBox-only mode (D14/D17): schema.ttl must not carry an ABox section."""
+    out = list(iter_ttl(SCHEMA, [], {}))
+    assert not any("INSTANCE DATA" in chunk for chunk in out)
+    assert any("THE RDFS SCHEMA" in chunk for chunk in out)
+
+
+def test_iter_ttl_multi_line_chunks_stay_intact():
+    """Some chunks span several lines — the @prefix header and the rdf:Property
+    blocks — so a consumer that filters per line has to split them itself
+    (see sanitize_abox_lines). None of them is an ABox triple, which is why
+    that filter is unaffected."""
+    multi = [c for c in iter_ttl(SCHEMA, NODES, EDGE_METADATA) if "\n" in c]
+    assert multi, "expected multi-line chunks (prefix header, rdf:Property blocks)"
+    assert all("@prefix" in c or "rdf:Property" in c for c in multi)
+    assert not any(c.startswith("data:") for c in multi), "ABox triples must be single-line"

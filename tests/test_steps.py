@@ -358,7 +358,8 @@ def test_run_validate_graph_does_not_raise_on_tbox_errors(tmp_path):
     }
 
     with patch(
-        "mykg.steps.step_validate_graph.validate_knowledge_graph_ttl", return_value=tbox_result
+        "mykg.steps.step_validate_graph.validate_knowledge_graph_ttl_file",
+        return_value=tbox_result,
     ):
         # Should not raise
         run_validate_graph(ctx)

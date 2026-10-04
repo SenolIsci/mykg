@@ -1,4 +1,11 @@
-from mykg.ttl_validator import sanitize_abox_ttl, validate_knowledge_graph_ttl
+from pathlib import Path
+
+from mykg.ttl_validator import (
+    sanitize_abox_lines,
+    sanitize_abox_ttl,
+    validate_knowledge_graph_ttl,
+    validate_knowledge_graph_ttl_file,
+)
 
 VALID_TTL = """\
 @prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
@@ -159,3 +166,66 @@ def test_validate_abox_skos_predicate_is_exempt():
     # SKOS predicate should NOT generate an undeclared_predicate error
     abox = result["abox_checks"]["errors"]
     assert not any(e["type"] == "undeclared_predicate" for e in abox)
+
+
+SCHEMA_ONE_PROP = {"properties": [{"name": "works_at"}]}
+
+
+def test_sanitize_abox_lines_matches_the_string_form():
+    """The streaming filter and the string wrapper must agree exactly."""
+    ttl = (
+        "ex:works_at rdf:type rdf:Property .\n"
+        "data:alice ex:works_at data:acme .\n"
+        "data:alice ex:bogus_pred data:acme .\n"
+    )
+    streamed = "\n".join(sanitize_abox_lines(ttl.splitlines(), SCHEMA_ONE_PROP))
+    assert streamed == sanitize_abox_ttl(ttl, SCHEMA_ONE_PROP)
+    assert "bogus_pred" not in streamed
+    assert "works_at" in streamed
+
+
+def test_sanitize_abox_lines_is_lazy():
+    """Lines are pulled one at a time, never accumulated."""
+    live = 0
+    peak = 0
+
+    def gen():
+        nonlocal live, peak
+        for i in range(50):
+            live += 1
+            peak = max(peak, live)
+            yield f"data:n{i} ex:works_at data:acme ."
+            live -= 1
+
+    assert len(list(sanitize_abox_lines(gen(), SCHEMA_ONE_PROP))) == 50
+    assert peak == 1, "more than one line was live at once"
+
+
+def test_sanitize_abox_lines_leaves_multi_line_chunks_untouched():
+    """iter_ttl yields some multi-line chunks; the anchored pattern never
+    matches them, which is correct since they are TBox content."""
+    block = (
+        "ex:name rdf:type rdf:Property ;\n"
+        "    rdfs:domain ex:Person ;\n"
+        "    rdfs:range  rdfs:Literal ."
+    )
+    assert list(sanitize_abox_lines([block], SCHEMA_ONE_PROP)) == [block]
+
+
+def test_validate_file_matches_the_string_form(tmp_path: Path):
+    target = tmp_path / "kg.ttl"
+    target.write_text(VALID_TTL, encoding="utf-8")
+
+    assert validate_knowledge_graph_ttl_file(target) == validate_knowledge_graph_ttl(VALID_TTL)
+
+
+def test_validate_file_reports_syntax_errors_rather_than_raising(tmp_path: Path):
+    """Validation is advisory (D25) and runs after the pipeline is complete, so
+    an unparseable document must be reported, not raised."""
+    target = tmp_path / "broken.ttl"
+    target.write_text("this is not turtle <<<", encoding="utf-8")
+
+    result = validate_knowledge_graph_ttl_file(target)
+
+    assert result["valid"] is False
+    assert result["tbox_checks"]["errors"][0]["type"] == "syntax_error"
