@@ -65,11 +65,15 @@ def atomic_write_json(path: Path, data: Any) -> None:
     durable. Uses the configured ``JSON_INDENT`` so output matches every other
     intermediate file. If anything fails, the temp file is cleaned up so no
     stray ``.tmp`` is left behind.
+
+    ``newline=""`` keeps the indent newlines as LF on every platform rather
+    than CRLF on Windows (Invariant 20), so these files hash and diff the same
+    wherever the pipeline ran.
     """
     tmp = path.with_suffix(path.suffix + ".tmp")
     payload = json.dumps(data, indent=_cfg.JSON_INDENT)
     try:
-        with tmp.open("w", encoding="utf-8") as f:
+        with tmp.open("w", encoding="utf-8", newline="") as f:
             f.write(payload)
             f.flush()
             os.fsync(f.fileno())
@@ -99,11 +103,16 @@ def atomic_write_lines(
     JSONL file is still *syntactically valid* line-oriented data, so a crash
     partway through a non-atomic write leaves a short file that every reader
     parses as complete rather than rejecting.
+
+    ``newline=""`` disables the platform newline translation that would
+    otherwise emit CRLF on Windows (Invariant 20): these outputs are consumed
+    byte-for-byte by other tools and compared across platforms, so a line
+    ending must not depend on where the pipeline ran.
     """
     tmp = path.with_suffix(path.suffix + ".tmp")
     count = 0
     try:
-        with tmp.open("w", encoding="utf-8") as f:
+        with tmp.open("w", encoding="utf-8", newline="") as f:
             for line in lines:
                 if count and not trailing_newline:
                     f.write("\n")

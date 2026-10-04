@@ -298,3 +298,29 @@ def test_write_lines_without_trailing_newline_empty(tmp_path: Path) -> None:
     assert atomic_write_lines(target, [], trailing_newline=False) == 0
 
     assert target.read_text(encoding="utf-8") == ""
+
+
+def test_write_lines_emits_lf_not_crlf(tmp_path: Path) -> None:
+    """Line endings must not depend on the host OS (Invariant 20).
+
+    Without newline="" these files would be CRLF on Windows and LF elsewhere,
+    so the same graph would not hash or diff equal across platforms. Asserted on
+    raw bytes so the test is meaningful on every platform, not just POSIX.
+    """
+    target = tmp_path / "nodes.jsonl"
+
+    atomic_write_lines(target, ['{"a": 1}', '{"b": 2}'])
+
+    assert target.read_bytes() == b'{"a": 1}\n{"b": 2}\n'
+    assert b"\r" not in target.read_bytes()
+
+
+def test_write_json_emits_lf_not_crlf(tmp_path: Path) -> None:
+    """JSON_INDENT puts newlines inside the payload, so the same applies here."""
+    target = tmp_path / "nodes.json"
+
+    atomic_write_json(target, {"a": [1, 2]})
+
+    raw = target.read_bytes()
+    assert b"\n" in raw, "indented JSON should contain newlines"
+    assert b"\r" not in raw
