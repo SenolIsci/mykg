@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from mykg import config as _cfg
-from mykg.exporter import export_edges_jsonl, export_networkx, export_nodes_jsonl, export_ttl
+from mykg.exporter import export_networkx, export_ttl, write_edges_jsonl, write_nodes_jsonl
 from mykg.logging import get
 from mykg.orchestrator import PipelineContext
 from mykg.ttl_validator import sanitize_abox_ttl, validate_knowledge_graph_ttl
@@ -27,8 +27,9 @@ def run_validate_graph(ctx: PipelineContext) -> None:
     ttl = sanitize_abox_ttl(export_ttl(schema, nodes, valid_edge_metadata), schema)
     result = validate_knowledge_graph_ttl(ttl)
 
-    (ctx.output_dir / "nodes.jsonl").write_text(export_nodes_jsonl(nodes), encoding="utf-8")
-    (ctx.output_dir / "edges.jsonl").write_text(export_edges_jsonl(valid_edge_metadata), encoding="utf-8")
+    n_nodes = write_nodes_jsonl(ctx.output_dir / "nodes.jsonl", nodes)
+    n_edges = write_edges_jsonl(ctx.output_dir / "edges.jsonl", valid_edge_metadata)
+    log.debug("Steps 10–12 — wrote %d node(s), %d edge(s) to JSONL", n_nodes, n_edges)
     (ctx.output_dir / "knowledge_graph.ttl").write_text(ttl, encoding="utf-8")
 
     if _cfg.NETWORKX_ENABLED:

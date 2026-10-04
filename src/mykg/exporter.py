@@ -1,7 +1,7 @@
 """
 Serializes the assembled knowledge graph to all output formats.
 
-Primary outputs (export_nodes_jsonl / export_edges_jsonl / export_ttl):
+Primary outputs (write_nodes_jsonl / write_edges_jsonl / export_ttl):
   output/nodes.jsonl           — one JSON record per deduplicated node (D12)
   output/edges.jsonl           — one flat JSON record per edge, from sidecar (D13)
   output/knowledge_graph.ttl   — RDFS TBox + RDF ABox, no edge metadata (D14)
@@ -34,6 +34,7 @@ import json
 import re
 import warnings
 from collections import defaultdict
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 import networkx as nx
@@ -41,6 +42,7 @@ import yaml
 from networkx.readwrite import json_graph
 
 from mykg import config as _cfg
+from mykg.utility.atomic_io import atomic_write_lines
 
 
 def _build_prefixes(include_skos: bool = False) -> str:
@@ -72,17 +74,24 @@ def _escape_ttl(s: str) -> str:
     return s
 
 
-def export_nodes_jsonl(nodes: list[dict]) -> str:
-    lines = [json.dumps(node, ensure_ascii=False) for node in nodes]
-    return "\n".join(lines) + "\n"
+def write_nodes_jsonl(path: Path, nodes: Iterable[dict]) -> int:
+    """Stream one JSON record per node to ``path`` (D12). Returns the count.
+
+    Takes an iterable rather than a list so the records are serialized one at a
+    time as they are written, instead of building the whole payload in memory.
+    """
+    return atomic_write_lines(path, (json.dumps(node, ensure_ascii=False) for node in nodes))
 
 
-def export_edges_jsonl(edge_metadata: dict) -> str:
-    lines = []
-    for edge_id, edge in edge_metadata.items():
-        record = {"id": edge_id, **edge} if "id" not in edge else edge
-        lines.append(json.dumps(record, ensure_ascii=False))
-    return "\n".join(lines) + "\n"
+def write_edges_jsonl(path: Path, edge_metadata: dict) -> int:
+    """Stream one flat JSON record per edge to ``path`` (D13). Returns the count."""
+
+    def _records() -> Iterator[str]:
+        for edge_id, edge in edge_metadata.items():
+            record = {"id": edge_id, **edge} if "id" not in edge else edge
+            yield json.dumps(record, ensure_ascii=False)
+
+    return atomic_write_lines(path, _records())
 
 
 def export_ttl(schema: dict, nodes: list[dict], edge_metadata: dict) -> str:

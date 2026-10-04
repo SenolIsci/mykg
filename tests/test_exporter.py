@@ -7,11 +7,11 @@ from unittest import mock
 import yaml
 
 from mykg.exporter import (
-    export_edges_jsonl,
     export_html,
-    export_nodes_jsonl,
     export_obsidian,
     export_ttl,
+    write_edges_jsonl,
+    write_nodes_jsonl,
 )
 
 SCHEMA = {
@@ -56,27 +56,41 @@ EDGE_METADATA = {
 }
 
 
-def test_nodes_jsonl_line_count():
-    lines = export_nodes_jsonl(NODES).strip().split("\n")
+def test_nodes_jsonl_line_count(tmp_path: Path):
+    target = tmp_path / "nodes.jsonl"
+    assert write_nodes_jsonl(target, NODES) == 2
+    lines = target.read_text(encoding="utf-8").strip().split("\n")
     assert len(lines) == 2
 
 
-def test_nodes_jsonl_valid_json():
-    output = export_nodes_jsonl(NODES)
-    for line in output.strip().split("\n"):
+def test_nodes_jsonl_valid_json(tmp_path: Path):
+    target = tmp_path / "nodes.jsonl"
+    write_nodes_jsonl(target, NODES)
+    for line in target.read_text(encoding="utf-8").strip().split("\n"):
         obj = json.loads(line)
         assert "id" in obj
         assert "type" in obj
 
 
-def test_edges_jsonl_line_count():
-    lines = export_edges_jsonl(EDGE_METADATA).strip().split("\n")
+def test_nodes_jsonl_accepts_a_lazy_iterable(tmp_path: Path):
+    """The signature takes Iterable, not list, so a generator (or a future
+    GraphStore cursor) can be streamed in without materializing it."""
+    target = tmp_path / "nodes.jsonl"
+    assert write_nodes_jsonl(target, iter(NODES)) == 2
+    assert len(target.read_text(encoding="utf-8").strip().split("\n")) == 2
+
+
+def test_edges_jsonl_line_count(tmp_path: Path):
+    target = tmp_path / "edges.jsonl"
+    assert write_edges_jsonl(target, EDGE_METADATA) == 1
+    lines = target.read_text(encoding="utf-8").strip().split("\n")
     assert len(lines) == 1
 
 
-def test_edges_jsonl_valid_json():
-    output = export_edges_jsonl(EDGE_METADATA)
-    obj = json.loads(output.strip())
+def test_edges_jsonl_valid_json(tmp_path: Path):
+    target = tmp_path / "edges.jsonl"
+    write_edges_jsonl(target, EDGE_METADATA)
+    obj = json.loads(target.read_text(encoding="utf-8").strip())
     assert obj["id"] == "edge-abc123"
     assert obj["type"] == "works_at"
 
