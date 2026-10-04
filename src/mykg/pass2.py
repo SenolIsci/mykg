@@ -39,13 +39,106 @@ class FailedChunkLog:
 PASS2_SYSTEM_PROMPT = load_prompt("pass2/system")
 
 
+def _resolve_domain_range_policy(policy: str | None) -> str:
+    """Return a valid domain/range policy; None → config default, invalid → 'warn'."""
+    if policy is None:
+        policy = _cfg.PASS2_DOMAIN_RANGE_POLICY
+    if policy not in _cfg.PASS2_DOMAIN_RANGE_POLICIES:
+        log.warning("invalid domain_range_policy %r — falling back to 'warn'", policy)
+        return "warn"
+    return policy
+
+
+def _ancestors(concept: str, schema: dict) -> set[str]:
+    """Return *concept* plus every is-a ancestor; cycle-safe."""
+    parents = {c["type"]: c.get("parent") for c in schema.get("concepts", []) if c}
+    seen: set[str] = set()
+    current: str | None = concept
+    while current and current not in seen:
+        seen.add(current)
+        current = parents.get(current)
+    return seen
+
+
+def _node_types(extraction: dict, prior_nodes: list[dict] | None) -> dict[str, str]:
+    """Map node id → type over prior_nodes plus this response's nodes (response wins)."""
+    types: dict[str, str] = {}
+    for n in (prior_nodes or []) + (extraction.get("nodes") or []):
+        if isinstance(n, dict) and n.get("id") and n.get("type"):
+            types[n["id"]] = n["type"]
+    return types
+
+
+def _domain_range_status(edge: dict, node_types: dict[str, str], schema: dict) -> str:
+    """Classify an edge as 'ok', 'reversed', 'violation' or 'unknown' (inheritance-aware).
+
+    'unknown' covers an undeclared property or an untyped endpoint — those are left to the
+    existing type/ID checks in validate_extraction.
+    """
+    prop = next((p for p in schema.get("properties", []) if p["name"] == edge.get("type")), None)
+    from_id, to_id = edge.get("from"), edge.get("to")
+    if not isinstance(from_id, str) or not isinstance(to_id, str):
+        return "unknown"
+    from_t, to_t = node_types.get(from_id), node_types.get(to_id)
+    if prop is None or from_t is None or to_t is None:
+        return "unknown"
+    from_anc, to_anc = _ancestors(from_t, schema), _ancestors(to_t, schema)
+    if prop["domain"] in from_anc and prop["range"] in to_anc:
+        return "ok"
+    if prop["range"] in from_anc and prop["domain"] in to_anc:
+        return "reversed"
+    return "violation"
+
+
+def _domain_range_message(edge: dict, node_types: dict[str, str], schema: dict) -> str:
+    prop = next(p for p in schema["properties"] if p["name"] == edge["type"])
+    return (
+        f"Domain/range violation: {edge['type']} "
+        f"{edge['from']}({node_types[edge['from']]})→{edge['to']}({node_types[edge['to']]}) "
+        f"expects {prop['domain']}→{prop['range']}"
+    )
+
+
+def _apply_domain_range_policy(
+    extraction: dict,
+    schema: dict,
+    prior_nodes: list[dict] | None,
+    policy: str,
+) -> dict:
+    """Swap reversed edges (warn/strict) and tag remaining violators (warn). Mutates in place."""
+    if policy == "off" or not isinstance(extraction.get("edges"), list):
+        return extraction
+    node_types = _node_types(extraction, prior_nodes)
+    for edge in extraction["edges"]:
+        if not isinstance(edge, dict):
+            continue
+        status = _domain_range_status(edge, node_types, schema)
+        if status == "reversed":
+            log.info(
+                "    domain/range — swapped reversed edge %s %s→%s",
+                edge["type"],
+                edge["from"],
+                edge["to"],
+            )
+            edge["from"], edge["to"] = edge["to"], edge["from"]
+        elif status == "violation" and policy == "warn":
+            edge["domain_range_violation"] = True
+            log.warning(
+                "    %s — kept and tagged (policy=warn)",
+                _domain_range_message(edge, node_types, schema),
+            )
+    return extraction
+
+
 def validate_extraction(
     extraction: dict,
     schema: dict,
     flat_schema: dict,
     prior_nodes: list[dict] | None = None,
+    domain_range_policy: str | None = None,
 ) -> list[str]:
     errors: list[str] = []
+    domain_range_policy = _resolve_domain_range_policy(domain_range_policy)
 
     # Check top-level structure first
     expected_keys = {"nodes", "edges"}
@@ -94,6 +187,12 @@ def validate_extraction(
                 f"Edge missing 'confidence' field: {edge.get('type', '?')} "
                 f"{edge.get('from', '?')}→{edge.get('to', '?')}"
             )
+
+    if domain_range_policy == "strict":
+        node_types = _node_types(clean, prior_nodes)
+        for edge in clean["edges"]:
+            if _domain_range_status(edge, node_types, schema) == "violation":
+                errors.append(_domain_range_message(edge, node_types, schema))
 
     return errors
 
@@ -247,13 +346,22 @@ def _dedup_within_file(nodes: list[dict]) -> list[dict]:
     return list(seen.values())
 
 
-def _partial_recover(extraction: dict, schema: dict, prior_nodes: list[dict] | None = None) -> dict:
+def _partial_recover(
+    extraction: dict,
+    schema: dict,
+    prior_nodes: list[dict] | None = None,
+    domain_range_policy: str | None = None,
+) -> dict:
     """Filter out nodes with undeclared types and edges that reference unknown nodes or properties.
 
     After edge filtering, also drops nodes that are new to this chunk (not in prior_nodes) and
     are not anchored by any surviving edge — these are hallucinated placeholder nodes whose only
     purpose was to be endpoints for the edges that were just dropped.
+
+    Under the 'strict' domain/range policy, edges whose endpoint types violate the property's
+    domain/range are dropped too — before the anchor pass, so their anchors are cleaned up.
     """
+    domain_range_policy = _resolve_domain_range_policy(domain_range_policy)
     clean = _strip_nulls(extraction)
     valid_types = {c["type"] for c in schema["concepts"]}
     all_nodes = clean["nodes"]
@@ -279,6 +387,18 @@ def _partial_recover(extraction: dict, schema: dict, prior_nodes: list[dict] | N
     if dropped:
         log.warning("    partial recovery — dropped %d invalid edge(s)", dropped)
 
+    if domain_range_policy == "strict":
+        node_types = _node_types({"nodes": valid_nodes}, prior_nodes)
+        kept = [
+            e for e in valid_edges if _domain_range_status(e, node_types, schema) != "violation"
+        ]
+        if len(kept) < len(valid_edges):
+            log.warning(
+                "    partial recovery — dropped %d domain/range-violating edge(s)",
+                len(valid_edges) - len(kept),
+            )
+        valid_edges = kept
+
     # Drop nodes that are new to this chunk and have no surviving edge — hallucinated anchors.
     anchored_ids = {e["from"] for e in valid_edges} | {e["to"] for e in valid_edges}
     final_nodes = [n for n in valid_nodes if n["id"] in prior_ids or n["id"] in anchored_ids]
@@ -301,6 +421,7 @@ def _extract_chunk(
     prior_nodes: list[dict] | None = None,
     hint_block: str | None = None,
 ) -> dict | None:
+    policy = _resolve_domain_range_policy(None)
     user = _build_extraction_prompt(text, schema, flat_schema, prior_nodes, hint_block)
     raw = llm_complete_with_retry(
         adapter, PASS2_SYSTEM_PROMPT, user, context_label=f"pass2 chunk {chunk_idx}"
@@ -331,7 +452,8 @@ def _extract_chunk(
     extraction = _strip_nulls(extraction)
 
     extraction = _normalize_scalars(extraction)
-    errors = validate_extraction(extraction, schema, flat_schema, prior_nodes)
+    extraction = _apply_domain_range_policy(extraction, schema, prior_nodes, policy)
+    errors = validate_extraction(extraction, schema, flat_schema, prior_nodes, policy)
     if errors:
         log.warning("    chunk %d — validation errors: %s — retrying", chunk_idx, errors)
         error_context = "Previous attempt had errors:\n" + "\n".join(errors)
@@ -350,18 +472,19 @@ def _extract_chunk(
                 chunk_idx,
                 exc,
             )
-            extraction = _partial_recover(extraction, schema, prior_nodes)
+            extraction = _partial_recover(extraction, schema, prior_nodes, policy)
             return _backfill_extraction(extraction, schema, flat_schema)
 
         extraction2 = _strip_nulls(extraction2)
         extraction2 = _normalize_scalars(extraction2)
-        errors2 = validate_extraction(extraction2, schema, flat_schema, prior_nodes)
+        extraction2 = _apply_domain_range_policy(extraction2, schema, prior_nodes, policy)
+        errors2 = validate_extraction(extraction2, schema, flat_schema, prior_nodes, policy)
         if errors2:
             log.warning(
                 "    chunk %d — retry still has errors — accepting nodes, dropping invalid edges",
                 chunk_idx,
             )
-            extraction2 = _partial_recover(extraction2, schema, prior_nodes)
+            extraction2 = _partial_recover(extraction2, schema, prior_nodes, policy)
         return _backfill_extraction(extraction2, schema, flat_schema)
 
     return _backfill_extraction(extraction, schema, flat_schema)

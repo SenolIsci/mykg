@@ -12,6 +12,7 @@ when it constructs LLM adapters.
 from __future__ import annotations
 
 import importlib
+import logging
 import os
 import sys
 from pathlib import Path
@@ -176,6 +177,16 @@ PASS2_CONCAT_BATCH_TOKEN_TARGET: int = _get_opt("pass2", "concat_batch_token_tar
 PASS2_BATCH_TOKEN_TARGET: int = _get_opt("pass2", "batch_token_target", 100000)
 PASS2_BATCH_PER_FILE: bool = _get_opt("pass2", "batch_per_file", False)
 PASS2_BATCH_RETRY_MAX: int = _get_opt("pass2", "batch_retry_max", 1)
+# Endpoint-type check against property domain/range: off | warn | strict.
+# Read but intentionally not surfaced in the shipped YAML files.
+PASS2_DOMAIN_RANGE_POLICIES: frozenset[str] = frozenset({"off", "warn", "strict"})
+PASS2_DOMAIN_RANGE_POLICY: str = _get_opt("pass2", "domain_range_policy", "warn")
+if PASS2_DOMAIN_RANGE_POLICY not in PASS2_DOMAIN_RANGE_POLICIES:
+    logging.getLogger("mykg.config").warning(
+        "pass2.domain_range_policy=%r is invalid (expected off|warn|strict) — using 'warn'",
+        PASS2_DOMAIN_RANGE_POLICY,
+    )
+    PASS2_DOMAIN_RANGE_POLICY = "warn"
 
 # ---------------------------------------------------------------------------
 # Ingest (Invariant 12)

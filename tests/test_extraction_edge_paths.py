@@ -423,3 +423,35 @@ def test_extract_chunk_returns_none_on_blank_retry():
 
     result = _extract_chunk("text", SCHEMA, FLAT_SCHEMA, BlankAdapter(), chunk_idx=1)
     assert result is None
+
+
+def test_partial_recover_strict_drops_domain_range_violator_and_its_anchor():
+    from mykg.pass2 import _partial_recover
+
+    schema = {
+        "concepts": [
+            {"type": "Person", "parent": None, "attributes": []},
+            {"type": "Organization", "parent": None, "attributes": []},
+            {"type": "Place", "parent": None, "attributes": []},
+        ],
+        "properties": [
+            {"name": "works_at", "domain": "Person", "range": "Organization", "attributes": []}
+        ],
+    }
+    extraction = {
+        "nodes": [
+            {"id": "p-1", "type": "Person", "attributes": {}},
+            {"id": "o-1", "type": "Organization", "attributes": {}},
+            {"id": "pl-1", "type": "Place", "attributes": {}},
+        ],
+        "edges": [
+            {"type": "works_at", "from": "p-1", "to": "o-1", "confidence": 0.9},
+            {"type": "works_at", "from": "p-1", "to": "pl-1", "confidence": 0.9},
+        ],
+    }
+    strict = _partial_recover(extraction, schema, None, domain_range_policy="strict")
+    assert [(e["from"], e["to"]) for e in strict["edges"]] == [("p-1", "o-1")]
+    assert {n["id"] for n in strict["nodes"]} == {"p-1", "o-1"}
+
+    warn = _partial_recover(extraction, schema, None, domain_range_policy="warn")
+    assert len(warn["edges"]) == 2

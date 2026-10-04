@@ -649,3 +649,176 @@ def test_extract_chunk_handles_null_nodes_array_via_run_pass2():
     results, _, _failed = run_pass2({"test.md": "Some content."}, SCHEMA, FLAT_SCHEMA, adapter)
     assert "test.md" in results
     assert isinstance(results["test.md"]["nodes"], list)
+
+
+# ---------------------------------------------------------------------------
+# Domain/range policy
+# ---------------------------------------------------------------------------
+
+DR_SCHEMA = {
+    "concepts": [
+        {"type": "Person", "parent": None, "attributes": ["name"]},
+        {"type": "Engineer", "parent": "Person", "attributes": []},
+        {"type": "Organization", "parent": None, "attributes": ["name"]},
+        {"type": "Place", "parent": None, "attributes": ["name"]},
+    ],
+    "properties": [
+        {"name": "works_at", "domain": "Person", "range": "Organization", "attributes": []}
+    ],
+}
+DR_FLAT = {"Person": ["name"], "Engineer": ["name"], "Organization": ["name"], "Place": ["name"]}
+
+
+def _dr_node(nid, ntype):
+    return {
+        "id": nid,
+        "type": ntype,
+        "confidence": 0.9,
+        "attributes": {"name": {"value": nid, "confidence": 0.9}},
+    }
+
+
+def _dr_edge(src, dst):
+    return {"type": "works_at", "from": src, "to": dst, "confidence": 0.9, "attributes": {}}
+
+
+def _dr_extraction(edges, extra_nodes=()):
+    nodes = [_dr_node("eng-bob", "Engineer"), _dr_node("org-acme", "Organization")]
+    nodes += [_dr_node(n, t) for n, t in extra_nodes]
+    return {"nodes": nodes, "edges": edges}
+
+
+def test_ancestors_includes_self_and_is_cycle_safe():
+    from mykg.pass2 import _ancestors
+
+    assert _ancestors("Engineer", DR_SCHEMA) == {"Engineer", "Person"}
+    cyclic = {"concepts": [{"type": "A", "parent": "B"}, {"type": "B", "parent": "A"}]}
+    assert _ancestors("A", cyclic) == {"A", "B"}
+
+
+def test_subclass_satisfies_domain():
+    from mykg.pass2 import _domain_range_status
+
+    types = {"eng-bob": "Engineer", "org-acme": "Organization"}
+    assert _domain_range_status(_dr_edge("eng-bob", "org-acme"), types, DR_SCHEMA) == "ok"
+    ext = _dr_extraction([_dr_edge("eng-bob", "org-acme")])
+    assert validate_extraction(ext, DR_SCHEMA, DR_FLAT, domain_range_policy="strict") == []
+
+
+def test_unknown_status_for_undeclared_property_or_endpoint():
+    from mykg.pass2 import _domain_range_status
+
+    types = {"eng-bob": "Engineer"}
+    assert _domain_range_status(_dr_edge("eng-bob", "ghost"), types, DR_SCHEMA) == "unknown"
+    edge = {"type": "nope", "from": "eng-bob", "to": "eng-bob"}
+    assert _domain_range_status(edge, types, DR_SCHEMA) == "unknown"
+
+
+def test_reversed_edge_is_swapped():
+    from mykg.pass2 import _apply_domain_range_policy
+
+    for policy in ("warn", "strict"):
+        ext = _dr_extraction([_dr_edge("org-acme", "eng-bob")])
+        out = _apply_domain_range_policy(ext, DR_SCHEMA, None, policy)
+        edge = out["edges"][0]
+        assert (edge["from"], edge["to"]) == ("eng-bob", "org-acme")
+        assert "domain_range_violation" not in edge
+
+
+def test_warn_tags_and_keeps_violator():
+    from mykg.pass2 import _apply_domain_range_policy
+
+    ext = _dr_extraction([_dr_edge("eng-bob", "place-paris")], [("place-paris", "Place")])
+    out = _apply_domain_range_policy(ext, DR_SCHEMA, None, "warn")
+    assert len(out["edges"]) == 1
+    assert out["edges"][0]["domain_range_violation"] is True
+    assert validate_extraction(out, DR_SCHEMA, DR_FLAT, domain_range_policy="warn") == []
+
+
+def test_strict_validate_reports_violation():
+    ext = _dr_extraction([_dr_edge("eng-bob", "place-paris")], [("place-paris", "Place")])
+    errors = validate_extraction(ext, DR_SCHEMA, DR_FLAT, domain_range_policy="strict")
+    assert errors == [
+        "Domain/range violation: works_at eng-bob(Engineer)→place-paris(Place) "
+        "expects Person→Organization"
+    ]
+
+
+def test_off_policy_leaves_extraction_unchanged():
+    import copy
+
+    from mykg.pass2 import _apply_domain_range_policy
+
+    ext = _dr_extraction(
+        [_dr_edge("org-acme", "eng-bob"), _dr_edge("eng-bob", "place-paris")],
+        [("place-paris", "Place")],
+    )
+    before = copy.deepcopy(ext)
+    assert _apply_domain_range_policy(ext, DR_SCHEMA, None, "off") == before
+    assert validate_extraction(ext, DR_SCHEMA, DR_FLAT, domain_range_policy="off") == []
+
+
+def test_prior_nodes_types_used():
+    prior = [_dr_node("place-paris", "Place")]
+    ext = {"nodes": [_dr_node("eng-bob", "Engineer")], "edges": [_dr_edge("eng-bob", "place-paris")]}
+    errors = validate_extraction(ext, DR_SCHEMA, DR_FLAT, prior, domain_range_policy="strict")
+    assert any("place-paris(Place)" in e for e in errors)
+
+
+def test_invalid_policy_falls_back_to_warn():
+    from mykg.pass2 import _resolve_domain_range_policy
+
+    assert _resolve_domain_range_policy("bogus") == "warn"
+    ext = _dr_extraction([_dr_edge("eng-bob", "place-paris")], [("place-paris", "Place")])
+    assert validate_extraction(ext, DR_SCHEMA, DR_FLAT, domain_range_policy="bogus") == []
+
+
+class _ScriptedAdapter(LLMAdapter):
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.calls = 0
+
+    def complete(self, system, user, context_label="", max_tokens=None, timeout=None, temperature=None):
+        self.calls += 1
+        return self._responses[min(self.calls - 1, len(self._responses) - 1)]
+
+    def endpoint_label(self) -> str:
+        return "scripted"
+
+
+def _dr_bad_response():
+    return json.dumps(
+        _dr_extraction(
+            [_dr_edge("org-acme", "eng-bob"), _dr_edge("eng-bob", "place-paris")],
+            [("place-paris", "Place")],
+        )
+    )
+
+
+def test_extract_chunk_policies(monkeypatch):
+    from mykg import pass2
+
+    def run(policy):
+        monkeypatch.setattr(pass2._cfg, "PASS2_DOMAIN_RANGE_POLICY", policy)
+        adapter = _ScriptedAdapter([_dr_bad_response()])
+        out = pass2._extract_chunk("text", DR_SCHEMA, DR_FLAT, adapter, chunk_idx=0)
+        return out, adapter.calls
+
+    out, calls = run("off")
+    assert calls == 1
+    assert [(e["from"], e["to"]) for e in out["edges"]] == [
+        ("org-acme", "eng-bob"),
+        ("eng-bob", "place-paris"),
+    ]
+    assert not any("domain_range_violation" in e for e in out["edges"])
+
+    out, calls = run("warn")
+    assert calls == 1
+    assert out["edges"][0]["from"] == "eng-bob"
+    assert "domain_range_violation" not in out["edges"][0]
+    assert out["edges"][1]["domain_range_violation"] is True
+
+    out, calls = run("strict")
+    assert calls == 2  # validation retry issued
+    assert [(e["from"], e["to"]) for e in out["edges"]] == [("eng-bob", "org-acme")]
+    assert "place-paris" not in {n["id"] for n in out["nodes"]}
