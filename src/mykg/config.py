@@ -208,6 +208,11 @@ OBSIDIAN_ENABLED: bool = _get_opt("export", "obsidian_enabled", False)
 OBSIDIAN_VAULT_DIR: str = _get_opt("export", "obsidian_vault_dir", "obsidian_vault")
 NEO4J_CSV_ENABLED: bool = _get_opt("export", "neo4j_csv_enabled", False)
 NEO4J_CSV_DIR: str = _get_opt("export", "neo4j_csv_dir", "neo4j_csv")
+# Render ceiling for the interactive vis.js HTML export (D61). Read but not
+# surfaced in the shipped mykg_config.yaml files -- same precedent as
+# llm.temperature_unsupported_prefixes (D3) and pass2.domain_range_policy (D60).
+# -1 disables the ceiling entirely.
+EXPORT_HTML_MAX_NODES: int = _get_opt("export", "html_max_nodes", 5000)
 
 # ---------------------------------------------------------------------------
 # Output / intermediate paths (D16, D18)

@@ -552,6 +552,18 @@ Seven graph formats are written to `output/networkx_output/`: GML (human-readabl
 
 `output/networkx_output/knowledge_graph.html` is a self-contained force-directed graph visualization built with vis.js. It requires no server. It supports filtering nodes and edges by type, filtering by confidence threshold, name search, and hover popups with full attribute values.
 
+**Render ceiling (D61).** The export builds a `vis.DataSet` holding every node and edge, so a large graph overwhelms the browser DOM. Above `export.html_max_nodes` nodes the HTML file is not written at all: `export_html` returns `""`, a `UserWarning` names the count and the limit, and the caller omits the filename from its written-files list. The comparison is `>`, so a graph of exactly the limit still renders. Every other output format — JSONL, Turtle, the remaining NetworkX formats, the Obsidian vault and the Neo4j CSV bundle — is written normally; only the visualisation is skipped.
+
+The key defaults to `5000` and is read from the active profile's `pipeline.export:` block (alongside `networkx_enabled`, `obsidian_enabled` and the rest), but is deliberately **absent from both shipped `mykg_config.yaml` files** — the same treatment as `llm.temperature_unsupported_prefixes` (D3) and `pass2.domain_range_policy` (D60). Add it to change the default:
+
+```yaml
+profiles:
+  <active-profile>:
+    pipeline:
+      export:
+        html_max_nodes: 20000   # -1 disables the ceiling entirely
+```
+
 ### Obsidian Vault
 
 `output/obsidian_vault/` is a directory of linked Markdown files that can be opened directly as a vault in [Obsidian](https://obsidian.md). One `.md` note is written per extracted entity, grouped into subdirectories by concept type (e.g. `Person/`, `Organization/`). An `index.md` at the root summarizes node counts per type and links to every entity note.

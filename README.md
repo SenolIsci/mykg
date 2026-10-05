@@ -519,6 +519,8 @@ Load in Protégé, query with SPARQL (Fuseki, GraphDB), or reason with HermiT/Pe
 - Hover popups with full attribute values
 - Resizable sidebar
 
+Not written when the graph exceeds `export.html_max_nodes` nodes (default 5000; `-1` disables the ceiling) — rendering a graph that large would overwhelm vis.js in the browser. Every other output format is still written in full. The key is read from the active profile's `pipeline.export:` block but is not present in the shipped config; add it there to override.
+
 ### NetworkX Formats (`networkx_output/`)
 
 | File | Format | Best for |

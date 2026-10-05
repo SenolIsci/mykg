@@ -568,7 +568,24 @@ document.addEventListener('mouseup', () => {{
 
 
 def export_html(G: nx.DiGraph, out_dir: Path) -> str:
-    """Write an interactive vis.js HTML file; return the output path as a string."""
+    """Write an interactive vis.js HTML file; return the output path as a string.
+
+    Returns "" without writing anything when the graph exceeds the
+    ``export.html_max_nodes`` render ceiling (D61). Every other output format is
+    unaffected -- only the interactive visualisation is skipped.
+    """
+    limit = _cfg.EXPORT_HTML_MAX_NODES
+    node_count = G.number_of_nodes()
+    if limit >= 0 and node_count > limit:
+        warnings.warn(
+            f"Skipping interactive HTML export: {node_count} nodes exceeds the "
+            f"{limit}-node render ceiling (export.html_max_nodes). Rendering a graph "
+            "this large would overwhelm vis.js in the browser. All other output "
+            "formats are written normally.",
+            stacklevel=2,
+        )
+        return ""
+
     type_list = sorted({data.get("node_type", "") for _, data in G.nodes(data=True)})
     type_color = {t: _NODE_TYPE_COLORS[i % len(_NODE_TYPE_COLORS)] for i, t in enumerate(type_list)}
 
@@ -790,8 +807,10 @@ def export_networkx(nodes: list[dict], edge_metadata: dict, output_dir: Path) ->
         warnings.warn(f"NetworkX JSON export failed: {e}", stacklevel=2)
 
     try:
-        export_html(G, nx_dir)
-        written.append("knowledge_graph.html")
+        # Falsy return == skipped by the render ceiling (D61); no file was written,
+        # so it must not be reported as one.
+        if export_html(G, nx_dir):
+            written.append("knowledge_graph.html")
     except Exception as e:
         warnings.warn(f"NetworkX HTML export failed: {e}", stacklevel=2)
 

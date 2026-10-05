@@ -522,3 +522,97 @@ def test_iter_ttl_multi_line_chunks_stay_intact():
     assert multi, "expected multi-line chunks (prefix header, rdf:Property blocks)"
     assert all("@prefix" in c or "rdf:Property" in c for c in multi)
     assert not any(c.startswith("data:") for c in multi), "ABox triples must be single-line"
+
+
+# ---------------------------------------------------------------------------
+# Visualisation refusal ceiling (D61)
+# ---------------------------------------------------------------------------
+
+
+def _ceiling_graph(n: int):
+    """Build a trivial connected DiGraph with exactly n nodes."""
+    import networkx as nx
+
+    G = nx.DiGraph()
+    for i in range(n):
+        G.add_node(f"person-{i}", label=f"P{i}", node_type="Person", confidence=0.9)
+    for i in range(n - 1):
+        G.add_edge(f"person-{i}", f"person-{i + 1}", edge_type="knows", confidence=0.8)
+    return G
+
+
+def test_html_skipped_above_render_ceiling(tmp_path: Path, monkeypatch) -> None:
+    """Over the ceiling, export_html writes nothing and warns."""
+    import warnings as _w
+
+    from mykg import config as _cfg
+
+    monkeypatch.setattr(_cfg, "EXPORT_HTML_MAX_NODES", 2)
+
+    with _w.catch_warnings(record=True) as caught:
+        _w.simplefilter("always")
+        result = export_html(_ceiling_graph(3), tmp_path)
+
+    assert result == ""
+    assert not (tmp_path / "knowledge_graph.html").exists()
+    assert any("render ceiling" in str(c.message) for c in caught)
+
+
+def test_html_written_at_exactly_the_ceiling(tmp_path: Path, monkeypatch) -> None:
+    """The comparison is '>', so a graph of exactly the ceiling still renders."""
+    from mykg import config as _cfg
+
+    monkeypatch.setattr(_cfg, "EXPORT_HTML_MAX_NODES", 2)
+
+    result = export_html(_ceiling_graph(2), tmp_path)
+
+    assert result
+    assert (tmp_path / "knowledge_graph.html").exists()
+
+
+def test_html_ceiling_minus_one_means_unlimited(tmp_path: Path, monkeypatch) -> None:
+    """-1 disables the ceiling entirely; no warning, file written."""
+    import warnings as _w
+
+    from mykg import config as _cfg
+
+    monkeypatch.setattr(_cfg, "EXPORT_HTML_MAX_NODES", -1)
+
+    with _w.catch_warnings(record=True) as caught:
+        _w.simplefilter("always")
+        result = export_html(_ceiling_graph(3), tmp_path)
+
+    assert result
+    assert (tmp_path / "knowledge_graph.html").exists()
+    assert not any("render ceiling" in str(c.message) for c in caught)
+
+
+def test_ceiling_skips_html_only_other_formats_unaffected(tmp_path: Path, monkeypatch) -> None:
+    """The full graph is still exported to every other format when HTML is refused."""
+    from mykg import config as _cfg
+    from mykg.exporter import export_networkx
+
+    monkeypatch.setattr(_cfg, "EXPORT_HTML_MAX_NODES", 1)
+
+    nodes = [
+        {
+            "id": f"person-{i}",
+            "type": "Person",
+            "confidence": 0.9,
+            "attributes": {"name": {"value": f"P{i}", "confidence": 1.0}},
+            "source_files": ["test.md"],
+        }
+        for i in range(3)
+    ]
+
+    written = export_networkx(nodes, {}, tmp_path)
+    nx_dir = tmp_path / "networkx_output"
+
+    # HTML refused: neither on disk nor reported as written.
+    assert "knowledge_graph.html" not in written
+    assert not (nx_dir / "knowledge_graph.html").exists()
+
+    # Every other format still produced.
+    for name in ("knowledge_graph.gml", "knowledge_graph.graphml", "knowledge_graph.json"):
+        assert name in written
+        assert (nx_dir / name).exists()
