@@ -25,10 +25,10 @@ This rule applies to *every* `/mykg query …` invocation and to every domain qu
 
 Only reuse an existing session when the user *explicitly* signals it. Explicit signals are any of:
 
-- The verbs **resume**, **continue**, **redo**, **append**, **sync**, **reconcile**, **approve**, **walkthrough**.
+- The verbs **resume**, **continue**, **redo**, **append**, **sync**, **reconcile**, **approve**, **walkthrough**, **prune**, **drift**.
 - A direct reference: **"the last session"**, **"the existing session"**, **"the same session"**, or a literal session name (typed as `--session <name>` or "session <name>").
 - A flag whose semantics require a session: **`--append`**, **`--sync`**, **`--update`**, **`--from-step <step>`**.
-- A subcommand that inherently targets a completed session: **`approve-schema`**, **`walkthrough`**.
+- A subcommand that inherently targets a completed session: **`approve-schema`**, **`walkthrough`**, **`detect-schema-drift`**, **`prune-schema`**.
 
 For anything else — including bare `/mykg <dir>`, `/mykg extract <dir>`, `/mykg extract more from <dir>`, "extract this folder" — pass **NO** `--session` flag. Words like "more", "again", "now", "next" are NOT explicit signals; they trigger a fresh session like every other plain extract command.
 
@@ -59,6 +59,10 @@ Trigger this skill whenever the user types `/mykg <anything>`. Map the intent to
 | `/mykg approve the schema` | `mykg approve-schema --session <most-recent>` (session-only subcommand) |
 | `/mykg make a walkthrough` | `mykg walkthrough --session <most-recent>` (session-only subcommand) |
 | `/mykg make a walkthrough for 2026-06-02T17-30-00` | `mykg walkthrough --session 2026-06-02T17-30-00` (literal session name) |
+| `/mykg detect schema drift` / `/mykg which concepts are unused` | `mykg detect-schema-drift --session <most-recent>` (session-only subcommand; read-only, no LLM, records `schema_drift.json`) |
+| `/mykg preview schema pruning` / `/mykg what would pruning remove` | `mykg prune-schema --session <most-recent> --preview` (writes `schema_prune_plan.json`; schema untouched) |
+| `/mykg prune the schema` / `/mykg remove unused concepts` | `mykg prune-schema --session <most-recent>` (**mutates `schema.json`** — run the preview first and confirm; no LLM) |
+| `/mykg apply the prune plan` | `mykg prune-schema --session <most-recent> --plan <session>/intermediate/schema_prune_plan.json` (applies the possibly user-edited plan; `--plan` and `--preview` are mutually exclusive) |
 | `/mykg convert pdfs in ./inbox to ./md` | `mykg parse-docs --input ./inbox --output ./md` (no session concept) |
 | `/mykg fetch https://example.com` | `mykg fetch-web https://example.com` (no session concept) |
 | `/mykg fetch https://example.com into ./my_output_dir` (user names the output folder) | `mykg fetch-web https://example.com --output ./my_output_dir` (no session concept) |
@@ -93,6 +97,8 @@ The skill MUST NOT hand-code flag tables. The single source of truth is the live
 EXTRACT_HELP=$(uv run mykg extract-graph --help 2>&1)
 WALKTHROUGH_HELP=$(uv run mykg walkthrough --help 2>&1)
 APPROVE_HELP=$(uv run mykg approve-schema --help 2>&1)
+DRIFT_HELP=$(uv run mykg detect-schema-drift --help 2>&1)
+PRUNE_HELP=$(uv run mykg prune-schema --help 2>&1)
 PARSE_HELP=$(uv run mykg parse-docs --help 2>&1)
 FETCH_HELP=$(uv run mykg fetch-web --help 2>&1)
 ```
@@ -148,13 +154,13 @@ If `.mcp.json` already exists but does **not** contain a `mykg` server entry, as
 
 From the user's `/mykg <free text>` message extract:
 
-1. **Verb** — extract / append / approve / walkthrough / parse / fetch / download / resume / init / merge / **query** → maps to a CLI subcommand, a refusal, or the read-only file-read path (`query`). Fetch / download (URL or GitHub repo) maps to `fetch-web` — no session, same category as `parse-docs`.
+1. **Verb** — extract / append / approve / walkthrough / detect-drift / prune / parse / fetch / download / resume / init / merge / **query** → maps to a CLI subcommand, a refusal, or the read-only file-read path (`query`). Fetch / download (URL or GitHub repo) maps to `fetch-web` — no session, same category as `parse-docs`.
 2. **Input dir** — the path the user named, or `.` if they said "this folder", or absent for session-only commands (including `query`).
 3. **Session** — **default: do not pass `--session` at all** so mykg auto-creates a fresh timestamped session. Only override the default when the current user message contains an explicit reuse signal (see "Default behaviour" above). Resolution order:
    1. **Literal session name.** User typed `--session <name>` or "session <name>" → use that exact name.
-   2. **Explicit reuse verb / phrase.** User said one of: **resume**, **continue**, **redo**, **append**, **approve**, **walkthrough**, **query**, **"the last session"**, **"the existing session"**, **"the same session"** → auto-detect the most-recent session: list `$SESSIONS_DIR` (read `sessions_dir` from `mykg_config.yaml`, default `mykg_sessions`), sort by mtime, pick newest.
+   2. **Explicit reuse verb / phrase.** User said one of: **resume**, **continue**, **redo**, **append**, **approve**, **walkthrough**, **prune**, **drift**, **query**, **"the last session"**, **"the existing session"**, **"the same session"** → auto-detect the most-recent session: list `$SESSIONS_DIR` (read `sessions_dir` from `mykg_config.yaml`, default `mykg_sessions`), sort by mtime, pick newest.
    3. **Reuse-implying flag.** User specified `--append` or `--from-step <step>` → auto-detect-most-recent (these flags only make sense against an existing session).
-   4. **Session-only verb.** Verb is `approve-schema`, `walkthrough`, or `query` → auto-detect-most-recent. (`query` is read-only and always operates against an existing session.)
+   4. **Session-only verb.** Verb is `approve-schema`, `walkthrough`, `detect-schema-drift`, `prune-schema`, or `query` → auto-detect-most-recent. (`query` is read-only and always operates against an existing session.)
    5. **Otherwise.** Do NOT pass `--session`. mykg creates a fresh session. This is the path for bare `/mykg <dir>`, `/mykg extract <dir>`, `/mykg extract more from <dir>`, "extract this folder", etc.
    6. **Reuse required but missing.** If rules 2/3/4 fire but no session exists under `$SESSIONS_DIR`, fail clearly: `"No existing sessions under <SESSIONS_DIR>. Run /mykg extract <dir> first to create one."`
 
@@ -348,7 +354,7 @@ About to run: uv run mykg extract-graph ./docs --append --session 2026-06-02T17-
 Reply "yes" to run, or correct me.
 ```
 
-For obviously safe actions (`walkthrough`, `parse-docs`, `fetch-web`), skip the confirmation and run.
+For obviously safe actions (`walkthrough`, `detect-schema-drift`, `prune-schema --preview`, `parse-docs`, `fetch-web`), skip the confirmation and run. `prune-schema` without `--preview` rewrites `schema.json`, so always confirm it, and offer the preview first if the user has not seen one.
 
 **`fetch-web` chained with `extract-graph`:** when the user's intent is "fetch
 and extract" (single seed or `--url-list`), run `fetch-web` directly (no
@@ -502,7 +508,7 @@ Track the wave count yourself. After 20 waves, tell the user:
 
 > Watch budget exhausted after 20 waves. Pipeline is still running (PID `$MYKG_PID`). Re-invoke `/mykg resume the last session` (or `/mykg --session <name> --continue`) to keep draining the inbox.
 
-### Stage 4b — synchronous path (`walkthrough`, `approve-schema`, `parse-docs`, `fetch-web`)
+### Stage 4b — synchronous path (`walkthrough`, `approve-schema`, `detect-schema-drift`, `prune-schema`, `parse-docs`, `fetch-web`)
 
 These subcommands do not write to the inbox. Run them in the foreground and report the resulting file path.
 
@@ -518,6 +524,14 @@ echo "Walkthrough: $SESSION_ROOT/walkthrough.md"
 ```bash
 uv run mykg approve-schema $ARGS
 echo "Approved: $SESSION_ROOT/intermediate/schema_approved.flag"
+```
+
+**`detect-schema-drift` / `prune-schema`:** no LLM, no inbox. Report the command's output verbatim; after a prune, remind the user that plain `--append` now drops documents about a removed type and `--append-with-grow-schema` can re-add them.
+
+```bash
+uv run mykg detect-schema-drift $ARGS            # writes $SESSION_ROOT/intermediate/schema_drift.json
+uv run mykg prune-schema $ARGS --preview         # writes $SESSION_ROOT/intermediate/schema_prune_plan.json
+uv run mykg prune-schema $ARGS                   # applies; backup in intermediate/schema.pre_prune.json
 ```
 
 **`parse-docs`:**
