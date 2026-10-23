@@ -2442,6 +2442,9 @@ def prune_schema(session, preview, plan_file):
     for e in plan.remove:
         click.echo(f"  removed {e.kind} {e.name}: {e.reason}")
     click.echo(f"Backup: {intermediate_dir / BACKUP_FILE}")
+    # Re-record before the refresh so the regenerated walkthrough sees a record that
+    # matches the pruned schema (otherwise Schema Health would show it as stale).
+    _run_drift_analysis(intermediate_dir, output_dir, quiet=True)
     follow_up = f"mykg extract-graph <dir> --session {session_root.name} --from-step validate_graph"
     try:
         refreshed = _refresh_after_prune(session_root, intermediate_dir, output_dir)
@@ -2456,8 +2459,6 @@ def prune_schema(session, preview, plan_file):
             "flattened_schema.json refreshed; nodes.json/edge_metadata.json missing, "
             f"so run: {follow_up}"
         )
-    # Re-record so schema_drift.json describes the pruned schema, not the old one.
-    _run_drift_analysis(intermediate_dir, output_dir, quiet=True)
     click.echo(
         "Note: with a frozen schema (plain --append) documents about a removed type are "
         "dropped; use --append-with-grow-schema when they return."
