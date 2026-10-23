@@ -40,7 +40,6 @@
 - [Command line](#command-line)
 - [Articles & Tutorials](#articles--tutorials)
 - [Configuration](#configuration)
-- [Troubleshooting](#troubleshooting)
 - [Extract Pipeline](#extract-pipeline)
   - [Running](#running)
   - [Sessions](#sessions)
@@ -65,6 +64,7 @@
   - [Schema Drift & Pruning](#schema-drift--pruning)
   - [Obsidian Vault Export](#obsidian-vault-export)
   - [Neo4j Load CSV Export](#neo4j-load-csv-export)
+- [Troubleshooting](#troubleshooting)
 - [Roadmap](#roadmap)
 - [Development](#development)
   - [Testing](#testing)
@@ -243,95 +243,6 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ANTHROPIC_API_KEY=sk-ant-...
 ```
 For source installs you can also copy [`sample.env.mykg`](sample.env.mykg) to `.env.mykg` as a starting template.
-
-
-## Troubleshooting
-
-### Token Budgets
-
-Each profile's `llm:` and `pipeline:` blocks carry a chain of token-budget values sized for that model's context window:
-
-- `llm.context_window` — the model's total context limit
-- `llm.max_output_tokens` — the output cap reserved for each LLM response
-- `pipeline.pass1.batch_token_target` and `pipeline.pass2.concat_batch_token_target` / `batch_token_target` — input budget per LLM call, sized to `(context_window − max_output_tokens) × 0.95`
-- `pipeline.chunking.window_tokens` / `overlap_tokens` — chunk size and overlap for splitting large files, sized to roughly `batch_token_target / 4` and `window_tokens × 0.10`
-
-The shipped values are tuned per profile (e.g. `claude-cli`/`anthropic-claude` assume a 200K context window, `openrouter-free`/`ollama-local` assume 64K). **If you switch to a different model — especially on `ollama-local` or `openrouter-free` — check that model's actual context window and rescale these values**, otherwise `window_tokens + max_output_tokens` may exceed what the model can actually handle, causing truncated or failed responses.
-
-Use the bundled `context-calculator` tool to recompute the chain for a new model:
-
-```bash
-# Compute a full token-budget chain from context window + output cap:
-context-calculator --context 64000 --max-output 32000
-
-# Or measure your actual corpus and suggest values for the active profile:
-context-calculator --from-config --input-dir my_notes/
-```
-
-`--from-config` reads the active profile from `mykg_config.yaml`, measures token counts across your input files, and writes suggested values to `mykg_config_candidate.yaml` for review before copying them into `mykg_config.yaml`.
-
-### Diagnosing Truncated/Rejected LLM Calls
-
-On JSON parse or validation errors in Pass 1/2, check `run.log` for a `mykg.llm.retry` warning just above the failure — always logged, regardless of `logging.llm_log`:
-
-- **`output truncated (finish_reason=...)`** — hit `max_output_tokens`. Lower `pipeline.chunking.window_tokens` or raise `llm.max_output_tokens`, then recompute with `context-calculator` (see [Token Budgets](#token-budgets)).
-- **`context length exceeded, request rejected: ...`** — input didn't fit the context window. Lower `batch_token_target` (`pipeline.pass1`/`pipeline.pass2`).
-
-### Pass 2 Prep Mode (`pass2.prep_mode`)
-
-Controls how source files are packed into Pass 2 LLM calls (set per profile in `mykg_config.yaml`):
-
-- **`batch_chunks`** *(default)* — packs chunks across files into token-bounded batches, ignoring file boundaries; best throughput and extraction density.
-- **`concat`** — merges whole small files into directory-grouped batches (one LLM call per window) for cross-file context.
-- **`per_file`** — one file per extraction unit; cleanest provenance (every entity traces to one source file). Fully updates a **modified** file on `--append` — its old nodes are cleanly replaced on re-extraction. (`batch_chunks` with `batch_per_file: true` gives the same guarantee; mixed-batch modes may retain stale copies — see [docs/architecture.md](docs/architecture.md#--append-change-detection-limits).)
-
-See [docs/architecture.md](docs/architecture.md#choosing-a-prep-mode) for the full comparison.
-
-### Hitting API Rate Limits (HTTP 429)
-
-A `429` surfaces in the log as a retry warning like:
-
-```
-[WARNING] mykg.llm.retry — OpenAI 429 rate-limit (attempt 1/5) — retrying in 2.0s
-```
-
-`429` is a "Too Many Requests" error. If you see repeated `429` errors during `pass1`, `pass2`, or the orphan-connection pass, your account's requests-per-minute limit is lower than the number of concurrent calls mykg is making. Each profile sets these independently under `pipeline:`:
-
-- `pass1.max_workers` — concurrent schema-induction batch calls
-- `pass2.max_workers` — concurrent per-file extraction calls
-- `orphan_pass.max_workers` — concurrent orphan-connection calls
-
-Lower these (e.g. from `8` down to `2`–`4`) in the active profile to reduce concurrent requests. This is especially likely on `openrouter-free` (free-tier models have very low per-minute caps), on `gemini` with a free-tier key (5 requests/minute/model — drop `pass1`/`pass2`/`orphan_pass` to `1`–`2`), and on lower-tier `anthropic-claude`/`openai` accounts. `llm.retry_429_max` / `llm.retry_429_base_delay` control automatic backoff on a 429, but a persistent 429 is a signal to reduce `max_workers`, not just retry harder. `claude-cli` is unaffected — it is serial by design (`max_workers: 1`); it doesn't hit API rate limits since there's no API call. `agent-claude-code` is not API rate-limited either (no API key involved), but it is not serial — its default profile sets `pass1`/`pass2`/`orphan_pass` `max_workers` > 1 (configurable, like any other profile), since the skill dispatches multiple subagents per wave.
-
-**Also check your quota/credits.** Some providers return `429` when your account has exhausted its token quota or spending balance, not only for request cadence. If lowering `max_workers` doesn't help and the 429s persist from the very first call, **check that your account still has available tokens/credits** (e.g. the OpenAI/Anthropic billing dashboard, or your OpenRouter balance). No `max_workers` value will clear a 429 caused by a depleted balance — top up or switch to a profile with quota (e.g. `ollama-local` for local inference, or `claude-cli` which bills via your Claude Pro/Max plan instead of the API).
-
-
-### Non-Reproducible Extraction (Different Graph Each Run)
-
-If the same corpus produces a different schema or a different set of nodes and
-edges on each run, sampling temperature is the usual cause.
-
-myKG sends `temperature: 0.0` on every LLM call so extraction is repeatable —
-it is a structured-output task, not a creative one, and provider defaults
-(typically ~1.0) work against that. Two cases fall outside it, and in both the
-provider's own sampling applies:
-
-- **Models that reject an explicit temperature** — OpenAI's o-series and gpt-5
-  reasoning families — have it omitted automatically and use their own fixed
-  sampling.
-- **`claude-cli` and `agent`** have no temperature control at all: `claude -p`
-  exposes no such flag, and the host Claude Code session servicing the agent
-  inbox has no sampling dial. These two profiles accept the setting and ignore
-  it, so extraction on them is **not** reproducible in the sense above.
-
-If you need reproducibility, switch to a profile whose provider exposes
-temperature (`anthropic-claude`, `openai` on a non-reasoning model, `gemini`,
-`ollama-local`, `openrouter-free`).
-
-> Changed in 0.4.5 — earlier versions sent no temperature at all and inherited
-> each provider's default. If you were relying on that, extraction output will
-> shift. To restore the old behaviour, set an explicit empty `temperature:` in
-> the active profile's `llm:` block; a `null` value means "send nothing".
 
 
 ## Extract Pipeline
@@ -1300,6 +1211,94 @@ Do not use `--from-step schema_flatten` for this: it deletes the Pass 2 outputs.
 Note: locks come only from a `--base-schema` given on a fresh run (recorded in `intermediate/base_schema_parsed.json`). `--append-with-grow-schema` does not write that file, so a session without it has no locks: the commands print `no locked schema recorded; treating all entries as unlocked`.
 
 Typical order: sync, then detect, then prune. The walkthrough shows a **Schema Health** section once `schema_drift.json` exists (marked stale if the schema or graph changed since), and the MCP server's read-only `mykg_schema_drift` tool computes the report live from the graph as loaded in memory. Details: [docs/architecture.md](docs/architecture.md#schema-drift-and-pruning).
+
+## Troubleshooting
+
+### Token Budgets
+
+Each profile's `llm:` and `pipeline:` blocks carry a chain of token-budget values sized for that model's context window:
+
+- `llm.context_window` — the model's total context limit
+- `llm.max_output_tokens` — the output cap reserved for each LLM response
+- `pipeline.pass1.batch_token_target` and `pipeline.pass2.concat_batch_token_target` / `batch_token_target` — input budget per LLM call, sized to `(context_window − max_output_tokens) × 0.95`
+- `pipeline.chunking.window_tokens` / `overlap_tokens` — chunk size and overlap for splitting large files, sized to roughly `batch_token_target / 4` and `window_tokens × 0.10`
+
+The shipped values are tuned per profile (e.g. `claude-cli`/`anthropic-claude` assume a 200K context window, `openrouter-free`/`ollama-local` assume 64K). **If you switch to a different model — especially on `ollama-local` or `openrouter-free` — check that model's actual context window and rescale these values**, otherwise `window_tokens + max_output_tokens` may exceed what the model can actually handle, causing truncated or failed responses.
+
+Use the bundled `context-calculator` tool to recompute the chain for a new model:
+
+```bash
+# Compute a full token-budget chain from context window + output cap:
+context-calculator --context 64000 --max-output 32000
+
+# Or measure your actual corpus and suggest values for the active profile:
+context-calculator --from-config --input-dir my_notes/
+```
+
+`--from-config` reads the active profile from `mykg_config.yaml`, measures token counts across your input files, and writes suggested values to `mykg_config_candidate.yaml` for review before copying them into `mykg_config.yaml`.
+
+### Diagnosing Truncated/Rejected LLM Calls
+
+On JSON parse or validation errors in Pass 1/2, check `run.log` for a `mykg.llm.retry` warning just above the failure — always logged, regardless of `logging.llm_log`:
+
+- **`output truncated (finish_reason=...)`** — hit `max_output_tokens`. Lower `pipeline.chunking.window_tokens` or raise `llm.max_output_tokens`, then recompute with `context-calculator` (see [Token Budgets](#token-budgets)).
+- **`context length exceeded, request rejected: ...`** — input didn't fit the context window. Lower `batch_token_target` (`pipeline.pass1`/`pipeline.pass2`).
+
+### Pass 2 Prep Mode (`pass2.prep_mode`)
+
+Controls how source files are packed into Pass 2 LLM calls (set per profile in `mykg_config.yaml`):
+
+- **`batch_chunks`** *(default)* — packs chunks across files into token-bounded batches, ignoring file boundaries; best throughput and extraction density.
+- **`concat`** — merges whole small files into directory-grouped batches (one LLM call per window) for cross-file context.
+- **`per_file`** — one file per extraction unit; cleanest provenance (every entity traces to one source file). Fully updates a **modified** file on `--append` — its old nodes are cleanly replaced on re-extraction. (`batch_chunks` with `batch_per_file: true` gives the same guarantee; mixed-batch modes may retain stale copies — see [docs/architecture.md](docs/architecture.md#--append-change-detection-limits).)
+
+See [docs/architecture.md](docs/architecture.md#choosing-a-prep-mode) for the full comparison.
+
+### Hitting API Rate Limits (HTTP 429)
+
+A `429` surfaces in the log as a retry warning like:
+
+```
+[WARNING] mykg.llm.retry — OpenAI 429 rate-limit (attempt 1/5) — retrying in 2.0s
+```
+
+`429` is a "Too Many Requests" error. If you see repeated `429` errors during `pass1`, `pass2`, or the orphan-connection pass, your account's requests-per-minute limit is lower than the number of concurrent calls mykg is making. Each profile sets these independently under `pipeline:`:
+
+- `pass1.max_workers` — concurrent schema-induction batch calls
+- `pass2.max_workers` — concurrent per-file extraction calls
+- `orphan_pass.max_workers` — concurrent orphan-connection calls
+
+Lower these (e.g. from `8` down to `2`–`4`) in the active profile to reduce concurrent requests. This is especially likely on `openrouter-free` (free-tier models have very low per-minute caps), on `gemini` with a free-tier key (5 requests/minute/model — drop `pass1`/`pass2`/`orphan_pass` to `1`–`2`), and on lower-tier `anthropic-claude`/`openai` accounts. `llm.retry_429_max` / `llm.retry_429_base_delay` control automatic backoff on a 429, but a persistent 429 is a signal to reduce `max_workers`, not just retry harder. `claude-cli` is unaffected — it is serial by design (`max_workers: 1`); it doesn't hit API rate limits since there's no API call. `agent-claude-code` is not API rate-limited either (no API key involved), but it is not serial — its default profile sets `pass1`/`pass2`/`orphan_pass` `max_workers` > 1 (configurable, like any other profile), since the skill dispatches multiple subagents per wave.
+
+**Also check your quota/credits.** Some providers return `429` when your account has exhausted its token quota or spending balance, not only for request cadence. If lowering `max_workers` doesn't help and the 429s persist from the very first call, **check that your account still has available tokens/credits** (e.g. the OpenAI/Anthropic billing dashboard, or your OpenRouter balance). No `max_workers` value will clear a 429 caused by a depleted balance — top up or switch to a profile with quota (e.g. `ollama-local` for local inference, or `claude-cli` which bills via your Claude Pro/Max plan instead of the API).
+
+
+### Non-Reproducible Extraction (Different Graph Each Run)
+
+If the same corpus produces a different schema or a different set of nodes and
+edges on each run, sampling temperature is the usual cause.
+
+myKG sends `temperature: 0.0` on every LLM call so extraction is repeatable —
+it is a structured-output task, not a creative one, and provider defaults
+(typically ~1.0) work against that. Two cases fall outside it, and in both the
+provider's own sampling applies:
+
+- **Models that reject an explicit temperature** — OpenAI's o-series and gpt-5
+  reasoning families — have it omitted automatically and use their own fixed
+  sampling.
+- **`claude-cli` and `agent`** have no temperature control at all: `claude -p`
+  exposes no such flag, and the host Claude Code session servicing the agent
+  inbox has no sampling dial. These two profiles accept the setting and ignore
+  it, so extraction on them is **not** reproducible in the sense above.
+
+If you need reproducibility, switch to a profile whose provider exposes
+temperature (`anthropic-claude`, `openai` on a non-reasoning model, `gemini`,
+`ollama-local`, `openrouter-free`).
+
+> Changed in 0.4.5 — earlier versions sent no temperature at all and inherited
+> each provider's default. If you were relying on that, extraction output will
+> shift. To restore the old behaviour, set an explicit empty `temperature:` in
+> the active profile's `llm:` block; a `null` value means "send nothing".
 
 ## Roadmap
 
