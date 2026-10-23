@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shlex
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -288,7 +289,7 @@ def _section_schema_evolution(session_root: Path) -> str:
 def _current_drift_fingerprint(session_root: Path) -> str | None:
     """Fingerprint of the session's current schema + instance counts, or None
     when schema.json or the exported nodes/edges cannot be read."""
-    from mykg.schema_drift import _fingerprint, stream_jsonl
+    from mykg.schema_drift import LockedSchema, SchemaDriftError, _fingerprint, stream_jsonl
 
     schema = _load_json(session_root / "intermediate" / "schema.json")
     nodes_path = session_root / "output" / "nodes.jsonl"
@@ -303,7 +304,17 @@ def _current_drift_fingerprint(session_root: Path) -> str | None:
     for edge in stream_jsonl(edges_path):
         t = edge.get("type")
         edge_counts[t] = edge_counts.get(t, 0) + 1
-    return _fingerprint(schema, node_counts, edge_counts)
+    # Same locks the CLI's drift analysis used; a missing file means no locks.
+    parsed = None
+    parsed_path = session_root / "intermediate" / "base_schema_parsed.json"
+    try:
+        if parsed_path.exists():
+            parsed = json.loads(parsed_path.read_text(encoding="utf-8"))
+        locked = LockedSchema.from_parsed(parsed)
+    except (SchemaDriftError, OSError, UnicodeDecodeError, ValueError) as exc:
+        log.debug("Could not read %s: %s", parsed_path, exc)
+        return None
+    return _fingerprint(schema, node_counts, edge_counts, locked)
 
 
 def _section_schema_health(session_root: Path) -> str | None:
@@ -313,7 +324,7 @@ def _section_schema_health(session_root: Path) -> str | None:
     drift_path = session_root / "intermediate" / DRIFT_FILE
     if not drift_path.exists():
         return None
-    name = session_root.name
+    name = shlex.quote(session_root.name)
     out = ["## 5. Schema Health", ""]
     try:
         report = DriftReport.model_validate_json(drift_path.read_text(encoding="utf-8"))
@@ -331,8 +342,8 @@ def _section_schema_health(session_root: Path) -> str | None:
         current = None
     if current is None:
         out.append(
-            "*The drift record cannot be verified (schema.json or output/nodes.jsonl / "
-            "edges.jsonl missing or unreadable); treat the figures below as unverified.*"
+            "*The drift record cannot be verified (schema.json, output/nodes.jsonl / "
+            "edges.jsonl or base_schema_parsed.json missing or unreadable); treat the figures below as unverified.*"
         )
         out.append("")
     elif current != report.schema_fingerprint:
