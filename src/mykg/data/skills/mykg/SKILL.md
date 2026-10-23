@@ -526,7 +526,7 @@ uv run mykg approve-schema $ARGS
 echo "Approved: $SESSION_ROOT/intermediate/schema_approved.flag"
 ```
 
-**`detect-schema-drift` / `prune-schema`:** no LLM, no inbox. Report the command's output verbatim; after a prune, remind the user that plain `--append` now drops documents about a removed type and `--append-with-grow-schema` can re-add them.
+**`detect-schema-drift` / `prune-schema`:** no LLM, no inbox. Report the command's output verbatim; after a prune, remind the user that plain `--append` now drops documents about a removed type and `--append-with-grow-schema` can re-add them. An empty plan prints `Nothing to prune.` and changes nothing. If the user wants to undo a prune, give the sequence the command prints (do not invent your own, and never suggest `--from-step schema_flatten`, which deletes Pass 2 outputs): copy `intermediate/schema.pre_prune.json` over `schema.json`; `mykg approve-schema --session <S>`; delete `intermediate/flattened_schema.json` (it is NOT regenerated automatically); `mykg extract-graph <dir> --session <S> --from-step validate_graph`; re-run `mykg detect-schema-drift --session <S>`.
 
 ```bash
 uv run mykg detect-schema-drift $ARGS            # writes $SESSION_ROOT/intermediate/schema_drift.json
