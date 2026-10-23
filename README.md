@@ -27,7 +27,7 @@
 
 ## Updates
 
-- **Unreleased** — Schema drift detection and pruning: `mykg detect-schema-drift` reports concepts and properties the graph no longer uses, and `mykg prune-schema` removes them (with `--preview`, an editable plan file, and a backup). See [Schema Drift & Pruning](#schema-drift--pruning).
+- **v0.4.10** — Schema drift detection and pruning: `mykg detect-schema-drift` reports concepts and properties the graph no longer uses, and `mykg prune-schema` removes them (with `--preview`, an editable plan file, and a backup). See [Schema Drift & Pruning](#schema-drift--pruning).
 
 - **v0.4.9** — The `nodes.jsonl`, `edges.jsonl` and `knowledge_graph.ttl` exports now stream to disk record by record instead of building the whole file in memory first, so peak memory stays flat as the graph grows.
 
