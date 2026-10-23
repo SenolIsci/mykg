@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shlex
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -21,7 +22,7 @@ from mykg import config as _cfg
 from mykg.exporters.neo4j._common import load_session
 from mykg.exporter import _build_nx_graph
 from mykg.orphan_connector import build_chunk_texts
-from mykg.schema_drift import LockedSchema, analyze_drift
+from mykg.schema_drift import LockedSchema, SchemaDriftError, analyze_drift
 
 _log = logging.getLogger("mykg.mcp_server")
 
@@ -837,8 +838,12 @@ def _load_locked_schema(session_root: Path) -> tuple[LockedSchema | None, str]:
     try:
         parsed = json.loads(path.read_text(encoding="utf-8"))
         locked = LockedSchema.from_parsed(parsed)
-    except (json.JSONDecodeError, OSError, AttributeError, TypeError):
-        return None, f"{path.name} could not be read: locks are not applied."
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError, SchemaDriftError,
+            AttributeError, TypeError):
+        return None, (
+            f"{path.name} could not be read: locks are not applied, so locked entries may be "
+            "shown as prunable below. Do not prune until the lock file is fixed."
+        )
     return locked, (
         f"Locks read from base_schema_parsed.json: {len(locked.classes)} locked concept(s), "
         f"{len(locked.properties)} locked property(ies)."
@@ -864,7 +869,10 @@ async def mykg_schema_drift(ctx: Context) -> str:
     """
     kg = _get_kg(ctx)
     locked, lock_notice = _load_locked_schema(kg.session_root)
-    report = analyze_drift(kg.schema, iter(kg.nodes), iter(kg.edges), locked)
+    try:
+        report = analyze_drift(kg.schema, iter(kg.nodes), iter(kg.edges), locked)
+    except (SchemaDriftError, KeyError, TypeError, AttributeError) as exc:
+        return f"Cannot compute schema drift: {exc!r}"
 
     lines = [
         f"Schema drift report for session {kg.session_name} "
@@ -884,6 +892,12 @@ async def mykg_schema_drift(ctx: Context) -> str:
     lines.append(f"Unused properties: {len(unused_p)}")
     for p in unused_p:
         lines.append(f"  - {p.name} [{p.classification}] ({p.domain} -> {p.range}): {p.reason}")
+    null_rows = [c for c in report.concepts if c.always_null_attributes]
+    if null_rows:
+        lines.append("")
+        lines.append("Always-null attributes (info only, never pruned):")
+        for c in null_rows:
+            lines.append(f"  - {c.name}: {', '.join(c.always_null_attributes)}")
     lines.append("")
     lines.append("Reverse drift (used in the graph but not declared in the schema):")
     if report.undeclared_node_types or report.undeclared_edge_types:
@@ -895,7 +909,7 @@ async def mykg_schema_drift(ctx: Context) -> str:
         lines.append("  none")
     lines.append("")
     lines.append(
-        f"This tool never prunes. Run `mykg prune-schema --session {kg.session_name} --preview` "
+        f"This tool never prunes. Run `mykg prune-schema --session {shlex.quote(kg.session_name)} --preview` "
         "(CLI) to see what pruning would remove."
     )
     return "\n".join(lines)

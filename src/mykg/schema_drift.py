@@ -33,8 +33,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, ValidationError
 
 from mykg.logging import get
+from mykg.schema_flattener import flatten_schema
 from mykg.schema_history import TRIGGER_SCHEMA_PRUNE, write_schema
-from mykg.utility.atomic_io import atomic_write_json
+from mykg.utility.atomic_io import atomic_write_json, atomic_write_lines
 
 log = get("mykg.schema_drift")
 
@@ -52,10 +53,29 @@ class SchemaDriftError(Exception):
 
 def _locked_names(entries: Any, key: str) -> set[str]:
     """Names from a parsed locked block: a name-keyed dict (as ``parse_base_schema``
-    emits) or a list of names / entry dicts."""
+    emits) or a list of names / entry dicts. Any other shape raises
+    ``SchemaDriftError``."""
+    if entries is None:
+        return set()
     if isinstance(entries, dict):
         return {str(n) for n in entries}
-    return {e if isinstance(e, str) else str(e.get(key, "")) for e in entries or []}
+    if not isinstance(entries, list):
+        raise SchemaDriftError(
+            "base_schema_parsed.json: locked block must be an object or list, "
+            f"got {type(entries).__name__}"
+        )
+    names: set[str] = set()
+    for e in entries:
+        if isinstance(e, str):
+            names.add(e)
+        elif isinstance(e, dict) and isinstance(e.get(key), str):
+            names.add(e[key])
+        else:
+            raise SchemaDriftError(
+                f"base_schema_parsed.json: locked entry {e!r} must be a string or an "
+                f"object with a string '{key}'"
+            )
+    return names
 
 
 class LockedSchema(BaseModel):
@@ -68,6 +88,10 @@ class LockedSchema(BaseModel):
     def from_parsed(cls, parsed: dict | None) -> LockedSchema:
         """Build from ``base_schema_parsed.json`` content; None/empty -> no locks."""
         parsed = parsed or {}
+        if not isinstance(parsed, dict):
+            raise SchemaDriftError(
+                f"base_schema_parsed.json must be a JSON object, got {type(parsed).__name__}"
+            )
         return cls(
             classes=_locked_names(parsed.get("locked_classes"), "type"),
             properties=_locked_names(parsed.get("locked_properties"), "name"),
@@ -139,7 +163,7 @@ def _now() -> str:
 def stream_jsonl(path: Path) -> Iterator[dict]:
     """Yield one dict per non-blank JSONL line, streaming (Invariant 19).
 
-    A missing or corrupt file raises ``SchemaDriftError``: an absent export must
+    A missing or corrupt file, or a row that is not a JSON object, raises ``SchemaDriftError``: an absent export must
     not read as "zero instances", which would make every entry look prunable.
     """
     path = Path(path)
@@ -151,9 +175,14 @@ def stream_jsonl(path: Path) -> Iterator[dict]:
             if not line:
                 continue
             try:
-                yield json.loads(line)
+                row = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise SchemaDriftError(f"{path}:{lineno} is not valid JSON: {exc}") from exc
+            if not isinstance(row, dict):
+                raise SchemaDriftError(
+                    f"{path}:{lineno} must be a JSON object, got {type(row).__name__}"
+                )
+            yield row
 
 
 def _is_null(attr: Any) -> bool:
@@ -161,9 +190,16 @@ def _is_null(attr: Any) -> bool:
     return value is None
 
 
-def _fingerprint(schema: dict, node_counts: dict, edge_counts: dict) -> str:
+def _fingerprint(
+    schema: dict, node_counts: dict, edge_counts: dict, locked: LockedSchema | None = None
+) -> str:
+    """Digest of schema + per-type counts + the locked name sets, so a plan or
+    record goes stale when the graph, the schema or the base-schema locks change."""
+    locked = locked or LockedSchema()
     payload = {
         "schema": schema,
+        "locked_classes": sorted(locked.classes),
+        "locked_properties": sorted(locked.properties),
         "node_counts": {str(k): v for k, v in sorted(node_counts.items(), key=lambda x: str(x[0]))},
         "edge_counts": {str(k): v for k, v in sorted(edge_counts.items(), key=lambda x: str(x[0]))},
     }
@@ -183,6 +219,32 @@ def _ancestors(name: str, parents: dict[str, str | None]) -> list[str]:
     return out
 
 
+def _check_schema_shape(schema: Any) -> None:
+    """Raise ``SchemaDriftError`` unless ``schema`` has well-formed entries."""
+    if not isinstance(schema, dict):
+        raise SchemaDriftError(f"schema must be a JSON object, got {type(schema).__name__}")
+    for key, name_key in (("concepts", "type"), ("properties", "name")):
+        entries = schema.get(key, [])
+        if not isinstance(entries, list):
+            raise SchemaDriftError(f"schema '{key}' must be a list")
+        for i, e in enumerate(entries):
+            if not isinstance(e, dict) or not isinstance(e.get(name_key), str):
+                raise SchemaDriftError(
+                    f"schema {key}[{i}] must be an object with a string '{name_key}'"
+                )
+            if key == "concepts" and not isinstance(e.get("attributes", []), list):
+                raise SchemaDriftError(
+                    f"schema concept '{e[name_key]}': 'attributes' must be a list"
+                )
+
+
+def _row_type(row: dict, what: str) -> str | None:
+    t = row.get("type")
+    if t is not None and not isinstance(t, str):
+        raise SchemaDriftError(f"{what} {row.get('id')!r}: 'type' must be a string")
+    return t
+
+
 def analyze_drift(
     schema: dict,
     nodes_iter: Iterable[dict],
@@ -191,6 +253,7 @@ def analyze_drift(
 ) -> DriftReport:
     """Single streaming pass over nodes and edges; classify every schema entry."""
     locked = locked or LockedSchema()
+    _check_schema_shape(schema)
     concepts = schema.get("concepts", [])
     properties = schema.get("properties", [])
     parents: dict[str, str | None] = {c["type"]: c.get("parent") for c in concepts}
@@ -199,15 +262,25 @@ def analyze_drift(
     node_counts: dict[str, int] = {}
     nonnull_attrs: dict[str, set[str]] = {}
     for node in nodes_iter:
-        t = node.get("type")
+        if not isinstance(node, dict):
+            raise SchemaDriftError(f"node row must be a JSON object, got {type(node).__name__}")
+        t = _row_type(node, "node")
         node_counts[t] = node_counts.get(t, 0) + 1
         seen = nonnull_attrs.setdefault(t, set())
-        for k, v in (node.get("attributes") or {}).items():
+        attrs = node.get("attributes") or {}
+        if not isinstance(attrs, dict):
+            raise SchemaDriftError(
+                f"node {node.get('id')!r}: 'attributes' must be a JSON object, "
+                f"got {type(attrs).__name__}"
+            )
+        for k, v in attrs.items():
             if not _is_null(v):
                 seen.add(k)
     edge_counts: dict[str, int] = {}
     for edge in edges_iter:
-        t = edge.get("type")
+        if not isinstance(edge, dict):
+            raise SchemaDriftError(f"edge row must be a JSON object, got {type(edge).__name__}")
+        t = _row_type(edge, "edge")
         edge_counts[t] = edge_counts.get(t, 0) + 1
 
     # An attribute counts as populated for a concept if any node of it or of a
@@ -294,7 +367,7 @@ def analyze_drift(
     declared_props = {p["name"] for p in properties}
     return DriftReport(
         timestamp=_now(),
-        schema_fingerprint=_fingerprint(schema, node_counts, edge_counts),
+        schema_fingerprint=_fingerprint(schema, node_counts, edge_counts, locked),
         concepts=concept_rows,
         properties=property_rows,
         undeclared_node_types={
@@ -317,30 +390,44 @@ def record_drift(report: DriftReport, intermediate_dir: Path) -> Path:
     return path
 
 
-def plan_prune(report: DriftReport) -> PrunePlan:
-    """Plan removing every ``prunable`` entry; other unused entries go to ``keep``."""
-    remove: list[PlanEntry] = []
+def _derive_keep_totals(
+    report: DriftReport, remove: list[PlanEntry]
+) -> tuple[list[PlanEntry], PruneTotals]:
+    """``keep`` (unused entries not being removed) and ``totals``, both derived from
+    ``remove`` and the report; never read from a stored plan."""
+    removed = {(e.kind, e.name) for e in remove}
     keep: list[PlanEntry] = []
     for kind, rows in (("concept", report.concepts), ("property", report.properties)):
         for r in rows:
-            if r.classification == "prunable":
-                remove.append(PlanEntry(kind=kind, name=r.name, reason=r.reason))
-            elif r.classification != "used":
+            if r.classification != "used" and (kind, r.name) not in removed:
                 keep.append(
                     PlanEntry(kind=kind, name=r.name, reason=f"{r.classification}: {r.reason}")
                 )
     n_c, n_p = len(report.concepts), len(report.properties)
-    r_c = sum(1 for e in remove if e.kind == "concept")
-    r_p = len(remove) - r_c
+    r_c = sum(1 for k, _ in removed if k == "concept")
+    r_p = len(removed) - r_c
+    totals = PruneTotals(
+        before=PlanTotals(concepts=n_c, properties=n_p),
+        after=PlanTotals(concepts=n_c - r_c, properties=n_p - r_p),
+    )
+    return keep, totals
+
+
+def plan_prune(report: DriftReport) -> PrunePlan:
+    """Plan removing every ``prunable`` entry; other unused entries go to ``keep``."""
+    remove = [
+        PlanEntry(kind=kind, name=r.name, reason=r.reason)
+        for kind, rows in (("concept", report.concepts), ("property", report.properties))
+        for r in rows
+        if r.classification == "prunable"
+    ]
+    keep, totals = _derive_keep_totals(report, remove)
     return PrunePlan(
         schema_fingerprint=report.schema_fingerprint,
         created_at=_now(),
         remove=remove,
         keep=keep,
-        totals=PruneTotals(
-            before=PlanTotals(concepts=n_c, properties=n_p),
-            after=PlanTotals(concepts=n_c - r_c, properties=n_p - r_p),
-        ),
+        totals=totals,
     )
 
 
@@ -417,30 +504,78 @@ def validate_plan(plan: PrunePlan, report: DriftReport) -> None:
     )
 
 
-def apply_prune(plan: PrunePlan, intermediate_dir: Path, report: DriftReport | None = None) -> dict:
+def recompute_plan(plan: PrunePlan, report: DriftReport) -> PrunePlan:
+    """Validate ``plan`` against ``report``; return a copy whose ``keep`` and
+    ``totals`` are recomputed from the validated ``remove`` list (duplicates
+    dropped). The stored values of a loaded, possibly hand-edited plan are
+    informational and ignored."""
+    validate_plan(plan, report)
+    seen: set[tuple[str, str]] = set()
+    remove: list[PlanEntry] = []
+    reasons = {
+        "concept": {r.name: r.reason for r in report.concepts},
+        "property": {r.name: r.reason for r in report.properties},
+    }
+    for e in plan.remove:
+        if (e.kind, e.name) not in seen:
+            seen.add((e.kind, e.name))
+            # Reasons come from the report: the plan's own text is informational.
+            remove.append(e.model_copy(update={"reason": reasons[e.kind][e.name]}))
+    keep, totals = _derive_keep_totals(report, remove)
+    return plan.model_copy(update={"remove": remove, "keep": keep, "totals": totals})
+
+
+def apply_prune(plan: PrunePlan, intermediate_dir: Path, report: DriftReport) -> dict:
     """Apply ``plan`` to ``schema.json``; returns the pruned schema.
 
-    Pass a freshly computed ``report`` to also run ``validate_plan`` (fingerprint,
-    locked/structural/gained-instances checks) before anything is written; without
-    it only structural consistency is checked, so callers must validate first.
-    The backup ``schema.pre_prune.json`` holds the schema as it was before the
-    most recent prune (a second prune overwrites it).
+    ``report`` (freshly computed from the current graph) is required: the plan is
+    always run through ``validate_plan`` first (fingerprint, locked / structural /
+    used checks), so a stale or hand-edited plan can never remove an entry the
+    graph uses. An empty ``plan.remove`` returns the unchanged schema immediately:
+    no backup, no history entry, no write.
 
-    The pruned schema is validated in memory first; any problem aborts with
-    nothing written. Only schema.json / schema.ttl / history / the backup are
+    The backup ``schema.pre_prune.json`` holds the schema as it was before the
+    most recent prune (a second prune overwrites it). The pruned schema is
+    validated in memory first; any problem aborts with nothing written. Only
+    schema.json / schema.ttl / flattened_schema.json / history / the backup are
     touched; nodes, edges and shards never are.
+
+    ``flattened_schema.json`` is regenerated from the pruned schema only if it
+    already exists (a session that never flattened has nothing stale; the
+    ``schema_flatten`` step creates it later).
+
+    Crash window: the writes are not one transaction. They are ordered so a re-run
+    is idempotent: backup, then the derived files (``schema.ttl``,
+    ``flattened_schema.json``; each written atomically), then ``schema.json`` plus
+    its history delta last. A crash before ``schema.json`` lands leaves the old
+    schema authoritative; re-running the prune (preview + apply) redoes it all and
+    rewrites the derived files identically. A crash after ``schema.json`` but
+    before the history delta only loses that audit record, and
+    ``mykg approve-schema`` regenerates ``schema.ttl`` if it is ever stale.
+    Concurrent writers are not serialized (the CLI refuses to run while a step is
+    running).
     """
     from mykg.exporter import export_ttl
     from mykg.schema_validator import validate_schema_ttl
 
-    if report is not None:
-        validate_plan(plan, report)
+    plan = recompute_plan(plan, report)
     intermediate_dir = Path(intermediate_dir)
     schema_path = intermediate_dir / "schema.json"
     try:
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise SchemaDriftError(f"Cannot read {schema_path}: {exc}") from exc
+    _check_schema_shape(schema)
+    if {c["type"] for c in schema.get("concepts", [])} != {r.name for r in report.concepts} or {
+        p["name"] for p in schema.get("properties", [])
+    } != {r.name for r in report.properties}:
+        raise SchemaDriftError(
+            "schema.json changed since the drift report was computed; re-run the preview"
+        )
+
+    if not plan.remove:
+        log.info("schema_drift — nothing to prune")
+        return schema
 
     declared_c = {c["type"] for c in schema.get("concepts", [])}
     declared_p = {p["name"] for p in schema.get("properties", [])}
@@ -460,8 +595,13 @@ def apply_prune(plan: PrunePlan, intermediate_dir: Path, report: DriftReport | N
     result = validate_schema_ttl(ttl)
     if not result.valid:
         raise SchemaDriftError(f"Pruned schema failed validation: {result.errors}")
+    flat = flatten_schema(pruned)
 
     shutil.copy2(schema_path, intermediate_dir / BACKUP_FILE)
+    atomic_write_lines(intermediate_dir / "schema.ttl", ttl.rstrip("\n").split("\n"))
+    flat_path = intermediate_dir / "flattened_schema.json"
+    if flat_path.exists():
+        atomic_write_json(flat_path, flat)
     write_schema(
         pruned,
         intermediate_dir,
@@ -470,6 +610,5 @@ def apply_prune(plan: PrunePlan, intermediate_dir: Path, report: DriftReport | N
             "pruned": [{"kind": e.kind, "name": e.name, "reason": e.reason} for e in plan.remove]
         },
     )
-    (intermediate_dir / "schema.ttl").write_text(ttl, encoding="utf-8")
     log.info("schema_drift — pruned %d concept(s), %d property(ies)", len(rm_c), len(rm_p))
     return pruned
