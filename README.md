@@ -77,7 +77,7 @@ MyKG builds trustworthy knowledge graphs through a self-evolving ontology that c
 
 - **AI coding assistant friendly** — designed for smooth use alongside AI coding assistants such as [Claude Code](https://claude.ai/code); Use the Claude Code Skill to run extractions, inspect outputs, and iterate on your knowledge graph without leaving your coding environment; see [Using mykg with Claude Code](#using-mykg-with-claude-code)
 - **Second brain for AI coding assistants** — the Obsidian vault output turns your extracted knowledge graph into a directory of wikilinked Markdown notes that any AI coding assistant can read as project context; point Claude Code, Cursor, or Copilot at `output/obsidian_vault/` and ask questions, trace relationships, and get answers grounded in your own documents
-- **MCP server for desktop AI apps** — run `mykg mcp-serve` to expose your knowledge graph via the [Model Context Protocol](https://modelcontextprotocol.io/); integrates with [Claude Desktop](https://claude.ai/download), [Cherry Studio](https://cherry-ai.com), and any MCP-compatible client — 13 query tools let LLMs search entities, explore relationships, find paths, traverse the graph, and read wiki notes directly from your extracted knowledge; see [MCP Server](#mcp-model-context-protocol-server)
+- **MCP server for desktop AI apps** — run `mykg mcp-serve` to expose your knowledge graph via the [Model Context Protocol](https://modelcontextprotocol.io/); integrates with [Claude Desktop](https://claude.ai/download), [Cherry Studio](https://cherry-ai.com), and any MCP-compatible client — 16 query tools let LLMs search entities, explore relationships, find paths, traverse the graph, and read wiki notes directly from your extracted knowledge; see [MCP Server](#mcp-model-context-protocol-server)
 - **Incremental updates** — append new files to an existing session, extracting only what changed. Optionally grow the schema from new documents while preserving existing concepts and properties
 - **Resumable pipeline** — every stage persists intermediate state; re-enter at any step after a crash or edit
 - **Session isolation** — each run is fully self-contained; inputs, intermediate state, outputs, and logs co-located
@@ -1070,7 +1070,7 @@ If you also have the [`/mykg` skill](#agent-mode-claude-code-skill) installed, t
 }
 ```
 
-The MCP server exposes 14 tools: `mykg_search_nodes`, `mykg_get_node`, `mykg_get_neighbors`, `mykg_find_path`, `mykg_get_schema`, `mykg_list_node_types`, `mykg_query_subgraph`, `mykg_get_stats`, `mykg_query_graph` (BFS/DFS traversal), `mykg_hub_nodes`, `mykg_orphan_nodes`, `mykg_read_note` (Obsidian vault LLM wiki notes), `mykg_list_sessions`, and `mykg_reload` (refresh the in-memory graph after pipeline runs).
+The MCP server exposes 16 tools (including `mykg_get_source` and the read-only `mykg_schema_drift`): `mykg_search_nodes`, `mykg_get_node`, `mykg_get_neighbors`, `mykg_find_path`, `mykg_get_schema`, `mykg_list_node_types`, `mykg_query_subgraph`, `mykg_get_stats`, `mykg_query_graph` (BFS/DFS traversal), `mykg_hub_nodes`, `mykg_orphan_nodes`, `mykg_read_note` (Obsidian vault LLM wiki notes), `mykg_list_sessions`, and `mykg_reload` (refresh the in-memory graph after pipeline runs).
 
 **Configuration** — default transport, host, and port are set per profile in `mykg_config.yaml`:
 

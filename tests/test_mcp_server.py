@@ -623,10 +623,11 @@ class TestMCPServerRegistration:
             "mykg_read_note",
             "mykg_list_sessions",
             "mykg_reload",
+            "mykg_schema_drift",
         ]
         for name in expected:
             assert name in tool_names, f"Tool '{name}' not registered"
-        assert len(tool_names) == 15
+        assert len(tool_names) == 16
 
 
 # ---------------------------------------------------------------------------
@@ -763,3 +764,187 @@ class TestMykgGetSourceTool:
     def test_missing_chunk_artifacts_returns_error(self, kg: KnowledgeGraph):
         result = asyncio.run(mykg_get_source(_fake_ctx(kg), node_id="person-alice"))
         assert result.startswith("Error:")
+
+
+# ---------------------------------------------------------------------------
+# mykg_schema_drift: live, read-only schema drift report
+# ---------------------------------------------------------------------------
+
+DRIFT_SCHEMA = {
+    "concepts": [
+        {"type": "Person", "parent": None, "attributes": ["name"]},
+        {"type": "Organization", "parent": None, "attributes": ["name"]},
+        {"type": "Document", "parent": None, "attributes": ["name"]},
+        {"type": "Project", "parent": None, "attributes": ["name"]},
+        {"type": "Service", "parent": None, "attributes": ["name"]},
+    ],
+    "properties": [
+        {"name": n, "domain": d, "range": r, "attributes": []}
+        for n, d, r in [
+            ("works_at", "Person", "Organization"),
+            ("authored", "Person", "Document"),
+            ("published_by", "Document", "Organization"),
+            ("manages", "Person", "Project"),
+            ("owns", "Organization", "Project"),
+            ("runs", "Organization", "Service"),
+            ("depends_on", "Service", "Service"),
+            ("part_of", "Project", "Project"),
+            ("funds", "Organization", "Project"),
+            ("cites", "Document", "Document"),
+            ("employs", "Organization", "Person"),
+        ]
+    ],
+}
+
+
+def _n(nid: str, ntype: str) -> dict:
+    return {
+        "id": nid, "type": ntype, "confidence": 0.9,
+        "attributes": {"name": {"value": nid, "confidence": 0.9}},
+        "source_files": ["a.md"],
+    }
+
+
+def _e(eid: str, etype: str, frm: str, to: str) -> dict:
+    return {"id": eid, "type": etype, "from": frm, "to": to, "confidence": 0.9,
+            "attributes": {}, "method": "llm_extraction", "source_files": ["a.md"]}
+
+
+def _drift_session(root: Path, nodes: list[dict], edges: list[dict], schema: dict) -> Path:
+    (root / "output").mkdir(parents=True)
+    (root / "intermediate").mkdir()
+    (root / "output" / "nodes.jsonl").write_text(
+        "\n".join(json.dumps(n) for n in nodes), encoding="utf-8")
+    (root / "output" / "edges.jsonl").write_text(
+        "\n".join(json.dumps(e) for e in edges), encoding="utf-8")
+    (root / "intermediate" / "schema.json").write_text(json.dumps(schema), encoding="utf-8")
+    return root
+
+
+@pytest.fixture
+def drift_root(tmp_path: Path) -> Path:
+    nodes = [_n("person-a", "Person"), _n("organization-x", "Organization"), _n("document-d", "Document")]
+    edges = [
+        _e("edge-1", "works_at", "person-a", "organization-x"),
+        _e("edge-2", "authored", "person-a", "document-d"),
+        _e("edge-3", "published_by", "document-d", "organization-x"),
+    ]
+    return _drift_session(tmp_path / "s1", nodes, edges, DRIFT_SCHEMA)
+
+
+def _run_drift(root: Path) -> str:
+    from mykg.mcp_server import mykg_schema_drift
+
+    return asyncio.run(mykg_schema_drift(_fake_ctx(KnowledgeGraph(session_root=root))))
+
+
+class TestSchemaDriftTool:
+    def test_reports_unused_concepts_and_properties(self, drift_root: Path):
+        out = _run_drift(drift_root)
+        assert "Declared concepts: 5" in out
+        assert "Unused concepts: 2" in out
+        assert "- Project [prunable]" in out
+        assert "- Service [prunable]" in out
+        assert "Declared properties: 11" in out
+        assert "Unused properties: 8" in out
+        assert "- manages [prunable]" in out
+        assert "orphan" not in out.lower()
+        assert "No base schema in this session" in out
+        assert "mykg prune-schema --session s1 --preview" in out
+        assert "  none" in out  # no reverse drift
+
+    def test_invalid_utf8_lock_file_degrades(self, drift_root: Path):
+        (drift_root / "intermediate" / "base_schema_parsed.json").write_bytes(b"\xff\xfe\x80")
+        out = _run_drift(drift_root)
+        assert "could not be read" in out
+        assert "Unused concepts: 2" in out
+
+    def test_wrong_shaped_lock_file_degrades(self, drift_root: Path):
+        (drift_root / "intermediate" / "base_schema_parsed.json").write_text(
+            json.dumps({"locked_classes": 5}), encoding="utf-8")
+        out = _run_drift(drift_root)
+        assert "could not be read" in out
+        assert "Unused concepts: 2" in out
+
+    def test_always_null_attributes_listed(self, tmp_path: Path):
+        schema = {
+            "concepts": [{"type": "Person", "parent": None, "attributes": ["name", "email"]}],
+            "properties": [],
+        }
+        root = _drift_session(tmp_path / "s2", [_n("person-a", "Person")], [], schema)
+        out = _run_drift(root)
+        assert "Always-null attributes (info only, never pruned):" in out
+        assert "  - Person: email" in out
+
+    def test_no_null_section_when_none(self, drift_root: Path):
+        assert "Always-null" not in _run_drift(drift_root)
+
+    def test_malformed_rows_give_clear_error(self, tmp_path: Path):
+        root = _drift_session(tmp_path / "s3", [_n("p", "Person")], [], {"concepts": [{"type": "Person"}, 5], "properties": []})
+        out = _run_drift(root)
+        assert out.startswith("Cannot compute schema drift:")
+
+    def test_session_name_shell_quoted(self, tmp_path: Path):
+        root = _drift_session(tmp_path / "my session;x", [_n("person-a", "Person")], [], DRIFT_SCHEMA)
+        out = _run_drift(root)
+        assert "--session 'my session;x' --preview" in out
+
+    def test_read_only_writes_nothing(self, drift_root: Path):
+        before = sorted(p.relative_to(drift_root) for p in drift_root.rglob("*"))
+        _run_drift(drift_root)
+        after = sorted(p.relative_to(drift_root) for p in drift_root.rglob("*"))
+        assert before == after
+        assert not (drift_root / "intermediate" / "schema_drift.json").exists()
+
+    def test_after_prune_is_consistent(self, drift_root: Path):
+        from mykg.exporters.neo4j._common import load_session
+        from mykg.schema_drift import analyze_drift, apply_prune, plan_prune
+
+        nodes, edges, schema = load_session(drift_root)
+        report = analyze_drift(schema, iter(nodes), iter(edges), None)
+        apply_prune(plan_prune(report), drift_root / "intermediate", report)
+        out = _run_drift(drift_root)
+        assert "Declared concepts: 3" in out
+        assert "Unused concepts: 0" in out
+        assert "Declared properties: 3" in out
+        assert "Unused properties: 0" in out
+
+    def test_locked_entry_reported_as_locked(self, drift_root: Path):
+        (drift_root / "intermediate" / "base_schema_parsed.json").write_text(
+            json.dumps({
+                "locked_classes": [{"type": "Project"}],
+                "locked_properties": [{"name": "manages"}],
+            }),
+            encoding="utf-8",
+        )
+        out = _run_drift(drift_root)
+        assert "1 locked concept(s), 1 locked property(ies)" in out
+        assert "- Project [locked]" in out
+        assert "- manages [locked]" in out
+        assert "- Service [prunable]" in out
+
+    def test_unreadable_base_schema_is_noted(self, drift_root: Path):
+        (drift_root / "intermediate" / "base_schema_parsed.json").write_text("{nope", encoding="utf-8")
+        out = _run_drift(drift_root)
+        assert "could not be read" in out
+
+    def test_empty_graph(self, tmp_path: Path):
+        root = _drift_session(tmp_path / "empty", [], [], DRIFT_SCHEMA)
+        out = _run_drift(root)
+        assert "0 nodes, 0 edges" in out
+        assert "Unused concepts: 5" in out
+        assert "Unused properties: 11" in out
+
+    def test_reverse_drift_reported(self, tmp_path: Path):
+        nodes = [_n("person-a", "Person"), _n("gadget-g", "Gadget")]
+        edges = [_e("edge-1", "invented", "person-a", "gadget-g")]
+        root = _drift_session(tmp_path / "rev", nodes, edges, DRIFT_SCHEMA)
+        out = _run_drift(root)
+        assert "node type Gadget: 1 node(s)" in out
+        assert "edge type invented: 1 edge(s)" in out
+
+    def test_tool_is_read_only_annotated(self):
+        from mykg.mcp_server import mcp
+
+        tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "mykg_schema_drift")
+        assert tool.annotations.readOnlyHint is True

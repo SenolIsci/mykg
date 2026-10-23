@@ -1,13 +1,14 @@
 """MCP server exposing a mykg knowledge graph session for LLM-powered Q&A.
 
 Loads nodes.jsonl, edges.jsonl, and schema.json from a session, builds an
-in-memory NetworkX DiGraph, and exposes 15 query tools + 2 resources via the
+in-memory NetworkX DiGraph, and exposes 16 query tools + 2 resources via the
 Model Context Protocol.
 """
 from __future__ import annotations
 
 import json
 import logging
+import shlex
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -21,6 +22,7 @@ from mykg import config as _cfg
 from mykg.exporters.neo4j._common import load_session
 from mykg.exporter import _build_nx_graph
 from mykg.orphan_connector import build_chunk_texts
+from mykg.schema_drift import LockedSchema, SchemaDriftError, analyze_drift
 
 _log = logging.getLogger("mykg.mcp_server")
 
@@ -823,6 +825,94 @@ async def mykg_orphan_nodes(ctx: Context) -> str:
         "total_nodes": len(kg.nodes),
         "orphans": orphans,
     }, indent=2)
+
+
+def _load_locked_schema(session_root: Path) -> tuple[LockedSchema | None, str]:
+    """Read-only load of the base-schema locks; returns (locks | None, notice)."""
+    path = session_root / "intermediate" / "base_schema_parsed.json"
+    if not path.exists():
+        return None, (
+            "No base schema in this session (intermediate/base_schema_parsed.json absent): "
+            "nothing is locked."
+        )
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+        locked = LockedSchema.from_parsed(parsed)
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError, SchemaDriftError,
+            AttributeError, TypeError):
+        return None, (
+            f"{path.name} could not be read: locks are not applied, so locked entries may be "
+            "shown as prunable below. Do not prune until the lock file is fixed."
+        )
+    return locked, (
+        f"Locks read from base_schema_parsed.json: {len(locked.classes)} locked concept(s), "
+        f"{len(locked.properties)} locked property(ies)."
+    )
+
+
+@mcp.tool(
+    name="mykg_schema_drift",
+    annotations={
+        "title": "Schema Drift Report",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+)
+async def mykg_schema_drift(ctx: Context) -> str:
+    """Report schema entries (concepts, properties) that no node or edge uses.
+
+    Computed live from the loaded session's schema, nodes and edges; locked
+    (base-schema) entries are reported as locked. Read-only: nothing is
+    written and the schema is never pruned by this tool.
+    """
+    kg = _get_kg(ctx)
+    locked, lock_notice = _load_locked_schema(kg.session_root)
+    try:
+        report = analyze_drift(kg.schema, iter(kg.nodes), iter(kg.edges), locked)
+    except (SchemaDriftError, KeyError, TypeError, AttributeError) as exc:
+        return f"Cannot compute schema drift: {exc!r}"
+
+    lines = [
+        f"Schema drift report for session {kg.session_name} "
+        f"({len(kg.nodes)} nodes, {len(kg.edges)} edges, as loaded in memory; "
+        "call mykg_reload first if the session changed on disk)",
+        lock_notice,
+        "",
+        f"Declared concepts: {len(report.concepts)}",
+    ]
+    unused_c = report.unused_concepts()
+    lines.append(f"Unused concepts: {len(unused_c)}")
+    for c in unused_c:
+        lines.append(f"  - {c.name} [{c.classification}]: {c.reason}")
+    lines.append("")
+    lines.append(f"Declared properties: {len(report.properties)}")
+    unused_p = report.unused_properties()
+    lines.append(f"Unused properties: {len(unused_p)}")
+    for p in unused_p:
+        lines.append(f"  - {p.name} [{p.classification}] ({p.domain} -> {p.range}): {p.reason}")
+    null_rows = [c for c in report.concepts if c.always_null_attributes]
+    if null_rows:
+        lines.append("")
+        lines.append("Always-null attributes (info only, never pruned):")
+        for c in null_rows:
+            lines.append(f"  - {c.name}: {', '.join(c.always_null_attributes)}")
+    lines.append("")
+    lines.append("Reverse drift (used in the graph but not declared in the schema):")
+    if report.undeclared_node_types or report.undeclared_edge_types:
+        for t, n in report.undeclared_node_types.items():
+            lines.append(f"  - node type {t}: {n} node(s)")
+        for t, n in report.undeclared_edge_types.items():
+            lines.append(f"  - edge type {t}: {n} edge(s)")
+    else:
+        lines.append("  none")
+    lines.append("")
+    lines.append(
+        f"This tool never prunes. Run `mykg prune-schema --session {shlex.quote(kg.session_name)} --preview` "
+        "(CLI) to see what pruning would remove."
+    )
+    return "\n".join(lines)
 
 
 def _excerpts_for_chunk_keys(
