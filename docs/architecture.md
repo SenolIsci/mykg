@@ -606,8 +606,11 @@ At startup, a `KnowledgeGraph` object builds in-memory indexes (nodes by ID, nod
 | `mykg_query_graph` | BFS/DFS traversal from seed nodes with token budget |
 | `mykg_hub_nodes` | Most connected nodes by degree |
 | `mykg_orphan_nodes` | Isolated nodes with zero edges |
+| `mykg_get_source` | Source-text excerpts behind a node or edge |
 | `mykg_read_note` | Obsidian vault LLM wiki note for an entity |
 | `mykg_list_sessions` | All available sessions with status and size |
+| `mykg_reload` | Re-read the session files and rebuild the in-memory graph |
+| `mykg_schema_drift` | Read-only report of schema concepts/properties no node or edge uses |
 
 ### Transport
 
