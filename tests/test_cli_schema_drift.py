@@ -153,6 +153,10 @@ def test_one_shot_prune(sessions):
     s = build_session(sessions)
     inter, out = s / "intermediate", s / "output"
     nodes_b, edges_b = (out / "nodes.jsonl").read_bytes(), (out / "edges.jsonl").read_bytes()
+    # A real session has flattened_schema.json; apply_prune only refreshes an existing one.
+    from mykg.schema_flattener import flatten_schema
+
+    (inter / "flattened_schema.json").write_text(json.dumps(flatten_schema(SCHEMA)), encoding="utf-8")
     r = run("prune-schema", "--session", NAME)
     assert r.exit_code == 0, r.output
     schema = json.loads((inter / "schema.json").read_text(encoding="utf-8"))
