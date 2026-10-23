@@ -853,6 +853,42 @@ class TestSchemaDriftTool:
         assert "mykg prune-schema --session s1 --preview" in out
         assert "  none" in out  # no reverse drift
 
+    def test_invalid_utf8_lock_file_degrades(self, drift_root: Path):
+        (drift_root / "intermediate" / "base_schema_parsed.json").write_bytes(b"\xff\xfe\x80")
+        out = _run_drift(drift_root)
+        assert "could not be read" in out
+        assert "Unused concepts: 2" in out
+
+    def test_wrong_shaped_lock_file_degrades(self, drift_root: Path):
+        (drift_root / "intermediate" / "base_schema_parsed.json").write_text(
+            json.dumps({"locked_classes": 5}), encoding="utf-8")
+        out = _run_drift(drift_root)
+        assert "could not be read" in out
+        assert "Unused concepts: 2" in out
+
+    def test_always_null_attributes_listed(self, tmp_path: Path):
+        schema = {
+            "concepts": [{"type": "Person", "parent": None, "attributes": ["name", "email"]}],
+            "properties": [],
+        }
+        root = _drift_session(tmp_path / "s2", [_n("person-a", "Person")], [], schema)
+        out = _run_drift(root)
+        assert "Always-null attributes (info only, never pruned):" in out
+        assert "  - Person: email" in out
+
+    def test_no_null_section_when_none(self, drift_root: Path):
+        assert "Always-null" not in _run_drift(drift_root)
+
+    def test_malformed_rows_give_clear_error(self, tmp_path: Path):
+        root = _drift_session(tmp_path / "s3", [_n("p", "Person")], [], {"concepts": [{"type": "Person"}, 5], "properties": []})
+        out = _run_drift(root)
+        assert out.startswith("Cannot compute schema drift:")
+
+    def test_session_name_shell_quoted(self, tmp_path: Path):
+        root = _drift_session(tmp_path / "my session;x", [_n("person-a", "Person")], [], DRIFT_SCHEMA)
+        out = _run_drift(root)
+        assert "--session 'my session;x' --preview" in out
+
     def test_read_only_writes_nothing(self, drift_root: Path):
         before = sorted(p.relative_to(drift_root) for p in drift_root.rglob("*"))
         _run_drift(drift_root)
