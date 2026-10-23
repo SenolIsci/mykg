@@ -21,6 +21,7 @@ TRIGGERS
     schema_validate     — LLM correction after RDFS validation failure
     schema_gap          — new properties added by orphan schema-gap loop
     schema_gap_correct  — LLM correction after schema-gap proposal introduced invalid RDFS
+    schema_prune        — unused concepts/properties removed by `mykg prune-schema`
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ TRIGGER_SCHEMA_GAP_CORRECT = "schema_gap_correct"
 TRIGGER_SCHEMA_QUALITY = "schema_quality"
 TRIGGER_SESSION_MERGE = "session_merge"
 TRIGGER_FREEZE_SCHEMA = "freeze_schema"
+TRIGGER_SCHEMA_PRUNE = "schema_prune"
 
 
 def write_schema(
