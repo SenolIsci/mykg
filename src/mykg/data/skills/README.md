@@ -79,6 +79,9 @@ Examples:
 | `/mykg resume the last session` | `mykg extract-graph --session <latest>` |
 | `/mykg approve the schema` | `mykg approve-schema --session <latest>` |
 | `/mykg make a walkthrough` | `mykg walkthrough --session <latest>` |
+| `/mykg detect schema drift` | `mykg detect-schema-drift --session <latest>` |
+| `/mykg preview schema pruning` | `mykg prune-schema --session <latest> --preview` |
+| `/mykg prune the schema` | `mykg prune-schema --session <latest>` |
 | `/mykg convert pdfs in ./inbox to ./md` | `mykg parse-docs --input ./inbox --output ./md` |
 
 Any flag mykg accepts on the CLI works here too — the skill reads `--help` rather than maintaining its own list, so `--from-step orphan_connect`, `--workers 8`, `--obsidian-vault`, etc. all flow through.

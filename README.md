@@ -27,6 +27,8 @@
 
 ## Updates
 
+- **Unreleased** — Schema drift detection and pruning: `mykg detect-schema-drift` reports concepts and properties the graph no longer uses, and `mykg prune-schema` removes them (with `--preview`, an editable plan file, and a backup). The walkthrough gains a Schema Health section and the MCP server a read-only `mykg_schema_drift` tool. See [Schema Drift & Pruning](#schema-drift--pruning).
+
 - **v0.4.9** — The `nodes.jsonl`, `edges.jsonl` and `knowledge_graph.ttl` exports now stream to disk record by record instead of building the whole file in memory first, so peak memory stays flat as the graph grows.
 
 - **v0.4.8** — `mykg_search_nodes` and `mykg_query_graph`'s seed selection now use BM25 instead of a linear substring scan, ~2,800x faster at 100K nodes (0.5ms vs. 1.4s per query) and no longer degrading to minutes per query as the graph grows. 
@@ -56,6 +58,7 @@
     - [Incremental Schema Growth](#incremental-schema-growth---append-with-grow-schema)
   - [Merging Sessions](#merging-sessions)
   - [Walkthrough Report](#walkthrough-report)
+  - [Schema Drift & Pruning](#schema-drift--pruning)
   - [Obsidian Vault Export](#obsidian-vault-export)
   - [Neo4j LOAD CSV Export](#neo4j-load-csv-export)
 - [MCP (Model Context Protocol) Server](#mcp-model-context-protocol-server)
@@ -169,6 +172,8 @@ mykg extract-graph my_notes/
 | [`mykg extract-graph`](#extract-pipeline) | Run the two-pass extraction pipeline over a directory |
 | `mykg approve-schema` | Write `schema_approved.flag` to unblock the `human_review` gate after editing `schema.json` (used with `--review`, see [Human Review Gate](#human-review-gate---review)) |
 | [`mykg walkthrough`](#walkthrough-report) | Regenerate `walkthrough.md` for an existing session |
+| [`mykg detect-schema-drift`](#schema-drift--pruning) | Report schema concepts/properties with no instances in the graph (read-only, no LLM) |
+| [`mykg prune-schema`](#schema-drift--pruning) | Remove unused concepts/properties from the session schema; `--preview` shows the plan, `--plan <file>` applies an edited one (no LLM) |
 | [`mykg merge-graphs`](#merging-sessions) | Merge two independently-produced sessions into one unified graph |
 | [`mykg parse-docs`](#standalone-document-conversion-mykg-parse-docs) | Standalone MinerU/markdownify document-to-Markdown conversion |
 | [`mykg fetch-web`](#website--repo-fetching-mykg-fetch-web) | Crawl a website or clone a GitHub repo into an `extract-graph`-ready folder |
@@ -952,6 +957,107 @@ mykg walkthrough --session 2026-05-17T18-31-07
 ```
 
 Disable with `pipeline.report.enabled: false`.
+
+### Schema Drift & Pruning
+
+The induced schema only ever grows: Pass 1 and `--append-with-grow-schema` add concepts and properties, and nothing removes them. After you delete documents and run `--append --sync`, the graph shrinks but `schema.json` still declares the old vocabulary. That gap is *schema drift*. Two commands, neither of which calls an LLM or needs an API key, detect and repair it. "Unused" here means a concept with no instances or a property with no edges (not an "orphan" node, which has no edges).
+
+```bash
+mykg extract-graph docs/ --session s1 --append --sync   # 1. instances reconcile
+mykg detect-schema-drift --session s1                   # 2. report (writes intermediate/schema_drift.json)
+mykg prune-schema --session s1 --preview                # 3. show the plan (writes schema_prune_plan.json)
+mykg prune-schema --session s1                          # 4. apply every prunable entry
+```
+
+Example (a session whose `projects.md` was deleted; 5 declared concepts, 11 properties, graph uses 3 and 3):
+
+```
+$ mykg detect-schema-drift --session s1
+no locked schema recorded; treating all entries as unlocked
+declared concepts: Organization, Person, Team, Project, Service
+unused concepts: Project (0 instances), Service (0 instances)
+declared properties: 11 (8 unreferenced by active edges)
+  concept  Project: prunable - 0 instances, 0 in subtree
+  concept  Service: prunable - 0 instances, 0 in subtree
+  property owns_project: prunable - 0 edges; domain/range removed
+  ...
+10 entries prunable; see: mykg prune-schema --session s1 --preview
+
+$ mykg prune-schema --session s1 --preview
+Will be removed:
+  concept Project: 0 instances, 0 in subtree
+  concept Service: 0 instances, 0 in subtree
+  property owns_project: 0 edges; domain/range removed
+  ...
+  property partners_with: 0 edges
+  ...
+Totals: 5 concepts / 11 properties -> 3 / 3
+Warnings:
+  - A removed type is silently dropped from future extraction if the schema is frozen (plain --append). Use --append-with-grow-schema when its documents return.
+  - Never re-induce the schema on every sync.
+```
+
+Each unused entry is classified. `locked` entries (from `--base-schema`) are never pruned. `structural` entries (zero own instances but an instantiated descendant, a surviving child, or the domain/range of a surviving property) are kept; there is no re-parenting. Only `prunable` entries are removed. Pruning never touches nodes or edges: only zero-instance entries are eligible.
+
+**Reviewing and applying a plan.** `--preview` writes `intermediate/schema_prune_plan.json` and changes nothing else. Delete entries from its `remove` list to veto them (a type awaiting tomorrow's documents), then apply exactly that plan:
+
+```bash
+mykg prune-schema --session s1 --plan mykg_sessions/s1/intermediate/schema_prune_plan.json
+```
+
+At apply time the command recomputes a fresh drift report and validates the plan against it; it aborts with nothing changed if the plan is stale (documents synced, `schema.json` edited, or the lock file `base_schema_parsed.json` changed since the preview; the plan fingerprint covers the schema, per-type node/edge counts and the locked names), or lists a locked or structural entry, one that gained instances, or one not in the schema. Only the `remove` list of an edited plan matters: its `keep` and `totals` are ignored and recomputed. If nothing is prunable (or the edited plan's `remove` list is empty) the command prints `Nothing to prune.` and writes no backup and no history entry. `--preview` and `--plan` are mutually exclusive. Malformed `nodes.jsonl`/`edges.jsonl`, lock or schema content produces a clean error, not a traceback.
+
+On apply, `schema.json` is backed up to `intermediate/schema.pre_prune.json`, `schema.ttl` is rewritten atomically, `flattened_schema.json` is regenerated by the prune itself (only if that file already exists), a `schema_prune` record is added to `intermediate/schema_history/`, and `validate_graph` is re-run (no LLM). The closing message lists the outputs it regenerated per your config toggles (`nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, the validation report, and NetworkX / Obsidian / Neo4j CSV / `walkthrough.md` when enabled in the config); an export that was enabled only by a CLI flag (such as `--neo4j-csv`) on the earlier run is not refreshed. Session names in suggested commands are shell-quoted.
+
+**Undoing a prune.** `flattened_schema.json` is not regenerated automatically on undo:
+
+1. Copy `intermediate/schema.pre_prune.json` over `intermediate/schema.json`.
+2. `mykg approve-schema --session s1` (regenerates `schema.ttl`).
+3. Delete `intermediate/flattened_schema.json`.
+4. `mykg extract-graph <dir> --session s1 --from-step validate_graph`.
+5. Re-run `mykg detect-schema-drift --session s1`.
+
+Do not use `--from-step schema_flatten` for this: it deletes the Pass 2 outputs. Undo restores the schema exactly as it was before the most recent prune, so it is only appropriate before later runs have grown or changed the schema (the backup is overwritten by the next prune).
+
+**Known limitations.** The writes during apply are not one transaction; they are ordered so that re-running the prune is idempotent after a crash, and `mykg approve-schema` repairs a stale `schema.ttl`. There is no cross-process lock: both commands refuse to run while a step in `pipeline_state.json` is `running`. Only one backup is kept (`schema.pre_prune.json` is overwritten by the next prune). `validate_graph` regenerates `nodes.jsonl` and `edges.jsonl` from `nodes.json` and `edge_metadata.json`.
+
+**Continuing the session after a prune**
+
+| Next command | What happens |
+|---|---|
+| `--append` | Schema is frozen at the pruned vocabulary. Documents about a removed type are silently dropped or mis-typed |
+| `--append-with-grow-schema` | The pruned schema is the locked base; locked Pass 1 can re-add removed types and back-fills old chunks. Use this if documents about pruned types may return |
+| `--append --sync` | Reconciles instances only; schema untouched. Run `detect-schema-drift` again afterwards |
+| `--from-step pass2` | Re-extracts against the pruned schema |
+| `--from-step pass1` / fresh run | Re-induces the schema; the prune is superseded |
+
+Note: locks come only from a `--base-schema` given on a fresh run (recorded in `intermediate/base_schema_parsed.json`). `--append-with-grow-schema` does not write that file, so a session without it has no locks: the commands print `no locked schema recorded; treating all entries as unlocked`.
+
+Typical order: sync, then detect, then prune. The walkthrough shows a **Schema Health** section once `schema_drift.json` exists (marked stale if the schema or graph changed since), and the MCP server's read-only `mykg_schema_drift` tool computes the report live from the graph as loaded in memory (see below). Details: [docs/architecture.md](docs/architecture.md#schema-drift-and-pruning).
+
+**MCP tool `mykg_schema_drift`.** Read-only: it never writes `schema_drift.json` and never prunes, and it reflects the graph as loaded in memory (call `mykg_reload` after a run that changed the session). Output, for the example session above:
+
+```
+Schema drift report for session s1 (3 nodes, 3 edges, as loaded in memory; call mykg_reload first if the session changed on disk)
+No base schema in this session (intermediate/base_schema_parsed.json absent): nothing is locked.
+
+Declared concepts: 5
+Unused concepts: 2
+  - Project [prunable]: 0 instances, 0 in subtree
+  - Service [prunable]: 0 instances, 0 in subtree
+
+Declared properties: 11
+Unused properties: 8
+  - owns_project [prunable] (Organization -> Project): 0 edges; domain/range removed
+  ...
+
+Reverse drift (used in the graph but not declared in the schema):
+  none
+
+This tool never prunes. Run `mykg prune-schema --session s1 --preview` (CLI) to see what pruning would remove.
+```
+
+The lock line has three variants: no base schema (above); `Locks read from base_schema_parsed.json: N locked concept(s), M locked property(ies).`; or a warning that the lock file could not be read, so locks are not applied and you should not prune until it is fixed. An "Always-null attributes (info only, never pruned)" section appears only when some declared attribute is null on every instance. Malformed in-memory data yields `Cannot compute schema drift: <error>`.
 
 ## MCP (Model Context Protocol) Server
 

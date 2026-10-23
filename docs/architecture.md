@@ -18,6 +18,7 @@ This document explains how **myKG** works at a conceptual level: the pipelines, 
   - [Orphan-Connection Pass](#orphan-connection-pass)
   - [Name Normalization](#name-normalization)
 - [Merge Pipeline](#merge-pipeline)
+- [Schema Drift and Pruning](#schema-drift-and-pruning)
 - [Output Formats](#output-formats)
 - [MCP Server (`mykg mcp-serve`)](#mcp-server-mykg-mcp-serve)
 - [Skill vs MCP — Capability Comparison](#skill-vs-mcp--capability-comparison)
@@ -522,6 +523,94 @@ To resume or correct a merge session, pass `--session <merged-session-name>` whe
 
 ---
 
+## Schema Drift and Pruning
+
+The induced schema is an append-only vocabulary. Pass 1 and `--append-with-grow-schema` add concepts and properties; nothing removes them. The graph, by contrast, reconciles with the documents on `--append --sync`. After documents are deleted, `schema.json` can therefore declare concepts with zero instances and properties with zero edges. That gap is **schema drift**. Two session commands (design decision D62) detect and repair it. Neither is a pipeline step, neither loads an LLM adapter, and both refuse to run while a step in `pipeline_state.json` is `running`.
+
+### Workflow
+
+```
+mykg extract-graph docs/ --session S --append --sync     # instances reconcile
+mykg detect-schema-drift --session S                     # report, writes schema_drift.json
+mykg prune-schema --session S --preview                  # plan, writes schema_prune_plan.json
+# optionally edit intermediate/schema_prune_plan.json
+mykg prune-schema --session S --plan mykg_sessions/S/intermediate/schema_prune_plan.json
+```
+
+`mykg prune-schema --session S` with neither flag computes the plan fresh and applies every `prunable` entry in one shot. `--preview` and `--plan` are mutually exclusive.
+
+Detection streams `output/nodes.jsonl` and `output/edges.jsonl` once and compares them with `intermediate/schema.json`. Unused entries are labelled "unused" (not "orphaned": an orphan is a node with no edges, D30).
+
+### Classification
+
+Each unused entry is classified, first match wins:
+
+| Class | Rule | Pruned? |
+|---|---|---|
+| `locked` | declared by the user-supplied `--base-schema` (`base_schema_parsed.json`, D27) | never |
+| `structural` | zero own instances but needed: an instantiated descendant, the domain/range of a surviving property, or a surviving child | no |
+| `prunable` | zero instances in its whole subtree, unlocked, no surviving property or child depends on it | yes |
+
+A property survives when it is locked or has at least one edge (extraction and orphan-inferred edges both count). A zero-edge unlocked property is `prunable`, which also covers the cascade from a removed domain/range concept. There is no re-parenting: a concept is prunable only when its whole subtree is. Attributes are never pruned; always-null attributes and undeclared node/edge types (reverse drift) are reported only.
+
+### Plan file
+
+`intermediate/schema_prune_plan.json` holds `schema_fingerprint` (sha256 over `schema.json`, per-type node and edge counts, and the locked concept/property names, so a changed `base_schema_parsed.json` also makes plans and drift records stale), `created_at`, `remove[]` (`kind`, `name`, `reason`), informational `keep[]`, and `totals` (`before`/`after` concept and property counts). Delete entries from `remove` to veto them. Nothing applies the plan except an explicit `prune-schema --plan`. `apply_prune` requires a freshly computed report and always validates the plan against it. At apply time detection is re-run and the whole apply aborts, changing nothing, when the fingerprint is stale (documents synced or schema edited since the preview), when an entry is `locked`, `structural`, has gained instances, or is not in the schema, or when removing a concept would leave a kept property pointing at it. Edits can only shrink a plan; they cannot force pruning of anything in use. Only `remove` is honoured: `keep` and `totals` in an edited plan are ignored and recomputed, and duplicate entries are dropped. An empty plan prints `Nothing to prune.` and writes no backup, history entry or other file. Malformed JSONL, lock or schema content raises a clean error instead of a traceback.
+
+### What apply changes
+
+| File | Change |
+|---|---|
+| `intermediate/schema.json` | pruned entries removed; previous copy kept as `schema.pre_prune.json` |
+| `intermediate/schema.ttl` | regenerated (atomic write) |
+| `intermediate/schema_history/<seq>_schema_prune.json` | delta with `concepts_removed` / `properties_removed` and a `pruned` list of reasons (trigger `schema_prune`, D36) |
+| `intermediate/flattened_schema.json` | regenerated inside `apply_prune` via `flatten_schema`, only if the file already exists (no step invalidation) |
+| `intermediate/schema_drift.json` | re-recorded against the pruned schema |
+| `output/nodes.jsonl`, `edges.jsonl`, `knowledge_graph.ttl`, `knowledge_graph_validation.json`, `walkthrough.md`, NetworkX / Obsidian / Neo4j CSV exports | regenerated by re-running only `validate_graph` (no LLM); exports and the walkthrough follow the config toggles, so an export enabled only by a CLI flag on the earlier run is not refreshed (the closing message lists what was regenerated) |
+
+Untouched: `nodes.json`, `edge_metadata.json`, `raw_extractions*`, shards, `chunk_node_index.json` and step results in `pipeline_state.json`. No instance is ever pruned; only zero-instance entries are eligible. To remove instances, change the sources and run `--append --sync` (D58).
+
+### Continuing the session after a prune
+
+| Next command | Effect |
+|---|---|
+| `--append` | Pass 1 skipped, frozen pruned schema. Documents about a removed type are silently dropped or mis-typed |
+| `--append-with-grow-schema` | Pruned `schema.ttl` becomes the locked base; locked Pass 1 on changed files can re-add removed types and back-fills old chunks (D52) |
+| `--append --sync` | Instances reconcile; schema untouched. Detect again afterwards |
+| `--from-step pass2` / `--pass2-kg-extraction-only` | Re-extracts against the pruned schema |
+| `--from-step pass1` / a fresh run | Re-induces the schema; the prune is superseded |
+
+Typical order over a session's life: sync, then detect, then prune. Never re-induce the schema on every sync.
+
+### Undo
+
+`flattened_schema.json` is not regenerated automatically on undo (the `schema_flatten` step is skipped while that file exists, so it would otherwise keep describing the pruned schema). The sequence the CLI prints:
+
+1. Copy `intermediate/schema.pre_prune.json` over `intermediate/schema.json`.
+2. `mykg approve-schema --session S` (regenerates `schema.ttl`).
+3. Delete `intermediate/flattened_schema.json`.
+4. `mykg extract-graph <dir> --session S --from-step validate_graph`.
+5. Re-run `mykg detect-schema-drift --session S`.
+
+Do not use `--from-step schema_flatten`: it deletes the Pass 2 outputs. Undo restores the schema exactly as it was before the most recent prune, so it is only appropriate before later runs have grown or changed the schema (the backup is overwritten by the next prune).
+
+### Consumers
+
+The walkthrough gains a "Schema Health" section (section 5, later sections shift by one) whenever `schema_drift.json` exists, marked stale when its fingerprint no longer matches. The read-only MCP tool `mykg_schema_drift` computes the report live from the graph as loaded in memory (call `mykg_reload` first if the session changed on disk). It never writes `schema_drift.json` and never prunes. Its output has a header (session, node/edge counts), a lock notice (no base schema; `Locks read ... N locked concept(s), M locked property(ies)`; or the lock file could not be read, so locks are not applied and pruning should wait), unused concepts as `name [classification]: reason`, unused properties as `name [classification] (domain -> range): reason`, an "Always-null attributes (info only, never pruned)" section only when any exist, reverse drift (or `none`), and a closing hint with the shell-quoted `mykg prune-schema --session <name> --preview`. Malformed in-memory data yields `Cannot compute schema drift: <error>`.
+
+### Limitations
+
+- One backup: `schema.pre_prune.json` is overwritten by the next prune.
+- The fingerprint covers the schema, per-type node/edge counts and the locked names, not instance content.
+- Writes during apply are not one transaction. They are ordered (backup, derived files, then `schema.json` plus its history delta last) so that re-running the prune is idempotent after a crash; a crash after `schema.json` lands loses at most the history record, and `mykg approve-schema` repairs a stale `schema.ttl`.
+- No cross-process lock: both commands only refuse to run while a step in `pipeline_state.json` is `running`.
+- `validate_graph` regenerates `nodes.jsonl` and `edges.jsonl` from `nodes.json` and `edge_metadata.json`, so they match the originals only after a normal run produced those files.
+- Optional exports (NetworkX, Obsidian vault, Neo4j CSV) are refreshed only when their config toggles are on; one enabled only by a CLI flag on the earlier run is not.
+- Locks come only from `base_schema_parsed.json`, which records a real `--base-schema` given on a fresh run. `--append-with-grow-schema` runs through the append ingest path, which does not write that file, so grow-schema does not lock the schema. A missing lock file means no locks (the commands print a notice).
+- No config keys. The article's grace-period decay tier (prune only after N cycles at zero) is not implemented.
+
+---
+
 ## Output Formats
 
 All four output formats are produced from the same in-memory data at export time and are always kept in sync.
@@ -647,6 +736,7 @@ The mykg skill (`/mykg`) and the mykg MCP server (`mykg mcp-serve`) are compleme
 | Re-run from step | **yes** — `--from-step <step>` | no | Includes orphan fullsweep/incremental aliases |
 | Approve schema | **yes** — `approve-schema` | no | |
 | Generate walkthrough | **yes** — `walkthrough` | no | |
+| Detect / preview / apply schema pruning | **yes** — `detect-schema-drift`, `prune-schema` | no | D62; the MCP server only reports (below) |
 | Parse docs (MinerU) | **yes** — `parse-docs` | no | |
 | Fetch web / clone repo | **yes** — `fetch-web` | no | Including chained fetch+extract |
 | Start/stop MCP server | **yes** — `mcp-serve` | no | |
@@ -664,6 +754,7 @@ The mykg skill (`/mykg`) and the mykg MCP server (`mykg mcp-serve`) are compleme
 | Orphan nodes (zero edges) | **no** | **`mykg_orphan_nodes`** | MCP returns all isolated nodes |
 | Read Obsidian vault note | manual Read of .md file | **`mykg_read_note`** | MCP resolves node_id to vault path; fallback if no vault |
 | List sessions + status | `ls -td mykg_sessions/*/` | **`mykg_list_sessions`** | MCP shows current/complete/incomplete, counts, vault status |
+| Schema drift report (unused concepts/properties) | `detect-schema-drift` (also records `schema_drift.json`) | **`mykg_schema_drift`** | Read-only live computation; never writes or prunes |
 | Free-text query (vault or jsonl) | **yes** — Stage 4d routing | partial (`mykg_query_graph`) | Skill routes vault-vs-jsonl by question phrasing; MCP does BFS/DFS traversal only |
 
 **Summary:**
