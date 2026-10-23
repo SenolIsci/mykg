@@ -171,7 +171,6 @@ mykg extract-graph my_notes/
 | [`mykg init`](#configuration) | Interactive setup wizard — writes `mykg_config.yaml` and `.env.mykg` |
 | [`mykg extract-graph`](#extract-pipeline) | Run the two-pass extraction pipeline over a directory |
 | [`mykg query "<question>"`](#terminal-query-mykg-query) | Query the knowledge graph from the terminal — BFS/DFS traversal from seed nodes matching your question; mirrors the MCP query tool |
-| `mykg approve-schema` | Write `schema_approved.flag` to unblock the `human_review` gate after editing `schema.json` (used with `--review`, see [Human Review Gate](#human-review-gate---review)) |
 | [`mykg walkthrough`](#walkthrough-report) | Regenerate `walkthrough.md` for an existing session |
 | [`mykg detect-schema-drift`](#schema-drift--pruning) | Report schema concepts/properties with no instances in the graph (read-only, no LLM) |
 | [`mykg prune-schema`](#schema-drift--pruning) | Remove unused concepts/properties from the session schema; `--preview` shows the plan, `--plan <file>` applies an edited one (no LLM) |
@@ -179,6 +178,7 @@ mykg extract-graph my_notes/
 | [`mykg parse-docs`](#standalone-document-conversion-mykg-parse-docs) | Standalone MinerU/markdownify document-to-Markdown conversion |
 | [`mykg fetch-web`](#website--repo-fetching-mykg-fetch-web) | Crawl a website or clone a GitHub repo into an `extract-graph`-ready folder |
 | [`mykg mcp-serve`](#mcp-model-context-protocol-server) | Start the MCP server exposing read-only graph query tools |
+| `mykg approve-schema` | Write `schema_approved.flag` to unblock the `human_review` gate after editing `schema.json` (used with `--review`, see [Human Review Gate](#human-review-gate---review)) |
 
 ```
 mykg extract-graph my_notes/        # any directory: .md, .txt, .pdf, .docx, .html, images
