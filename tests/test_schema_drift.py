@@ -94,7 +94,21 @@ def test_article_example_counts_and_prune(tmp_path):
         "Project",
         "Service",
     }
-    assert len([p for p in report.properties if p.classification == "prunable"]) == 8
+    assert {p.name for p in report.properties if p.classification == "prunable"} == {
+        "owns_project",
+        "leads_project",
+        "contributes_to",
+        "depends_on",
+        "partners_with",
+        "delivers_service",
+        "runs_service",
+        "uses_service",
+    }
+    assert {p.name for p in report.properties if p.classification == "used"} == {
+        "works_at",
+        "member_of",
+        "part_of",
+    }
     plan = plan_prune(report)
     assert plan.totals.before.concepts == 5 and plan.totals.before.properties == 11
     assert plan.totals.after.concepts == 3 and plan.totals.after.properties == 3
@@ -103,8 +117,9 @@ def test_article_example_counts_and_prune(tmp_path):
     assert cls_of(report, "partners_with").reason == "0 edges"
 
     inter, _ = write_session(tmp_path, schema, ARTICLE_NODES, ARTICLE_EDGES)
-    pruned = apply_prune(plan, inter)
-    assert len(pruned["concepts"]) == 3 and len(pruned["properties"]) == 3
+    pruned = apply_prune(plan, inter, report)
+    assert {c["type"] for c in pruned["concepts"]} == {"Organization", "Person", "Team"}
+    assert {p["name"] for p in pruned["properties"]} == {"works_at", "member_of", "part_of"}
 
 
 def test_counts_include_subtree():
@@ -246,7 +261,7 @@ def test_dangling_concept_removed_property_kept(tmp_path):
     inter, _ = write_session(tmp_path, schema, ARTICLE_NODES, ARTICLE_EDGES)
     before = (inter / "schema.json").read_bytes()
     with pytest.raises(SchemaDriftError, match="owns_project"):
-        apply_prune(plan, inter)
+        apply_prune(plan, inter, report)
     assert (inter / "schema.json").read_bytes() == before
     assert not (inter / "schema.pre_prune.json").exists()
 
@@ -270,7 +285,8 @@ def test_kept_child_blocks_parent_removal():
 def test_pruned_schema_validation_failure_aborts(tmp_path, monkeypatch):
     schema = article_schema()
     inter, _ = write_session(tmp_path, schema, ARTICLE_NODES, ARTICLE_EDGES)
-    plan = plan_prune(analyze_drift(schema, ARTICLE_NODES, ARTICLE_EDGES, None))
+    report = analyze_drift(schema, ARTICLE_NODES, ARTICLE_EDGES, None)
+    plan = plan_prune(report)
     from mykg import schema_validator
     from mykg.schema_validator import SchemaValidationResult
 
@@ -281,7 +297,7 @@ def test_pruned_schema_validation_failure_aborts(tmp_path, monkeypatch):
     )
     before = (inter / "schema.json").read_bytes()
     with pytest.raises(SchemaDriftError, match="failed validation"):
-        apply_prune(plan, inter)
+        apply_prune(plan, inter, report)
     assert (inter / "schema.json").read_bytes() == before
     assert not (inter / "schema.pre_prune.json").exists()
     assert not (inter / "schema_history").exists()
@@ -302,7 +318,12 @@ def test_apply_side_effects_and_jsonl_untouched(tmp_path):
     )
     plan = plan_prune(report)
     validate_plan(plan, report)
-    apply_prune(plan, inter)
+    (inter / "flattened_schema.json").write_text(
+        json.dumps({"Project": ["name"], "Service": ["name"], "Team": ["name"]}), encoding="utf-8"
+    )
+    apply_prune(plan, inter, report)
+    flat = json.loads((inter / "flattened_schema.json").read_text(encoding="utf-8"))
+    assert set(flat) == {"Organization", "Person", "Team"}
 
     assert (inter / "schema.pre_prune.json").read_bytes() == original
     pruned = json.loads((inter / "schema.json").read_text(encoding="utf-8"))
@@ -315,8 +336,8 @@ def test_apply_side_effects_and_jsonl_untouched(tmp_path):
     assert delta["trigger"] == "schema_prune"
     assert delta["timestamp"]
     assert delta["concepts_removed"] == ["Project", "Service"]
-    assert len(delta["properties_removed"]) == 8
-    assert {e["name"] for e in delta["pruned"]} >= {"Project", "Service", "owns_project"}
+    assert set(delta["properties_removed"]) == {e.name for e in plan.remove if e.kind == "property"}
+    assert {e["name"] for e in delta["pruned"]} == {e.name for e in plan.remove}
 
     ttl = (inter / "schema.ttl").read_text(encoding="utf-8")
     assert "Team" in ttl and "Project" not in ttl and "owns_project" not in ttl
@@ -367,3 +388,151 @@ def test_apply_with_report_rejects_gained_instances(tmp_path):
     with pytest.raises(SchemaDriftError, match="stale"):
         apply_prune(plan, inter, fresh)
     assert (inter / "schema.json").read_bytes() == before
+    assert not (inter / "schema.pre_prune.json").exists()
+    assert not (inter / "schema_history").exists()
+    assert not (inter / "schema.ttl").exists()
+
+
+def test_apply_rejects_used_entry_in_hand_edited_plan(tmp_path):
+    schema = article_schema()
+    inter, _ = write_session(tmp_path, schema, ARTICLE_NODES, ARTICLE_EDGES)
+    report = analyze_drift(schema, ARTICLE_NODES, ARTICLE_EDGES, None)
+    plan = plan_prune(report)
+    plan.remove.append(sd.PlanEntry(kind="property", name="works_at"))
+    before = (inter / "schema.json").read_bytes()
+    with pytest.raises(SchemaDriftError, match="cannot be pruned"):
+        apply_prune(plan, inter, report)
+    assert (inter / "schema.json").read_bytes() == before
+    assert not (inter / "schema.pre_prune.json").exists()
+    assert not (inter / "schema_history").exists()
+
+
+def test_apply_rejects_locked_and_structural(tmp_path):
+    schema = {
+        "concepts": [_c("Root"), _c("Kid", "Root"), _c("Free")],
+        "properties": [_p("lp", "Free", "Free")],
+    }
+    locked = LockedSchema(classes={"Kid"}, properties={"lp"})
+    inter, _ = write_session(tmp_path, schema, [], [])
+    report = analyze_drift(schema, [], [], locked)
+    for kind, name in (("concept", "Root"), ("concept", "Kid"), ("property", "lp")):
+        plan = plan_prune(report)
+        plan.remove.append(sd.PlanEntry(kind=kind, name=name))
+        with pytest.raises(SchemaDriftError, match="cannot be pruned"):
+            apply_prune(plan, inter, report)
+    assert not (inter / "schema.pre_prune.json").exists()
+
+
+def test_empty_plan_is_noop(tmp_path):
+    schema = article_schema()
+    inter, _ = write_session(tmp_path, schema, ARTICLE_NODES, ARTICLE_EDGES)
+    report = analyze_drift(schema, ARTICLE_NODES, ARTICLE_EDGES, None)
+    apply_prune(plan_prune(report), inter, report)
+    backup = (inter / "schema.pre_prune.json").read_bytes()
+    history = sorted(p.name for p in (inter / "schema_history").glob("*.json"))
+    pruned_bytes = (inter / "schema.json").read_bytes()
+
+    pruned = json.loads(pruned_bytes.decode("utf-8"))
+    report2 = analyze_drift(pruned, ARTICLE_NODES, ARTICLE_EDGES, None)
+    plan2 = plan_prune(report2)
+    assert plan2.remove == []
+    assert apply_prune(plan2, inter, report2) == pruned
+    assert (inter / "schema.pre_prune.json").read_bytes() == backup
+    assert sorted(p.name for p in (inter / "schema_history").glob("*.json")) == history
+    assert (inter / "schema.json").read_bytes() == pruned_bytes
+
+
+def test_recompute_ignores_stored_keep_and_totals(tmp_path):
+    schema = article_schema()
+    report = analyze_drift(schema, ARTICLE_NODES, ARTICLE_EDGES, None)
+    plan = plan_prune(report)
+    plan.remove = [e for e in plan.remove if e.name == "partners_with"]
+    plan.keep = []
+    plan.totals = sd.PruneTotals(
+        before=sd.PlanTotals(concepts=99, properties=99),
+        after=sd.PlanTotals(concepts=0, properties=0),
+    )
+    fixed = sd.recompute_plan(plan, report)
+    assert fixed.totals.before == sd.PlanTotals(concepts=5, properties=11)
+    assert fixed.totals.after == sd.PlanTotals(concepts=5, properties=10)
+    assert "Project" in {e.name for e in fixed.keep}
+    assert "partners_with" not in {e.name for e in fixed.keep}
+    inter, _ = write_session(tmp_path, schema, ARTICLE_NODES, ARTICLE_EDGES)
+    pruned = apply_prune(plan, inter, report)
+    assert len(pruned["properties"]) == 10 and len(pruned["concepts"]) == 5
+
+
+def test_fingerprint_includes_locks():
+    schema = article_schema()
+    base = analyze_drift(schema, ARTICLE_NODES, ARTICLE_EDGES, None).schema_fingerprint
+    locked = LockedSchema(classes={"Project"})
+    a = analyze_drift(schema, ARTICLE_NODES, ARTICLE_EDGES, locked).schema_fingerprint
+    b = analyze_drift(
+        schema, ARTICLE_NODES, ARTICLE_EDGES, LockedSchema(properties={"depends_on"})
+    ).schema_fingerprint
+    assert len({base, a, b}) == 3
+
+
+def test_malformed_jsonl_rows_raise_schema_drift_error(tmp_path):
+    f = tmp_path / "n.jsonl"
+    f.write_text("[1, 2]\n", encoding="utf-8")
+    with pytest.raises(SchemaDriftError, match="JSON object"):
+        list(stream_jsonl(f))
+    schema = {"concepts": [_c("Person")], "properties": []}
+    bad_attrs = [{"id": "x", "type": "Person", "attributes": ["name"]}]
+    with pytest.raises(SchemaDriftError, match="attributes"):
+        analyze_drift(schema, bad_attrs, [], None)
+    with pytest.raises(SchemaDriftError, match="node row"):
+        analyze_drift(schema, ["oops"], [], None)
+    with pytest.raises(SchemaDriftError, match="edge row"):
+        analyze_drift(schema, [], [42], None)
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        [],
+        {"concepts": "x"},
+        {"concepts": ["Person"]},
+        {"concepts": [{"parent": None}]},
+        {"concepts": [{"type": "A", "attributes": "name"}]},
+        {"concepts": [], "properties": [{"domain": "A"}]},
+    ],
+)
+def test_malformed_schema_raises(schema):
+    with pytest.raises(SchemaDriftError):
+        analyze_drift(schema, [], [], None)
+
+
+@pytest.mark.parametrize(
+    "parsed",
+    [
+        ["x"],
+        {"locked_classes": 5},
+        {"locked_classes": [1]},
+        {"locked_classes": [{"name": "x"}]},
+        {"locked_properties": [{"name": None}]},
+    ],
+)
+def test_malformed_locked_raises(parsed):
+    with pytest.raises(SchemaDriftError):
+        LockedSchema.from_parsed(parsed)
+
+
+def test_flattened_schema_not_created_when_absent_and_schema_drift_detected(tmp_path):
+    schema = article_schema()
+    inter, _ = write_session(tmp_path, schema, ARTICLE_NODES, ARTICLE_EDGES)
+    report = analyze_drift(schema, ARTICLE_NODES, ARTICLE_EDGES, None)
+    plan = plan_prune(report)
+    edited = article_schema()
+    edited["concepts"].append(_c("Added"))
+    (inter / "schema.json").write_text(json.dumps(edited), encoding="utf-8")
+    with pytest.raises(SchemaDriftError, match="changed since"):
+        apply_prune(plan, inter, report)
+    (inter / "schema.json").write_text(json.dumps(schema), encoding="utf-8")
+    apply_prune(plan, inter, report)
+    assert not (inter / "flattened_schema.json").exists()
+    # Reasons in the audit record come from the report, not the plan file.
+    plan2 = plan_prune(analyze_drift(schema, ARTICLE_NODES, ARTICLE_EDGES, None))
+    plan2.remove[0].reason = "forged"
+    assert sd.recompute_plan(plan2, report).remove[0].reason != "forged"
