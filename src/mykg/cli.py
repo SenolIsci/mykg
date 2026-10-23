@@ -2183,6 +2183,292 @@ def _resolve_session_root(session: str | None) -> Path:
     return session_root
 
 
+def _drift_session(session: str | None) -> tuple[Path, Path, Path]:
+    """Resolve (session_root, intermediate_dir, output_dir) for the drift commands."""
+    session_root = _resolve_session_root(session)
+    intermediate_dir = session_root / "intermediate"
+    if not (intermediate_dir / "schema.json").exists():
+        raise click.ClickException(f"schema.json not found in {intermediate_dir}")
+    state_path = intermediate_dir / "pipeline_state.json"
+    if state_path.exists():
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            state = {}
+        running = sorted(
+            n
+            for n, v in (state.get("steps") or {}).items()
+            if isinstance(v, dict) and v.get("status") == "running"
+        )
+        if running:
+            raise click.ClickException(
+                f"Step(s) {', '.join(running)} are marked running in {state_path}; "
+                "an extraction may be in progress. Wait for it to finish (or resume/fail it) "
+                "before touching the schema."
+            )
+        unfinished = sorted(
+            n
+            for n, v in (state.get("steps") or {}).items()
+            if isinstance(v, dict) and v.get("status") in ("failed", "waiting")
+        )
+        if unfinished:
+            click.echo(
+                f"warning: step(s) {', '.join(unfinished)} are failed/waiting; the output files "
+                "may be stale relative to an unfinished run."
+            )
+    return session_root, intermediate_dir, session_root / "output"
+
+
+def _run_drift_analysis(intermediate_dir: Path, output_dir: Path, quiet: bool = False):
+    """Detect drift, record schema_drift.json, return the DriftReport."""
+    from mykg.schema_drift import (
+        LockedSchema,
+        SchemaDriftError,
+        analyze_drift,
+        record_drift,
+        stream_jsonl,
+    )
+
+    try:
+        schema = json.loads((intermediate_dir / "schema.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise click.ClickException(f"Cannot read schema.json: {exc}") from exc
+    parsed = None
+    parsed_path = intermediate_dir / "base_schema_parsed.json"
+    if parsed_path.exists():
+        try:
+            parsed = json.loads(parsed_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise click.ClickException(f"Cannot read base_schema_parsed.json: {exc}") from exc
+    elif not quiet:
+        click.echo("no locked schema recorded; treating all entries as unlocked")
+    try:
+        report = analyze_drift(
+            schema,
+            stream_jsonl(output_dir / "nodes.jsonl"),
+            stream_jsonl(output_dir / "edges.jsonl"),
+            LockedSchema.from_parsed(parsed),
+        )
+    except SchemaDriftError as exc:
+        raise click.ClickException(str(exc)) from exc
+    record_drift(report, intermediate_dir)
+    return report
+
+
+def _echo_drift_report(report) -> None:
+    names = ", ".join(c.name for c in report.concepts) or "(none)"
+    click.echo(f"declared concepts: {names}")
+    unused_c = report.unused_concepts()
+    if unused_c:
+        items = ", ".join(f"{c.name} ({c.instance_count} instances)" for c in unused_c)
+        click.echo(f"unused concepts: {items}")
+    else:
+        click.echo("unused concepts: none")
+    unused_p = report.unused_properties()
+    click.echo(
+        f"declared properties: {len(report.properties)} "
+        f"({len(unused_p)} unreferenced by active edges)"
+    )
+    for c in unused_c:
+        click.echo(f"  concept  {c.name}: {c.classification} - {c.reason}")
+    for p in unused_p:
+        click.echo(f"  property {p.name}: {p.classification} - {p.reason}")
+    for c in report.concepts:
+        if c.always_null_attributes:
+            click.echo(
+                f"  info: {c.name} attribute(s) always null: {', '.join(c.always_null_attributes)}"
+            )
+    if report.undeclared_node_types:
+        click.echo(
+            "undeclared node types (in graph, not in schema): "
+            + ", ".join(f"{t} ({n})" for t, n in report.undeclared_node_types.items())
+        )
+    if report.undeclared_edge_types:
+        click.echo(
+            "undeclared edge types (in graph, not in schema): "
+            + ", ".join(f"{t} ({n})" for t, n in report.undeclared_edge_types.items())
+        )
+
+
+@cli.command("detect-schema-drift")
+@click.option(
+    "--session", default=None, help="Session name under the sessions dir; defaults to latest."
+)
+def detect_schema_drift(session):
+    """Report schema concepts/properties with no instances in the graph (advisory).
+
+    Read-only apart from intermediate/schema_drift.json. No LLM is used.
+    """
+    session_root, intermediate_dir, output_dir = _drift_session(session)
+    report = _run_drift_analysis(intermediate_dir, output_dir)
+    _echo_drift_report(report)
+    n_prunable = sum(
+        1 for r in (*report.concepts, *report.properties) if r.classification == "prunable"
+    )
+    click.echo(f"Report recorded in {intermediate_dir / 'schema_drift.json'}")
+    if n_prunable:
+        click.echo(
+            f"{n_prunable} entr{'y' if n_prunable == 1 else 'ies'} prunable; "
+            f"see: mykg prune-schema --session {session_root.name} --preview"
+        )
+
+
+def _echo_plan(plan, session_name: str, intermediate_dir: Path) -> None:
+    from mykg.schema_drift import PLAN_FILE
+
+    click.echo("Will be removed:")
+    if not plan.remove:
+        click.echo("  (nothing)")
+    for e in plan.remove:
+        click.echo(f"  {e.kind} {e.name}: {e.reason}")
+    if plan.keep:
+        click.echo("Kept although unused:")
+        for e in plan.keep:
+            click.echo(f"  {e.kind} {e.name}: {e.reason}")
+    b, a = plan.totals.before, plan.totals.after
+    click.echo(
+        f"Totals: {b.concepts} concepts / {b.properties} properties -> "
+        f"{a.concepts} / {a.properties}"
+    )
+    click.echo("Warnings:")
+    click.echo(
+        "  - A removed type is silently dropped from future extraction if the schema is "
+        "frozen (plain --append). Use --append-with-grow-schema when its documents return."
+    )
+    click.echo("  - Never re-induce the schema on every sync.")
+    click.echo("Files that would change on apply:")
+    for f in (
+        "intermediate/schema.json (backup: schema.pre_prune.json)",
+        "intermediate/schema.ttl",
+        "intermediate/schema_history/<seq>_schema_prune.json",
+        "intermediate/flattened_schema.json",
+        "output/knowledge_graph.ttl, knowledge_graph_validation.json, walkthrough.md, and any "
+        "enabled exports (NetworkX, Obsidian vault, Neo4j CSV) regenerated by validate_graph",
+    ):
+        click.echo(f"  {f}")
+    click.echo(f"Plan written to {intermediate_dir / PLAN_FILE}")
+    click.echo(
+        f"Apply with: mykg prune-schema --session {session_name} --plan "
+        f"{intermediate_dir / PLAN_FILE}"
+    )
+
+
+def _refresh_after_prune(session_root: Path, intermediate_dir: Path, output_dir: Path) -> bool:
+    """Regenerate flattened_schema.json and re-run only validate_graph (no LLM).
+
+    Returns False when the assemble outputs validate_graph needs are missing.
+    """
+    from mykg.orchestrator import PipelineContext
+    from mykg.schema_flattener import flatten_schema
+    from mykg.steps.step_validate_graph import run_validate_graph
+
+    schema = json.loads((intermediate_dir / "schema.json").read_text(encoding="utf-8"))
+    from mykg.utility.atomic_io import atomic_write_json
+
+    atomic_write_json(intermediate_dir / "flattened_schema.json", flatten_schema(schema))
+    if not (
+        (intermediate_dir / "nodes.json").exists()
+        and (intermediate_dir / "edge_metadata.json").exists()
+    ):
+        return False
+    ctx = PipelineContext(
+        input_dir=session_root / "input",
+        output_dir=output_dir,
+        intermediate_dir=intermediate_dir,
+        adapter=None,
+    )
+    run_validate_graph(ctx)
+    if _cfg().REPORT_ENABLED:
+        from mykg.steps.step_walkthrough import run_walkthrough
+
+        run_walkthrough(session_root, log_file=session_root / "run.log")
+    return True
+
+
+@cli.command("prune-schema")
+@click.option(
+    "--session", default=None, help="Session name under the sessions dir; defaults to latest."
+)
+@click.option(
+    "--preview", is_flag=True, help="Show and write the removal plan; change nothing else."
+)
+@click.option(
+    "--plan",
+    "plan_file",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Apply exactly the removals in this (possibly edited) plan file.",
+)
+def prune_schema(session, preview, plan_file):
+    """Remove unused concepts/properties from the session schema (no LLM)."""
+    from mykg.schema_drift import (
+        BACKUP_FILE,
+        SchemaDriftError,
+        apply_prune,
+        load_plan,
+        plan_prune,
+        validate_plan,
+        write_plan,
+    )
+
+    if preview and plan_file is not None:
+        raise click.UsageError("--preview and --plan are mutually exclusive")
+    session_root, intermediate_dir, output_dir = _drift_session(session)
+    report = _run_drift_analysis(intermediate_dir, output_dir)
+
+    if preview:
+        plan = plan_prune(report)
+        write_plan(plan, intermediate_dir)
+        _echo_plan(plan, session_root.name, intermediate_dir)
+        return
+
+    try:
+        if plan_file is not None:
+            plan = load_plan(plan_file)
+            validate_plan(plan, report)
+        else:
+            plan = plan_prune(report)
+        if not plan.remove:
+            click.echo("Nothing to prune.")
+            return
+        pruned = apply_prune(plan, intermediate_dir, report=report)
+    except SchemaDriftError as exc:
+        raise click.ClickException(f"{exc}\nNothing was changed.") from exc
+
+    click.echo(
+        f"Pruned schema: {len(report.concepts)} concepts / {len(report.properties)} properties "
+        f"-> {len(pruned['concepts'])} / {len(pruned['properties'])}"
+    )
+    for e in plan.remove:
+        click.echo(f"  removed {e.kind} {e.name}: {e.reason}")
+    click.echo(f"Backup: {intermediate_dir / BACKUP_FILE}")
+    follow_up = f"mykg extract-graph <dir> --session {session_root.name} --from-step validate_graph"
+    try:
+        refreshed = _refresh_after_prune(session_root, intermediate_dir, output_dir)
+    except Exception as exc:  # the schema is already pruned; say so
+        raise click.ClickException(
+            f"Schema pruned, but refreshing outputs failed: {exc}. Re-run: {follow_up}"
+        ) from exc
+    if refreshed:
+        click.echo("Refreshed flattened_schema.json, knowledge_graph.ttl and exports.")
+    else:
+        click.echo(
+            "flattened_schema.json refreshed; nodes.json/edge_metadata.json missing, "
+            f"so run: {follow_up}"
+        )
+    # Re-record so schema_drift.json describes the pruned schema, not the old one.
+    _run_drift_analysis(intermediate_dir, output_dir, quiet=True)
+    click.echo(
+        "Note: with a frozen schema (plain --append) documents about a removed type are "
+        "dropped; use --append-with-grow-schema when they return."
+    )
+    click.echo(
+        f"Undo: copy {intermediate_dir / BACKUP_FILE} over schema.json, then run "
+        f"mykg approve-schema --session {session_root.name} (restores schema.ttl) and "
+        f"{follow_up}; flattened_schema.json is regenerated by the next pass2 run."
+    )
+
+
 @cli.command("mcp-serve")
 @click.option("--session", default=None, help="Session name under mykg_sessions/; defaults to latest.")
 @click.option(
