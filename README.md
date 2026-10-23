@@ -46,9 +46,13 @@
   - [Sessions](#sessions)
   - [Pipeline Steps](#pipeline-steps)
 - [Outputs](#outputs)
+- [MCP (Model Context Protocol) Server](#mcp-model-context-protocol-server)
+- [Using mykg with Claude Code](#using-mykg-with-claude-code)
+  - [Agent mode (Claude Code skill)](#agent-mode-claude-code-skill)
+  - [claude-cli profile](#claude-cli-profile)
+- [Advanced Options](#advanced-options)
   - [Re-running from a Specific Step](#re-running-from-a-specific-step)
   - [Orphan-Connection Pass](#orphan-connection-pass)
-- [Advanced Options](#advanced-options)
   - [Human Review Gate](#human-review-gate---review)
   - [Locked Base Schema](#locked-base-schema---base-schema)
   - [SKOS Thesaurus](#skos-thesaurus---thesaurus)
@@ -61,10 +65,6 @@
   - [Schema Drift & Pruning](#schema-drift--pruning)
   - [Obsidian Vault Export](#obsidian-vault-export)
   - [Neo4j Load CSV Export](#neo4j-load-csv-export)
-- [MCP (Model Context Protocol) Server](#mcp-model-context-protocol-server)
-- [Using mykg with Claude Code](#using-mykg-with-claude-code)
-  - [Agent mode (Claude Code skill)](#agent-mode-claude-code-skill)
-  - [claude-cli profile](#claude-cli-profile)
 - [Roadmap](#roadmap)
 - [Development](#development)
   - [Testing](#testing)
@@ -578,6 +578,294 @@ Both scripts use idempotent `MERGE` against a `_MykgNode` uniqueness constraint,
 
 See [Neo4j Load CSV Export](#neo4j-load-csv-export) below for configuration details and the standalone CLI fallback.
 
+## MCP (Model Context Protocol) Server
+
+Serve any completed session as an MCP server for LLM-powered Q&A:
+
+```bash
+# Serve the latest session (stdio transport — for Claude Desktop)
+mykg mcp-serve
+
+# Serve a specific session
+mykg mcp-serve --session 2026-06-25T19-16-18
+
+# Serve via streamable HTTP for web clients (Cherry Studio, etc.)
+mykg mcp-serve --transport streamable_http --port 3100
+
+# Serve a specific session via streamable HTTP
+mykg mcp-serve --session 2026-06-25T19-16-18 --transport streamable_http --port 3100
+```
+
+**Claude Desktop (stdio)** — the client launches mykg as a subprocess, no manual server start needed. Add to `claude_desktop_config.json`. Replace `/path/to/your/project` with the absolute path to your project folder:
+
+```json
+{
+  "mcpServers": {
+    "mykg": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/your/project",
+        "run",
+        "mykg",
+        "mcp-serve"
+      ]
+    }
+  }
+}
+```
+
+To serve a specific session:
+
+```json
+{
+  "mcpServers": {
+    "mykg": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/your/project",
+        "run",
+        "mykg",
+        "mcp-serve",
+        "--session",
+        "2026-06-25T19-16-18"
+      ]
+    }
+  }
+}
+```
+
+**Claude Code (stdio)** — add a `.mcp.json` file to your project root so Claude Code launches the MCP server automatically at session start:
+
+```json
+{
+  "mcpServers": {
+    "mykg": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/your/project",
+        "run",
+        "mykg",
+        "mcp-serve"
+      ]
+    }
+  }
+}
+```
+
+To serve a specific session:
+
+```json
+{
+  "mcpServers": {
+    "mykg": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/your/project",
+        "run",
+        "mykg",
+        "mcp-serve",
+        "--session",
+        "2026-06-25T19-16-18"
+      ]
+    }
+  }
+}
+```
+
+> **Restart required.** Claude Code reads `.mcp.json` at session start. After creating or editing this file, restart your Claude Code session for the server to connect. You will be prompted to approve the `mykg` MCP server on first use.
+
+After a pipeline run (`extract-graph`, `--append`, etc.), the in-memory graph becomes stale. Call the `mykg_reload` tool to refresh it without restarting — or restart the Claude Code session to reload from scratch.
+
+If you also have the [`/mykg` skill](#agent-mode-claude-code-skill) installed, the skill will prefer MCP tools for read-only queries when the server is connected, and fall back to direct file reads when it is not.
+
+**Streamable HTTP** (Cherry Studio, MCP Inspector, or any HTTP-based MCP client) — start the server first with `mykg mcp-serve --transport streamable_http --port 3100`, then connect your client:
+
+```json
+{
+  "mcpServers": {
+    "mykg": {
+      "type": "streamableHttp",
+      "url": "http://localhost:3100/mcp"
+    }
+  }
+}
+```
+
+The MCP server exposes 16 tools: `mykg_search_nodes`, `mykg_get_node`, `mykg_get_neighbors`, `mykg_find_path`, `mykg_get_schema`, `mykg_list_node_types`, `mykg_query_subgraph`, `mykg_get_stats`, `mykg_query_graph` (BFS/DFS traversal), `mykg_hub_nodes`, `mykg_orphan_nodes`, `mykg_schema_drift` (read-only schema drift report), `mykg_get_source` (source chunks behind a node), `mykg_read_note` (Obsidian vault LLM wiki notes), `mykg_list_sessions`, and `mykg_reload` (refresh the in-memory graph after pipeline runs).
+
+**Configuration** — default transport, host, and port are set per profile in `mykg_config.yaml`:
+
+```yaml
+    mcp:
+      host: localhost              # bind address for streamable HTTP (ignored for stdio)
+      port: 3100                   # port for streamable HTTP (ignored for stdio)
+      transport: stdio             # default transport: stdio | streamable_http
+```
+
+To default to streamable HTTP, change `transport: streamable_http` in your active profile. CLI flags (`--transport`, `--host`, `--port`) override the config.
+
+### Terminal query (`mykg query`)
+
+```
+mykg query "<question>" [--session NAME] [--mode bfs|dfs] [--depth N] [--token-budget N]
+```
+
+Query the knowledge graph directly from the shell — no MCP server required. `mykg query` finds up to 3 seed nodes matching your question by name, alias, or attribute value, traverses outward through the graph to a bounded depth, and prints a text context window of the visited nodes and the relationships between them. It is the terminal-callable equivalent of the MCP `mykg_query_graph` tool, and it is read-only: it operates on the latest completed session unless `--session` is passed.
+
+- `question` (positional, required) — the free-text query.
+- `--session NAME` — session under `mykg_sessions/`; defaults to the latest completed session (newest dir with `output/nodes.jsonl`).
+- `--mode bfs|dfs` — traversal strategy (default `bfs`).
+- `--depth N` — traversal depth limit (default `2`).
+- `--token-budget N` — approximate token budget bounding the returned context (default `2000`).
+
+```bash
+mykg query "who is Alice" --depth 2
+```
+
+```
+# Knowledge Graph Context: who is Alice
+Seeds: <ids> | Mode: bfs | Depth: 2
+Nodes visited: N | Edges found: M
+
+## Nodes
+- [Type] Name (node-id) conf=0.95 (attr=val, ...)
+
+## Relationships
+- from-id --[edge_type]--> to-id (conf=0.90)
+```
+
+If nothing matches, it prints `No nodes found matching '<question>'. Try mykg_search_nodes for more flexible search.` and exits 0.
+
+---
+
+## Using mykg with Claude Code
+
+myKG ships with two complementary integrations for running extractions from inside [Claude Code](https://claude.ai/code):
+
+- **Agent mode (`agent-claude-code` profile + bundled skill)** — the pipeline writes LLM tasks to a session-local inbox folder and a Claude Code skill dispatches subagents to answer them. Parallel by default.
+- **`claude-cli` profile** — the pipeline shells out to the `claude -p` binary for each LLM step. Serial only.
+
+Pick the `claude-cli` for a drop-in `claude`-as-LLM experience; pick `agent-claude-code` when you want agent skill and parallel subagent dispatch.
+
+### Agent mode (Claude Code skill)
+
+Agent mode is a different way to run myKG inside Claude Code: instead of `claude -p` subprocesses, the pipeline writes LLM tasks to a session-local inbox folder and a Claude Code **skill** dispatches subagents to answer them. Pick agent mode over `claude-cli` when you want parallel subagent dispatch from inside an active Claude Code session.
+
+#### Why pick agent mode
+
+- **No API key needed.** Uses your existing Claude Pro/Max plan via the skill subagents — same as `claude-cli`, but without invoking the `claude -p` binary.
+- **Inspectable LLM I/O.** Every prompt lands as `intermediate/agent_inbox/<id>.task.json` and every answer as `intermediate/agent_outbox/<id>.answer.json`. Replay or edit any step by hand.
+- **Parallel by default.** The skill dispatches up to `pass2.max_workers` subagents per wave in a single message — not serial like `claude-cli`. Pass-2 chunks complete in parallel waves.
+
+#### Install and configure
+
+```bash
+pip install mykg          # or: uv tool install mykg
+mykg init --profile agent-claude-code
+# ...then restart Claude Code so the skill loader picks up the new entry.
+```
+
+`mykg init --profile agent-claude-code` writes `mykg_config.yaml`, copies the bundled skill into `~/.claude/skills/mykg` (honoring `$CLAUDE_CONFIG_DIR` if set), *and* adds a managed `<!-- BEGIN mykg-section --> ... <!-- END mykg-section -->` block to the project's `CLAUDE.md`. A `.mykg_skill_version` stamp file is written next to the skill so future runs can detect drift; the CLAUDE.md block tells Claude Code where the wiki lives, how to find the most-recent session, and how to extend the graph with new documents (no separate setup required).
+
+**Upgrade after `pip install -U mykg`:**
+
+```bash
+mykg init --reinstall-skill --reinstall-claude-md
+```
+
+This atomically refreshes the bundled skill (copy to `.tmp` → `os.replace`) without touching your `mykg_config.yaml`, and replaces the content between the CLAUDE.md markers with the version shipped in the current package — any user content outside the markers is preserved. Either flag can be used alone (`--reinstall-skill` only / `--reinstall-claude-md` only). The copy-based skill install is deliberately not a symlink — symlinks fail on Windows without Developer Mode, dangle if mykg is uninstalled, and don't sync through OneDrive. The cost (live edits don't auto-propagate) only matters for mykg developers, who pass `--reinstall-skill` between edits.
+
+The `agent:` block in the generated `mykg_config.yaml` configures the inbox/outbox paths and poll interval:
+
+```yaml
+profile: agent-claude-code
+
+profiles:
+  agent-claude-code:
+    provider: agent
+    agent:
+      inbox_dir: agent_inbox        # relative to <session>/intermediate/
+      outbox_dir: agent_outbox
+      poll_interval_seconds: 2
+    pipeline:
+      pass2:
+        max_workers: 8              # how many subagents the skill dispatches per wave
+```
+
+#### Invoke from inside Claude Code
+
+The skill exposes one slash command — `/mykg` — that accepts free-form intent. You describe what you want; the skill figures out which `mykg` CLI command to run, reads the live `--help` to validate flags, confirms expensive actions, and (for `extract-graph`) drains the LLM inbox in parallel waves.
+
+Examples:
+
+| You type | The skill runs |
+| --- | --- |
+| `/mykg extract ./docs` | `mykg extract-graph ./docs` |
+| `/mykg ./docs` | `mykg extract-graph ./docs` (legacy positional alias) |
+| `/mykg extract ./docs with human review` | `mykg extract-graph ./docs --review` |
+| `/mykg extract ./docs with frozen schema from ontology.ttl` | `mykg extract-graph ./docs --base-schema ontology.ttl --freeze-schema` |
+| `/mykg append the new notes in ./docs` | `mykg extract-graph ./docs --append --session <latest>` |
+| `/mykg sync the graph with ./docs` | `mykg extract-graph ./docs --update --session <latest>` |
+| `/mykg expand the schema with ./docs` | `mykg extract-graph ./docs --append-with-grow-schema --session <latest>` |
+| `/mykg resume the last session` | `mykg extract-graph --session <latest>` |
+| `/mykg approve the schema` | `mykg approve-schema --session <latest>` |
+| `/mykg make a walkthrough` | `mykg walkthrough --session <latest>` |
+| `/mykg convert pdfs in ./inbox to ./md` | `mykg parse-docs --input ./inbox --output ./md` |
+| `/mykg fetch https://example.com and extract` | `mykg fetch-web https://example.com`, then `mykg extract-graph <printed output dir>` (fresh session) |
+
+Any flag mykg accepts on the CLI works here too — the skill reads `--help` rather than maintaining its own list, so `--from-step orphan_connect`, `--workers 8`, `--obsidian-vault`, etc. all flow through.
+
+`mykg init` and `mykg merge-graphs` are intentionally not wrapped: init is interactive (run from a shell once per machine), and merge-graphs has additional design questions and will be added in a follow-up.
+
+Full design and contract: [docs/agent-mode.md](docs/agent-mode.md). Skill source: [src/mykg/data/skills/mykg/SKILL.md](src/mykg/data/skills/mykg/SKILL.md).
+
+
+### claude-cli profile
+
+myKG ships with a `claude-cli` profile that runs extractions through the locally-installed `claude` CLI.
+
+#### Setup
+
+Install the `claude` CLI, then install mykg and run the setup wizard — select **[5] Claude CLI** when prompted.
+
+```bash
+npm install -g @anthropic-ai/claude-code
+pip install mykg && mykg init
+mykg extract-graph my_notes/
+```
+
+#### How it works
+
+The `claude-cli` provider calls `claude -p` as a subprocess for every LLM step (Pass 1 schema induction, Pass 2 extraction, orphan connection, name normalization). All pipeline features — session isolation, resumability, orphan recovery, cross-session merge — work identically to API-based providers.
+
+**Key constraints of the `claude-cli` profile:**
+- `max_workers` must be `1` — the `claude` CLI is serial by design; parallel workers will queue
+- The `effort` and `model` fields in `mykg_config.yaml` map directly to `--effort` and `--model` flags passed to `claude -p`
+
+#### Using myKG from inside Claude Code Session
+
+You can run myKG extractions as a tool call from within a Claude Code session. This is useful for building knowledge graphs from notes or documentation while you work:
+
+```bash
+# From any Claude Code session terminal:
+mykg extract-graph ./docs/ --session my-docs-kg
+
+# Then reference the output in your session:
+# mykg_sessions/my-docs-kg/output/nodes.jsonl
+# mykg_sessions/my-docs-kg/output/knowledge_graph.ttl
+```
+
+Claude Code can then read `nodes.jsonl` or `edges.jsonl` as well as the Obsidian vault directly to answer questions about the extracted graph, or load `knowledge_graph.ttl` into a SPARQL tool for structured queries.
+
+
+---
+
+## Advanced Options
+
 ### Re-running from a Specific Step
 
 Use `--from-step` to delete a step's outputs and all downstream outputs, then re-run from that point.
@@ -625,8 +913,6 @@ After assembly, nodes with zero edges are "orphans" — present in the graph but
 Unconnectable orphans (no resolvable source chunk) are logged as `orphan_unconnectable` advisory events in `orphan_log.json`.
 
 Configure via `pipeline.orphan_pass.*` in `mykg_config.yaml`. Disable entirely with `pipeline.orphan_pass.enabled: false`.
-
-## Advanced Options
 
 ### Human Review Gate (`--review`)
 
@@ -1014,292 +1300,6 @@ Do not use `--from-step schema_flatten` for this: it deletes the Pass 2 outputs.
 Note: locks come only from a `--base-schema` given on a fresh run (recorded in `intermediate/base_schema_parsed.json`). `--append-with-grow-schema` does not write that file, so a session without it has no locks: the commands print `no locked schema recorded; treating all entries as unlocked`.
 
 Typical order: sync, then detect, then prune. The walkthrough shows a **Schema Health** section once `schema_drift.json` exists (marked stale if the schema or graph changed since), and the MCP server's read-only `mykg_schema_drift` tool computes the report live from the graph as loaded in memory. Details: [docs/architecture.md](docs/architecture.md#schema-drift-and-pruning).
-
-## MCP (Model Context Protocol) Server
-
-Serve any completed session as an MCP server for LLM-powered Q&A:
-
-```bash
-# Serve the latest session (stdio transport — for Claude Desktop)
-mykg mcp-serve
-
-# Serve a specific session
-mykg mcp-serve --session 2026-06-25T19-16-18
-
-# Serve via streamable HTTP for web clients (Cherry Studio, etc.)
-mykg mcp-serve --transport streamable_http --port 3100
-
-# Serve a specific session via streamable HTTP
-mykg mcp-serve --session 2026-06-25T19-16-18 --transport streamable_http --port 3100
-```
-
-**Claude Desktop (stdio)** — the client launches mykg as a subprocess, no manual server start needed. Add to `claude_desktop_config.json`. Replace `/path/to/your/project` with the absolute path to your project folder:
-
-```json
-{
-  "mcpServers": {
-    "mykg": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "/path/to/your/project",
-        "run",
-        "mykg",
-        "mcp-serve"
-      ]
-    }
-  }
-}
-```
-
-To serve a specific session:
-
-```json
-{
-  "mcpServers": {
-    "mykg": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "/path/to/your/project",
-        "run",
-        "mykg",
-        "mcp-serve",
-        "--session",
-        "2026-06-25T19-16-18"
-      ]
-    }
-  }
-}
-```
-
-**Claude Code (stdio)** — add a `.mcp.json` file to your project root so Claude Code launches the MCP server automatically at session start:
-
-```json
-{
-  "mcpServers": {
-    "mykg": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "/path/to/your/project",
-        "run",
-        "mykg",
-        "mcp-serve"
-      ]
-    }
-  }
-}
-```
-
-To serve a specific session:
-
-```json
-{
-  "mcpServers": {
-    "mykg": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "/path/to/your/project",
-        "run",
-        "mykg",
-        "mcp-serve",
-        "--session",
-        "2026-06-25T19-16-18"
-      ]
-    }
-  }
-}
-```
-
-> **Restart required.** Claude Code reads `.mcp.json` at session start. After creating or editing this file, restart your Claude Code session for the server to connect. You will be prompted to approve the `mykg` MCP server on first use.
-
-After a pipeline run (`extract-graph`, `--append`, etc.), the in-memory graph becomes stale. Call the `mykg_reload` tool to refresh it without restarting — or restart the Claude Code session to reload from scratch.
-
-If you also have the [`/mykg` skill](#agent-mode-claude-code-skill) installed, the skill will prefer MCP tools for read-only queries when the server is connected, and fall back to direct file reads when it is not.
-
-**Streamable HTTP** (Cherry Studio, MCP Inspector, or any HTTP-based MCP client) — start the server first with `mykg mcp-serve --transport streamable_http --port 3100`, then connect your client:
-
-```json
-{
-  "mcpServers": {
-    "mykg": {
-      "type": "streamableHttp",
-      "url": "http://localhost:3100/mcp"
-    }
-  }
-}
-```
-
-The MCP server exposes 16 tools: `mykg_search_nodes`, `mykg_get_node`, `mykg_get_neighbors`, `mykg_find_path`, `mykg_get_schema`, `mykg_list_node_types`, `mykg_query_subgraph`, `mykg_get_stats`, `mykg_query_graph` (BFS/DFS traversal), `mykg_hub_nodes`, `mykg_orphan_nodes`, `mykg_schema_drift` (read-only schema drift report), `mykg_get_source` (source chunks behind a node), `mykg_read_note` (Obsidian vault LLM wiki notes), `mykg_list_sessions`, and `mykg_reload` (refresh the in-memory graph after pipeline runs).
-
-**Configuration** — default transport, host, and port are set per profile in `mykg_config.yaml`:
-
-```yaml
-    mcp:
-      host: localhost              # bind address for streamable HTTP (ignored for stdio)
-      port: 3100                   # port for streamable HTTP (ignored for stdio)
-      transport: stdio             # default transport: stdio | streamable_http
-```
-
-To default to streamable HTTP, change `transport: streamable_http` in your active profile. CLI flags (`--transport`, `--host`, `--port`) override the config.
-
-### Terminal query (`mykg query`)
-
-```
-mykg query "<question>" [--session NAME] [--mode bfs|dfs] [--depth N] [--token-budget N]
-```
-
-Query the knowledge graph directly from the shell — no MCP server required. `mykg query` finds up to 3 seed nodes matching your question by name, alias, or attribute value, traverses outward through the graph to a bounded depth, and prints a text context window of the visited nodes and the relationships between them. It is the terminal-callable equivalent of the MCP `mykg_query_graph` tool, and it is read-only: it operates on the latest completed session unless `--session` is passed.
-
-- `question` (positional, required) — the free-text query.
-- `--session NAME` — session under `mykg_sessions/`; defaults to the latest completed session (newest dir with `output/nodes.jsonl`).
-- `--mode bfs|dfs` — traversal strategy (default `bfs`).
-- `--depth N` — traversal depth limit (default `2`).
-- `--token-budget N` — approximate token budget bounding the returned context (default `2000`).
-
-```bash
-mykg query "who is Alice" --depth 2
-```
-
-```
-# Knowledge Graph Context: who is Alice
-Seeds: <ids> | Mode: bfs | Depth: 2
-Nodes visited: N | Edges found: M
-
-## Nodes
-- [Type] Name (node-id) conf=0.95 (attr=val, ...)
-
-## Relationships
-- from-id --[edge_type]--> to-id (conf=0.90)
-```
-
-If nothing matches, it prints `No nodes found matching '<question>'. Try mykg_search_nodes for more flexible search.` and exits 0.
-
----
-
-## Using mykg with Claude Code
-
-myKG ships with two complementary integrations for running extractions from inside [Claude Code](https://claude.ai/code):
-
-- **Agent mode (`agent-claude-code` profile + bundled skill)** — the pipeline writes LLM tasks to a session-local inbox folder and a Claude Code skill dispatches subagents to answer them. Parallel by default.
-- **`claude-cli` profile** — the pipeline shells out to the `claude -p` binary for each LLM step. Serial only.
-
-Pick the `claude-cli` for a drop-in `claude`-as-LLM experience; pick `agent-claude-code` when you want agent skill and parallel subagent dispatch.
-
-### Agent mode (Claude Code skill)
-
-Agent mode is a different way to run myKG inside Claude Code: instead of `claude -p` subprocesses, the pipeline writes LLM tasks to a session-local inbox folder and a Claude Code **skill** dispatches subagents to answer them. Pick agent mode over `claude-cli` when you want parallel subagent dispatch from inside an active Claude Code session.
-
-#### Why pick agent mode
-
-- **No API key needed.** Uses your existing Claude Pro/Max plan via the skill subagents — same as `claude-cli`, but without invoking the `claude -p` binary.
-- **Inspectable LLM I/O.** Every prompt lands as `intermediate/agent_inbox/<id>.task.json` and every answer as `intermediate/agent_outbox/<id>.answer.json`. Replay or edit any step by hand.
-- **Parallel by default.** The skill dispatches up to `pass2.max_workers` subagents per wave in a single message — not serial like `claude-cli`. Pass-2 chunks complete in parallel waves.
-
-#### Install and configure
-
-```bash
-pip install mykg          # or: uv tool install mykg
-mykg init --profile agent-claude-code
-# ...then restart Claude Code so the skill loader picks up the new entry.
-```
-
-`mykg init --profile agent-claude-code` writes `mykg_config.yaml`, copies the bundled skill into `~/.claude/skills/mykg` (honoring `$CLAUDE_CONFIG_DIR` if set), *and* adds a managed `<!-- BEGIN mykg-section --> ... <!-- END mykg-section -->` block to the project's `CLAUDE.md`. A `.mykg_skill_version` stamp file is written next to the skill so future runs can detect drift; the CLAUDE.md block tells Claude Code where the wiki lives, how to find the most-recent session, and how to extend the graph with new documents (no separate setup required).
-
-**Upgrade after `pip install -U mykg`:**
-
-```bash
-mykg init --reinstall-skill --reinstall-claude-md
-```
-
-This atomically refreshes the bundled skill (copy to `.tmp` → `os.replace`) without touching your `mykg_config.yaml`, and replaces the content between the CLAUDE.md markers with the version shipped in the current package — any user content outside the markers is preserved. Either flag can be used alone (`--reinstall-skill` only / `--reinstall-claude-md` only). The copy-based skill install is deliberately not a symlink — symlinks fail on Windows without Developer Mode, dangle if mykg is uninstalled, and don't sync through OneDrive. The cost (live edits don't auto-propagate) only matters for mykg developers, who pass `--reinstall-skill` between edits.
-
-The `agent:` block in the generated `mykg_config.yaml` configures the inbox/outbox paths and poll interval:
-
-```yaml
-profile: agent-claude-code
-
-profiles:
-  agent-claude-code:
-    provider: agent
-    agent:
-      inbox_dir: agent_inbox        # relative to <session>/intermediate/
-      outbox_dir: agent_outbox
-      poll_interval_seconds: 2
-    pipeline:
-      pass2:
-        max_workers: 8              # how many subagents the skill dispatches per wave
-```
-
-#### Invoke from inside Claude Code
-
-The skill exposes one slash command — `/mykg` — that accepts free-form intent. You describe what you want; the skill figures out which `mykg` CLI command to run, reads the live `--help` to validate flags, confirms expensive actions, and (for `extract-graph`) drains the LLM inbox in parallel waves.
-
-Examples:
-
-| You type | The skill runs |
-| --- | --- |
-| `/mykg extract ./docs` | `mykg extract-graph ./docs` |
-| `/mykg ./docs` | `mykg extract-graph ./docs` (legacy positional alias) |
-| `/mykg extract ./docs with human review` | `mykg extract-graph ./docs --review` |
-| `/mykg extract ./docs with frozen schema from ontology.ttl` | `mykg extract-graph ./docs --base-schema ontology.ttl --freeze-schema` |
-| `/mykg append the new notes in ./docs` | `mykg extract-graph ./docs --append --session <latest>` |
-| `/mykg sync the graph with ./docs` | `mykg extract-graph ./docs --update --session <latest>` |
-| `/mykg expand the schema with ./docs` | `mykg extract-graph ./docs --append-with-grow-schema --session <latest>` |
-| `/mykg resume the last session` | `mykg extract-graph --session <latest>` |
-| `/mykg approve the schema` | `mykg approve-schema --session <latest>` |
-| `/mykg make a walkthrough` | `mykg walkthrough --session <latest>` |
-| `/mykg convert pdfs in ./inbox to ./md` | `mykg parse-docs --input ./inbox --output ./md` |
-| `/mykg fetch https://example.com and extract` | `mykg fetch-web https://example.com`, then `mykg extract-graph <printed output dir>` (fresh session) |
-
-Any flag mykg accepts on the CLI works here too — the skill reads `--help` rather than maintaining its own list, so `--from-step orphan_connect`, `--workers 8`, `--obsidian-vault`, etc. all flow through.
-
-`mykg init` and `mykg merge-graphs` are intentionally not wrapped: init is interactive (run from a shell once per machine), and merge-graphs has additional design questions and will be added in a follow-up.
-
-Full design and contract: [docs/agent-mode.md](docs/agent-mode.md). Skill source: [src/mykg/data/skills/mykg/SKILL.md](src/mykg/data/skills/mykg/SKILL.md).
-
-
-### claude-cli profile
-
-myKG ships with a `claude-cli` profile that runs extractions through the locally-installed `claude` CLI.
-
-#### Setup
-
-Install the `claude` CLI, then install mykg and run the setup wizard — select **[5] Claude CLI** when prompted.
-
-```bash
-npm install -g @anthropic-ai/claude-code
-pip install mykg && mykg init
-mykg extract-graph my_notes/
-```
-
-#### How it works
-
-The `claude-cli` provider calls `claude -p` as a subprocess for every LLM step (Pass 1 schema induction, Pass 2 extraction, orphan connection, name normalization). All pipeline features — session isolation, resumability, orphan recovery, cross-session merge — work identically to API-based providers.
-
-**Key constraints of the `claude-cli` profile:**
-- `max_workers` must be `1` — the `claude` CLI is serial by design; parallel workers will queue
-- The `effort` and `model` fields in `mykg_config.yaml` map directly to `--effort` and `--model` flags passed to `claude -p`
-
-#### Using myKG from inside Claude Code Session
-
-You can run myKG extractions as a tool call from within a Claude Code session. This is useful for building knowledge graphs from notes or documentation while you work:
-
-```bash
-# From any Claude Code session terminal:
-mykg extract-graph ./docs/ --session my-docs-kg
-
-# Then reference the output in your session:
-# mykg_sessions/my-docs-kg/output/nodes.jsonl
-# mykg_sessions/my-docs-kg/output/knowledge_graph.ttl
-```
-
-Claude Code can then read `nodes.jsonl` or `edges.jsonl` as well as the Obsidian vault directly to answer questions about the extracted graph, or load `knowledge_graph.ttl` into a SPARQL tool for structured queries.
-
-
----
 
 ## Roadmap
 
