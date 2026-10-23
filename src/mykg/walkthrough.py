@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shlex
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -282,6 +283,102 @@ def _section_schema_evolution(session_root: Path) -> str:
     else:
         out.append("\n*schema.json not found.*")
 
+    return "\n".join(out)
+
+
+def _current_drift_fingerprint(session_root: Path) -> str | None:
+    """Fingerprint of the session's current schema + instance counts, or None
+    when schema.json or the exported nodes/edges cannot be read."""
+    from mykg.schema_drift import LockedSchema, SchemaDriftError, _fingerprint, stream_jsonl
+
+    schema = _load_json(session_root / "intermediate" / "schema.json")
+    nodes_path = session_root / "output" / "nodes.jsonl"
+    edges_path = session_root / "output" / "edges.jsonl"
+    if not isinstance(schema, dict) or not nodes_path.exists() or not edges_path.exists():
+        return None
+    node_counts: dict = {}
+    for node in stream_jsonl(nodes_path):
+        t = node.get("type")
+        node_counts[t] = node_counts.get(t, 0) + 1
+    edge_counts: dict = {}
+    for edge in stream_jsonl(edges_path):
+        t = edge.get("type")
+        edge_counts[t] = edge_counts.get(t, 0) + 1
+    # Same locks the CLI's drift analysis used; a missing file means no locks.
+    parsed = None
+    parsed_path = session_root / "intermediate" / "base_schema_parsed.json"
+    try:
+        if parsed_path.exists():
+            parsed = json.loads(parsed_path.read_text(encoding="utf-8"))
+        locked = LockedSchema.from_parsed(parsed)
+    except (SchemaDriftError, OSError, UnicodeDecodeError, ValueError) as exc:
+        log.debug("Could not read %s: %s", parsed_path, exc)
+        return None
+    return _fingerprint(schema, node_counts, edge_counts, locked)
+
+
+def _section_schema_health(session_root: Path) -> str | None:
+    """Schema Health section; None unless intermediate/schema_drift.json exists."""
+    from mykg.schema_drift import DRIFT_FILE, DriftReport
+
+    drift_path = session_root / "intermediate" / DRIFT_FILE
+    if not drift_path.exists():
+        return None
+    name = shlex.quote(session_root.name)
+    out = ["## 5. Schema Health", ""]
+    try:
+        report = DriftReport.model_validate_json(drift_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        log.debug("Could not read %s: %s", drift_path, exc)
+        out.append("*Could not read schema drift record.*")
+        return "\n".join(out)
+
+    out.append(f"Drift analysed at: {report.timestamp}")
+    out.append("")
+    try:
+        current = _current_drift_fingerprint(session_root)
+    except Exception as exc:
+        log.debug("Could not verify drift record: %s", exc)
+        current = None
+    if current is None:
+        out.append(
+            "*The drift record cannot be verified (schema.json, output/nodes.jsonl / "
+            "edges.jsonl or base_schema_parsed.json missing or unreadable); treat the figures below as unverified.*"
+        )
+        out.append("")
+    elif current != report.schema_fingerprint:
+        out.append(
+            "**Stale:** the schema or graph changed since this analysis. "
+            f"Re-run `mykg detect-schema-drift --session {name}`."
+        )
+        return "\n".join(out)
+
+    unused_c = report.unused_concepts()
+    unused_p = report.unused_properties()
+    used_c = len(report.concepts) - len(unused_c)
+    used_p = len(report.properties) - len(unused_p)
+    out += [
+        f"- Concepts: {len(report.concepts)} declared, {used_c} used, {len(unused_c)} unused",
+        f"- Properties: {len(report.properties)} declared, {used_p} used, {len(unused_p)} unused",
+    ]
+    if unused_c:
+        out += ["", "**Unused concepts:**", ""]
+        out += [f"- `{c.name}` ({c.classification}): {c.reason}" for c in unused_c]
+    if unused_p:
+        out += ["", "**Unused properties:**", ""]
+        out += [f"- `{p.name}` ({p.classification}): {p.reason}" for p in unused_p]
+    if report.undeclared_node_types or report.undeclared_edge_types:
+        out += ["", "**Undeclared types (present in the graph but not in the schema):**", ""]
+        out += [f"- node type `{t}`: {n}" for t, n in report.undeclared_node_types.items()]
+        out += [f"- edge type `{t}`: {n}" for t, n in report.undeclared_edge_types.items()]
+    if current is not None and (
+        any(c.classification == "prunable" for c in unused_c)
+        or any(p.classification == "prunable" for p in unused_p)
+    ):
+        out += [
+            "",
+            f"Run `mykg prune-schema --session {name} --preview` to see what pruning would remove.",
+        ]
     return "\n".join(out)
 
 
@@ -1144,6 +1241,9 @@ def generate_walkthrough(session_root: Path, log_file: Path | None = None) -> st
     node_edge_trace = _section_node_edge_trace(session_root)
     merge_provenance = _section_merge_provenance(session_root)
     health = _section_health_status(session_root, lines, state)
+    schema_health = _section_schema_health(session_root)
+    # Schema Health sits right after Schema Evolution; later sections shift by one.
+    sh = 1 if schema_health else 0
 
     # Section order for merge sessions:
     #   Health status (inline, no §number)
@@ -1169,16 +1269,16 @@ def generate_walkthrough(session_root: Path, log_file: Path | None = None) -> st
         "## 4. Schema Evolution", f"## {4 + offset}. Schema Evolution"
     )
     llm_stats = _section_llm_stats(session_root).replace(
-        "## 5. LLM Call Statistics", f"## {5 + offset}. LLM Call Statistics"
+        "## 5. LLM Call Statistics", f"## {5 + offset + sh}. LLM Call Statistics"
     )
     extraction = _section_extraction_summary(session_root, lines, manifest).replace(
-        "## 6. Extraction Summary", f"## {6 + offset}. Extraction Summary"
+        "## 6. Extraction Summary", f"## {6 + offset + sh}. Extraction Summary"
     )
     orphan = _section_orphan_pass(session_root, lines, nodes_data, edge_data).replace(
-        "## 7. Orphan Pass Summary", f"## {7 + offset}. Orphan Pass Summary"
+        "## 7. Orphan Pass Summary", f"## {7 + offset + sh}. Orphan Pass Summary"
     )
     warnings = _section_warnings(lines).replace(
-        "## 8. Warnings & Retries", f"## {8 + offset}. Warnings & Retries"
+        "## 8. Warnings & Retries", f"## {8 + offset + sh}. Warnings & Retries"
     )
 
     sections = [f"# Walkthrough — Session `{session_root.name}`", ""]
@@ -1205,6 +1305,11 @@ def generate_walkthrough(session_root: Path, log_file: Path | None = None) -> st
         "",
         schema_evolution,
         "",
+        *(
+            [schema_health.replace("## 5. Schema Health", f"## {5 + offset}. Schema Health"), ""]
+            if schema_health
+            else []
+        ),
         llm_stats,
         "",
         extraction,
