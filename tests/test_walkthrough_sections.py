@@ -911,8 +911,10 @@ def test_ts_to_seconds():
 # ---------------------------------------------------------------------------
 
 
-def _drift_session(tmp_path: Path, extra_nodes: list | None = None) -> Path:
-    from mykg.schema_drift import analyze_drift, record_drift
+def _drift_session(
+    tmp_path: Path, extra_nodes: list | None = None, dirname: str = "sess", parsed: dict | None = None
+) -> Path:
+    from mykg.schema_drift import LockedSchema, analyze_drift, record_drift
 
     def c(n):
         return {"type": n, "parent": None, "attributes": ["name"]}
@@ -944,8 +946,10 @@ def _drift_session(tmp_path: Path, extra_nodes: list | None = None) -> Path:
         {"id": f"e{i}", "type": t, "from": "a", "to": "b"}
         for i, t in enumerate(["works_at", "member_of", "part_of"])
     ]
-    session = tmp_path / "sess"
+    session = tmp_path / dirname
     _write(session / "intermediate" / "schema.json", schema)
+    if parsed is not None:
+        _write(session / "intermediate" / "base_schema_parsed.json", parsed)
     (session / "output").mkdir(parents=True)
     (session / "output" / "nodes.jsonl").write_text(
         "".join(json.dumps(n) + "\n" for n in nodes), encoding="utf-8"
@@ -953,7 +957,7 @@ def _drift_session(tmp_path: Path, extra_nodes: list | None = None) -> Path:
     (session / "output" / "edges.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in edges), encoding="utf-8"
     )
-    record_drift(analyze_drift(schema, nodes, edges, None), session / "intermediate")
+    record_drift(analyze_drift(schema, nodes, edges, LockedSchema.from_parsed(parsed)), session / "intermediate")
     return session
 
 
@@ -1007,3 +1011,50 @@ def test_generate_walkthrough_numbers_consecutive_with_health(tmp_path):
     assert nums == list(range(1, len(nums) + 1))
     assert result.index("Schema Evolution") < result.index("Schema Health")
     assert result.index("Schema Health") < result.index("LLM Call Statistics")
+
+
+def test_schema_health_hints_quote_session_name(tmp_path):
+    session = _drift_session(tmp_path, dirname="my session;x")
+    out = _section_schema_health(session)
+    assert "--session 'my session;x' --preview" in out
+    assert "--session my session;x" not in out
+    with (session / "output" / "nodes.jsonl").open("a", encoding="utf-8") as f:
+        f.write(json.dumps({"id": "p", "type": "Project", "attributes": {}}) + "\n")
+    stale = _section_schema_health(session)
+    assert "detect-schema-drift --session 'my session;x'" in stale
+
+
+_LOCKS = {"locked_classes": {"Person": {}}, "locked_properties": {"works_at": {}}}
+
+
+def test_schema_health_fresh_with_locks(tmp_path):
+    session = _drift_session(tmp_path, parsed=_LOCKS)
+    out = _section_schema_health(session)
+    assert "Stale" not in out and "Concepts: 5 declared" in out
+
+
+def test_schema_health_stale_after_lock_change(tmp_path):
+    session = _drift_session(tmp_path, parsed=_LOCKS)
+    _write(
+        session / "intermediate" / "base_schema_parsed.json",
+        {"locked_classes": {"Person": {}, "Team": {}}, "locked_properties": {"works_at": {}}},
+    )
+    assert "Stale" in _section_schema_health(session)
+
+
+def test_schema_health_stale_when_locks_added_or_removed(tmp_path):
+    session = _drift_session(tmp_path)
+    _write(session / "intermediate" / "base_schema_parsed.json", _LOCKS)
+    assert "Stale" in _section_schema_health(session)
+    session2 = _drift_session(tmp_path, dirname="s2", parsed=_LOCKS)
+    (session2 / "intermediate" / "base_schema_parsed.json").unlink()
+    assert "Stale" in _section_schema_health(session2)
+
+
+def test_schema_health_bad_lock_file_degrades(tmp_path):
+    for i, payload in enumerate((b"{not json", b"\xff\xfe\x00bad", b"[1, 2]")):
+        session = _drift_session(tmp_path, dirname=f"s{i}", parsed=_LOCKS)
+        (session / "intermediate" / "base_schema_parsed.json").write_bytes(payload)
+        out = _section_schema_health(session)
+        assert "cannot be verified" in out
+        assert "Schema Health" in generate_walkthrough(session)
