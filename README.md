@@ -27,7 +27,7 @@
 
 ## Updates
 
-- **Unreleased** — Schema drift detection and pruning: `mykg detect-schema-drift` reports concepts and properties the graph no longer uses, and `mykg prune-schema` removes them (with `--preview`, an editable plan file, and a backup). The walkthrough gains a Schema Health section and the MCP server a read-only `mykg_schema_drift` tool. See [Schema Drift & Pruning](#schema-drift--pruning).
+- **Unreleased** — Schema drift detection and pruning: `mykg detect-schema-drift` reports concepts and properties the graph no longer uses, and `mykg prune-schema` removes them (with `--preview`, an editable plan file, and a backup). See [Schema Drift & Pruning](#schema-drift--pruning).
 
 - **v0.4.9** — The `nodes.jsonl`, `edges.jsonl` and `knowledge_graph.ttl` exports now stream to disk record by record instead of building the whole file in memory first, so peak memory stays flat as the graph grows.
 
@@ -60,7 +60,7 @@
   - [Walkthrough Report](#walkthrough-report)
   - [Schema Drift & Pruning](#schema-drift--pruning)
   - [Obsidian Vault Export](#obsidian-vault-export)
-  - [Neo4j LOAD CSV Export](#neo4j-load-csv-export)
+  - [Neo4j Load CSV Export](#neo4j-load-csv-export)
 - [MCP (Model Context Protocol) Server](#mcp-model-context-protocol-server)
 - [Using mykg with Claude Code](#using-mykg-with-claude-code)
   - [Agent mode (Claude Code skill)](#agent-mode-claude-code-skill)
@@ -576,7 +576,7 @@ cypher-shell -u neo4j -p <pw> -f output/neo4j_csv/import_shell.cypher
 
 Both scripts use idempotent `MERGE` against a `_MykgNode` uniqueness constraint, so re-running updates the graph in place. Requires Neo4j 5+. No Python driver, no plugin, no APOC — the scripts use only core Cypher.
 
-See [Neo4j LOAD CSV Export](#neo4j-load-csv-export) below for configuration details and the standalone CLI fallback.
+See [Neo4j Load CSV Export](#neo4j-load-csv-export) below for configuration details and the standalone CLI fallback.
 
 ### Re-running from a Specific Step
 
@@ -919,7 +919,7 @@ pipeline:
 
 Or use `--obsidian-vault` on the command line for a one-off run without editing config.
 
-### Neo4j LOAD CSV Export
+### Neo4j Load CSV Export
 
 Optional bundle for one-step import into Neo4j 5+. Off by default. When enabled, every run writes the bundle to `output/neo4j_csv/` alongside the other outputs.
 
@@ -966,7 +966,8 @@ The induced schema only ever grows: Pass 1 and `--append-with-grow-schema` add c
 mykg extract-graph docs/ --session s1 --append --sync   # 1. instances reconcile
 mykg detect-schema-drift --session s1                   # 2. report (writes intermediate/schema_drift.json)
 mykg prune-schema --session s1 --preview                # 3. show the plan (writes schema_prune_plan.json)
-mykg prune-schema --session s1                          # 4. apply every prunable entry
+mykg prune-schema --session s1                          # 4. recompute and apply every prunable entry (ignores the saved plan file)
+mykg prune-schema --session s1 --plan <plan file>       # 4 (alternative). apply your edited plan instead
 ```
 
 Example (a session whose `projects.md` was deleted; 5 declared concepts, 11 properties, graph uses 3 and 3):
@@ -999,7 +1000,7 @@ Warnings:
 
 Each unused entry is classified. `locked` entries (from `--base-schema`) are never pruned. `structural` entries (zero own instances but an instantiated descendant, a surviving child, or the domain/range of a surviving property) are kept; there is no re-parenting. Only `prunable` entries are removed. Pruning never touches nodes or edges: only zero-instance entries are eligible.
 
-**Reviewing and applying a plan.** `--preview` writes `intermediate/schema_prune_plan.json` and changes nothing else. Delete entries from its `remove` list to veto them (a type awaiting tomorrow's documents), then apply exactly that plan:
+**Reviewing and applying a plan.** `--preview` writes `intermediate/schema_prune_plan.json` and changes nothing else. Delete entries from its `remove` list to veto them (a type awaiting tomorrow's documents), then apply exactly that plan. **You must pass the file with `--plan`.** A plain `mykg prune-schema --session s1` never reads `schema_prune_plan.json`: it recomputes the plan from the current schema and graph and removes every prunable entry, so your edits would be ignored. Neither command needs `schema_drift.json` as input; the analysis is rerun each time.
 
 ```bash
 mykg prune-schema --session s1 --plan mykg_sessions/s1/intermediate/schema_prune_plan.json
@@ -1033,31 +1034,7 @@ Do not use `--from-step schema_flatten` for this: it deletes the Pass 2 outputs.
 
 Note: locks come only from a `--base-schema` given on a fresh run (recorded in `intermediate/base_schema_parsed.json`). `--append-with-grow-schema` does not write that file, so a session without it has no locks: the commands print `no locked schema recorded; treating all entries as unlocked`.
 
-Typical order: sync, then detect, then prune. The walkthrough shows a **Schema Health** section once `schema_drift.json` exists (marked stale if the schema or graph changed since), and the MCP server's read-only `mykg_schema_drift` tool computes the report live from the graph as loaded in memory (see below). Details: [docs/architecture.md](docs/architecture.md#schema-drift-and-pruning).
-
-**MCP tool `mykg_schema_drift`.** Read-only: it never writes `schema_drift.json` and never prunes, and it reflects the graph as loaded in memory (call `mykg_reload` after a run that changed the session). Output, for the example session above:
-
-```
-Schema drift report for session s1 (3 nodes, 3 edges, as loaded in memory; call mykg_reload first if the session changed on disk)
-No base schema in this session (intermediate/base_schema_parsed.json absent): nothing is locked.
-
-Declared concepts: 5
-Unused concepts: 2
-  - Project [prunable]: 0 instances, 0 in subtree
-  - Service [prunable]: 0 instances, 0 in subtree
-
-Declared properties: 11
-Unused properties: 8
-  - owns_project [prunable] (Organization -> Project): 0 edges; domain/range removed
-  ...
-
-Reverse drift (used in the graph but not declared in the schema):
-  none
-
-This tool never prunes. Run `mykg prune-schema --session s1 --preview` (CLI) to see what pruning would remove.
-```
-
-The lock line has three variants: no base schema (above); `Locks read from base_schema_parsed.json: N locked concept(s), M locked property(ies).`; or a warning that the lock file could not be read, so locks are not applied and you should not prune until it is fixed. An "Always-null attributes (info only, never pruned)" section appears only when some declared attribute is null on every instance. Malformed in-memory data yields `Cannot compute schema drift: <error>`.
+Typical order: sync, then detect, then prune. The walkthrough shows a **Schema Health** section once `schema_drift.json` exists (marked stale if the schema or graph changed since), and the MCP server's read-only `mykg_schema_drift` tool computes the report live from the graph as loaded in memory. Details: [docs/architecture.md](docs/architecture.md#schema-drift-and-pruning).
 
 ## MCP (Model Context Protocol) Server
 
@@ -1176,7 +1153,7 @@ If you also have the [`/mykg` skill](#agent-mode-claude-code-skill) installed, t
 }
 ```
 
-The MCP server exposes 16 tools (including `mykg_get_source` and the read-only `mykg_schema_drift`): `mykg_search_nodes`, `mykg_get_node`, `mykg_get_neighbors`, `mykg_find_path`, `mykg_get_schema`, `mykg_list_node_types`, `mykg_query_subgraph`, `mykg_get_stats`, `mykg_query_graph` (BFS/DFS traversal), `mykg_hub_nodes`, `mykg_orphan_nodes`, `mykg_read_note` (Obsidian vault LLM wiki notes), `mykg_list_sessions`, and `mykg_reload` (refresh the in-memory graph after pipeline runs).
+The MCP server exposes 16 tools: `mykg_search_nodes`, `mykg_get_node`, `mykg_get_neighbors`, `mykg_find_path`, `mykg_get_schema`, `mykg_list_node_types`, `mykg_query_subgraph`, `mykg_get_stats`, `mykg_query_graph` (BFS/DFS traversal), `mykg_hub_nodes`, `mykg_orphan_nodes`, `mykg_schema_drift` (read-only schema drift report), `mykg_get_source` (source chunks behind a node), `mykg_read_note` (Obsidian vault LLM wiki notes), `mykg_list_sessions`, and `mykg_reload` (refresh the in-memory graph after pipeline runs).
 
 **Configuration** — default transport, host, and port are set per profile in `mykg_config.yaml`:
 
